@@ -1,0 +1,243 @@
+package daemon
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/junnam/wakeguard/internal/config"
+	"github.com/junnam/wakeguard/internal/ipc"
+	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam/wakeguard/internal/power"
+	"github.com/junnam/wakeguard/internal/schedule"
+)
+
+func osHostname() (string, error) { return os.Hostname() }
+
+// refreshWarnings recomputes the actionable-problem list surfaced by `status`
+// and the menu bar app.
+//
+// Every warning carries a Fix string that is literally the command to run.
+// The failure mode this guards against is a job that is registered, looks
+// fine in `list`, and silently never does anything — which without this is
+// indistinguishable from working correctly.
+func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
+	var out []model.Warning
+
+	// A wake that could not be registered means every job is at risk, so it
+	// leads the list.
+	d.mu.RLock()
+	wakeErr, nextJob := d.wakeErr, d.nextJob
+	holding := len(d.holds) > 0
+	cfgWarn := d.cfgWarn
+	d.mu.RUnlock()
+
+	// One cause, not its symptoms.
+	//
+	// Scheduling an OS wake goes through the helper, so a helper that is not
+	// reachable makes every wake registration fail — and reporting both reads
+	// as two independent problems when there is one, with one fix. Listing the
+	// symptom alongside the cause also puts the wrong fix first: `doctor`
+	// diagnoses, where `install` is what actually resolves it.
+	//
+	// The wake failure is still reported whenever the helper is fine, because
+	// then it is a genuinely separate fault — pmset refusing the entry, or a
+	// competing wake owned by something else.
+	helperDown := !d.helper.Connected()
+
+	if wakeErr != "" && !helperDown {
+		out = append(out, model.Warning{
+			Kind: model.WarnWakeFailed,
+			Message: fmt.Sprintf("could not register an OS wake for %q, it will be missed if the machine is asleep: %s",
+				nextJob, wakeErr),
+			Fix: "wakeguard doctor",
+		})
+	}
+
+	if helperDown {
+		// Says what is lost, plainly, without the raw error. The failures it
+		// causes — wakes that cannot be registered, holds that cannot survive a
+		// closed lid — are consequences of this one line and are not repeated
+		// as separate warnings.
+		msg := "the privileged helper isn't running, so the Mac can't be woken for jobs and " +
+			"sleep can't be held with the lid shut. Run the fix in Terminal — it asks for your " +
+			"Mac login password"
+		// "Not listening" is already what the sentence above says. Appending
+		// the raw dial error would read as "the helper is not reachable
+		// (wakeguard daemon is not running)", which names the wrong process
+		// and sends the user looking in the wrong place.
+		if err := d.helper.LastError(); err != nil && !errors.Is(err, ipc.ErrNotRunning) {
+			msg += " (" + err.Error() + ")"
+		}
+		out = append(out, model.Warning{
+			Kind:    model.WarnHelperDown,
+			Message: msg,
+			Fix:     "wakeguard install",
+		})
+	}
+
+	// A thermal cutout that cannot read a temperature is not protecting
+	// anything. Say so rather than letting the user assume it is armed.
+	if holding && st.LidClosed && st.TempC == nil {
+		out = append(out, model.Warning{
+			Kind:    model.WarnCeilingHits,
+			Message: "no CPU temperature sensor is readable, so the thermal cutout cannot arm while the lid is closed",
+		})
+	}
+
+	// A job file that would not parse is the loudest possible problem: nothing
+	// is scheduled and nothing can be saved until it is fixed.
+	if err := d.store.LoadError(); err != nil {
+		out = append(out, model.Warning{
+			Kind: model.WarnScheduleParse,
+			Message: "jobs.json could not be read, so no jobs are registered and " +
+				"changes cannot be saved: " + err.Error(),
+			Fix: "fix the file or move it aside, then restart the daemon",
+		})
+	}
+
+	for _, w := range cfgWarn {
+		out = append(out, model.Warning{Kind: model.WarnScheduleParse, Message: "config: " + w})
+	}
+
+	for _, job := range d.store.Jobs() {
+		// Only the error matters here, but the anchor is passed anyway: every
+		// site that parses a job's schedule uses the same call, so none of them
+		// can drift apart later.
+		if _, err := schedule.ParseAt(job.Schedule, job.Location(), job.ScheduleAnchor()); err != nil {
+			out = append(out, model.Warning{
+				Kind:    model.WarnScheduleParse,
+				JobID:   job.ID,
+				Message: fmt.Sprintf("job %q has an unparseable schedule and will never run: %v", job.Name, err),
+				Fix:     fmt.Sprintf("wakeguard edit %s --cron '<expression>'", job.ID),
+			})
+			continue
+		}
+		if !job.Enabled {
+			continue
+		}
+
+		runs, err := d.store.Runs(job.ID)
+		if err != nil || len(runs) == 0 {
+			continue
+		}
+
+		// Consecutive never-detected runs are the signature of a match
+		// pattern that does not match anything. One can be a fluke; several
+		// in a row is a broken configuration.
+		missed := trailingNeverDetected(runs)
+		if missed >= 2 {
+			w := model.Warning{
+				Kind:  model.WarnNeverDetected,
+				JobID: job.ID,
+				Message: fmt.Sprintf(
+					"job %q has not been detected in its last %d windows, the machine was woken and held awake for nothing",
+					job.Name, missed),
+			}
+			if job.Detection == model.DetectPattern {
+				w.Message += fmt.Sprintf("; the pattern %q may not match the running process", job.Match)
+				w.Fix = fmt.Sprintf("wakeguard test-match %q   # then: wakeguard edit %s --match '<pattern>'", job.Match, job.ID)
+			} else {
+				w.Message += "; the wrapper may no longer be in the crontab line"
+				w.Fix = fmt.Sprintf("wakeguard doctor %s", job.ID)
+			}
+			out = append(out, w)
+		}
+
+		if hits := trailingCeilingHits(runs); hits >= 2 {
+			out = append(out, model.Warning{
+				Kind:  model.WarnCeilingHits,
+				JobID: job.ID,
+				// This now means the *backstop*, not the estimate. A job that
+				// merely runs longer than expected is held on to and learned
+				// from; reaching this point means it was still going after the
+				// maximum hold, which is a job that hangs rather than a job
+				// that is slow.
+				Message: fmt.Sprintf(
+					"job %q was still running at the maximum hold in the last %d runs, "+
+						"so it was released before finishing",
+					job.Name, hits),
+				Fix: fmt.Sprintf("wakeguard edit %s --max-runtime <duration>", job.ID),
+			})
+		}
+	}
+
+	// Jobs this machine has that WakeGuard is not waking for.
+	//
+	// This is last in the list but it is the most consequential thing here:
+	// every other warning describes a job that runs imperfectly, while this
+	// one describes jobs that do not run at all when the Mac is asleep. It was
+	// silent, which made a half-covered install indistinguishable from a
+	// complete one.
+	d.mu.RLock()
+	uncovered := d.uncovered
+	d.mu.RUnlock()
+	if n := len(uncovered); n > 0 {
+		names := make([]string, 0, 3)
+		for _, c := range uncovered {
+			if len(names) == 3 {
+				break
+			}
+			names = append(names, c.Name)
+		}
+		list := strings.Join(names, ", ")
+		if n > len(names) {
+			list += ", …"
+		}
+		out = append(out, model.Warning{
+			Kind: model.WarnUncovered,
+			Message: fmt.Sprintf(
+				"%s on this machine %s not being woken for, so %s missed while it sleeps (%s)",
+				pluralJobs(n), verbIs(n), verbThey(n), list),
+			Fix: "wakeguard import",
+		})
+	}
+
+	d.mu.Lock()
+	d.warnings = out
+	d.mu.Unlock()
+}
+
+func trailingNeverDetected(runs []model.Run) int {
+	n := 0
+	for i := len(runs) - 1; i >= 0; i-- {
+		if runs[i].Outcome != model.OutcomeNeverDetected {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+func trailingCeilingHits(runs []model.Run) int {
+	n := 0
+	for i := len(runs) - 1; i >= 0; i-- {
+		if runs[i].Outcome != model.OutcomeCeiling {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+func pluralJobs(n int) string {
+	if n == 1 {
+		return "1 scheduled job"
+	}
+	return fmt.Sprintf("%d scheduled jobs", n)
+}
+
+func verbIs(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
+}
+
+func verbThey(n int) string {
+	if n == 1 {
+		return "it is"
+	}
+	return "they are"
+}

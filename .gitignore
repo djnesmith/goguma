@@ -1,0 +1,17 @@
+.DS_Store
+bin/
+macos/.build/
+macos/build/
+
+# A separate Xcode project that happens to live in this folder. It is not
+# WakeGuard source and should have its own repo.
+adrafinil-main/
+adrafinil-main*.zip
+
+# Editor and agent tooling: per-machine config, session transcripts, and
+# third-party skills carrying their own licences. Not this project's source.
+.claude/
+.agents/
+.cursor/
+.gemini/
+.codex/
