@@ -35,15 +35,18 @@ func platformLayout(home string) Layout {
 		BinDir:        filepath.Join(home, ".local", "bin"),
 		UnitDir:       filepath.Join(configHome, "systemd", "user"),
 		SystemUnitDir: "/etc/systemd/system",
+		HelperBinary:  HelperBinary,
+		DaemonService: DaemonUnit,
+		HelperService: HelperUnit,
 	}
 }
 
 // DaemonUnitFile is the user-level systemd unit path.
 func (l Layout) DaemonUnitFile() string {
-	return filepath.Join(l.UnitDir, DaemonUnit)
+	return filepath.Join(l.UnitDir, l.DaemonService)
 }
 
 // HelperUnitFile is the system-level systemd unit path.
 func (l Layout) HelperUnitFile() string {
-	return filepath.Join(l.SystemUnitDir, HelperUnit)
+	return filepath.Join(l.SystemUnitDir, l.HelperService)
 }

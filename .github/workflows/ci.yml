@@ -9,11 +9,37 @@ on:
 permissions:
   contents: read
 
+# Shaped around what a private repository is billed.
+#
+# Actions is free and unmetered on public repositories. On private ones the Free
+# plan includes 2,000 minutes a month and macOS runners bill at a 10x
+# multiplier, so roughly 200 real macOS minutes. Three separate macOS jobs, each
+# paying its own checkout and toolchain setup, spent most of that on overhead
+# rather than on testing.
+#
+# So all macOS work is one job now, and everything that can run on Linux does.
+# The cost is coarser failure reporting: one red job instead of three, and no
+# parallelism between the darwin builds and the darwin tests. That is a fair
+# trade while this is private, and worth undoing if it goes public, where the
+# whole question disappears.
 jobs:
-  # macOS is the platform goguma is developed and used on, so this job runs the
-  # on-device probes as well as the unit tests.
+  # The platform goguma is developed and used on. Also builds the Intel slice,
+  # because the runner is arm64 and `go test` therefore proves nothing about
+  # darwin/amd64 — which is exactly where the missing-cgo break showed up.
   macos:
-    name: test (macos)
+    name: test + build (macos)
+    # Not on every push, deliberately.
+    #
+    # macOS is the one platform the author develops on and runs the suite
+    # against locally, including the on-device probes, so a macOS job on every
+    # branch push mostly re-runs what was already checked a minute earlier — and
+    # it is the only job that costs anything meaningful while this repository is
+    # private. It runs where it earns its keep: on main, on pull requests, and
+    # whenever asked for by hand.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      github.ref == 'refs/heads/main'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,11 +70,21 @@ jobs:
       - name: test (shuffled)
         run: go test ./... -count=1 -shuffle=on
 
+      # cgo on, because internal/power/darwin.go needs IOKit and CoreFoundation
+      # and the build fails on "undefined: darwinPlatform" without it.
+      - name: build darwin/amd64
+        env:
+          GOOS: darwin
+          GOARCH: amd64
+          CGO_ENABLED: 1
+        run: go build ./...
+
   # Linux exists to stop the systemd/journalctl/rtcwake paths rotting. Until
   # this job existed, that code had never executed anywhere: it compiled, and
-  # nothing more was known about it.
+  # nothing more was known about it. Runs on the cheap runner, so it keeps the
+  # race detector and both architectures.
   linux:
-    name: test (linux)
+    name: test + build (linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,34 +102,12 @@ jobs:
       - name: test (race)
         run: go test ./... -count=1 -race
 
-  # A build-only check for every architecture we might ship, so a compile error
-  # in an untested target is caught at push time rather than at release time.
-  #
-  # darwin is built on a macOS runner and linux on a Linux one, deliberately.
-  # The macOS build needs cgo for IOKit and CoreFoundation, cgo cross-compiling
-  # needs that platform's SDK, and `go build` defaults CGO_ENABLED to 0 when
-  # cross-compiling. Building darwin from ubuntu therefore fails with
-  # "undefined: darwinPlatform" no matter how healthy the code is.
-  cross-build:
-    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { goos: darwin, goarch: arm64, runner: macos-latest, cgo: 1 }
-          - { goos: darwin, goarch: amd64, runner: macos-latest, cgo: 1 }
-          - { goos: linux, goarch: amd64, runner: ubuntu-latest, cgo: 0 }
-          - { goos: linux, goarch: arm64, runner: ubuntu-latest, cgo: 0 }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: build
+      # Pure Go on this platform: the power layer shells out to systemd-inhibit,
+      # journalctl and rtcwake rather than linking anything, so it cross-compiles
+      # from here without a toolchain.
+      - name: build linux/arm64
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: ${{ matrix.cgo }}
+          GOOS: linux
+          GOARCH: arm64
+          CGO_ENABLED: 0
         run: go build ./...

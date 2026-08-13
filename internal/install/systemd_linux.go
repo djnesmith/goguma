@@ -14,7 +14,7 @@ func platformArtifacts(l paths.Layout) []string {
 	return []string{
 		l.DaemonUnitFile(),
 		l.HelperUnitFile(),
-		paths.HelperBinary,
+		l.HelperBinary,
 		// The unprivileged staging copy; see the darwin equivalent.
 		filepath.Join(l.BinDir, "goguma-helper"),
 	}
@@ -130,7 +130,7 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 			if err := run("systemctl", "--user", "daemon-reload"); err != nil {
 				return err
 			}
-			return run("systemctl", "--user", "enable", "--now", paths.DaemonUnit)
+			return run("systemctl", "--user", "enable", "--now", l.DaemonService)
 		},
 	})
 
@@ -138,17 +138,17 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 		uid := os.Getuid()
 
 		p.Steps = append(p.Steps, Step{
-			Description: fmt.Sprintf("install the privileged helper to %s", paths.HelperBinary),
+			Description: fmt.Sprintf("install the privileged helper to %s", l.HelperBinary),
 			Privileged:  true,
-			Path:        paths.HelperBinary,
+			Path:        l.HelperBinary,
 			Run: func() error {
-				if err := sudoRun("mkdir", "-p", filepath.Dir(paths.HelperBinary)); err != nil {
+				if err := sudoRun("mkdir", "-p", filepath.Dir(l.HelperBinary)); err != nil {
 					return err
 				}
 				// Root-owned; see the darwin note on why this must not be
 				// writable by the unprivileged user.
 				return sudoRun("install", "-o", "root", "-g", "root", "-m", "755",
-					helperSrc, paths.HelperBinary)
+					helperSrc, l.HelperBinary)
 			},
 		}, Step{
 			Description: "write the system systemd unit for the helper",
@@ -156,7 +156,7 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 			Path:        l.HelperUnitFile(),
 			Run: func() error {
 				return writeFileSudo(l.HelperUnitFile(),
-					[]byte(helperUnit(paths.HelperBinary, uid)), 0o644)
+					[]byte(helperUnit(l.HelperBinary, uid)), 0o644)
 			},
 		}, Step{
 			Description: "enable and start the privileged helper",
@@ -165,7 +165,7 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 				if err := sudoRun("systemctl", "daemon-reload"); err != nil {
 					return err
 				}
-				return sudoRun("systemctl", "enable", "--now", paths.HelperUnit)
+				return sudoRun("systemctl", "enable", "--now", l.HelperService)
 			},
 		})
 	}
@@ -176,10 +176,10 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 func Uninstall(l paths.Layout, keepState bool) []error {
 	var errs []error
 
-	_ = run("systemctl", "--user", "disable", "--now", paths.DaemonUnit)
+	_ = run("systemctl", "--user", "disable", "--now", l.DaemonService)
 
 	if fileExists(l.HelperUnitFile()) {
-		if err := sudoRun("systemctl", "disable", "--now", paths.HelperUnit); err != nil {
+		if err := sudoRun("systemctl", "disable", "--now", l.HelperService); err != nil {
 			errs = append(errs, fmt.Errorf("stopping the helper: %w", err))
 		}
 	}
@@ -198,7 +198,7 @@ func Uninstall(l paths.Layout, keepState bool) []error {
 	_ = run("systemctl", "--user", "daemon-reload")
 
 	hadHelperUnit := fileExists(l.HelperUnitFile())
-	for _, path := range []string{l.HelperUnitFile(), paths.HelperBinary} {
+	for _, path := range []string{l.HelperUnitFile(), l.HelperBinary} {
 		if !fileExists(path) {
 			continue
 		}

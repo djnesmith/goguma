@@ -146,6 +146,12 @@ struct PopoverView: View {
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .themeProse()
                 }
+                if store.state == .disconnected, Onboarding.canSelfInstall {
+                    Button("Set up…") { Onboarding.runInstaller() }
+                        .buttonStyle(FooterButtonStyle())
+                        .accessibilityHint(
+                            "Opens Terminal and runs the installer, which will ask for your password")
+                }
                 Spacer(minLength: Theme.Space.sm)
                 if let hold = store.status?.primaryHold, store.state == .holding {
                     Text(holdCounter(hold))
@@ -218,7 +224,9 @@ struct PopoverView: View {
     private var subheadline: String? {
         switch store.state {
         case .disconnected:
-            return "Run `goguma install` in Terminal."
+            // Differs for a downloaded app, where `goguma` is not on the PATH
+            // and the old advice could not be followed. See Onboarding.
+            return Onboarding.disconnectedAdvice
         case .paused:
             return "No wakes will be scheduled and no holds taken until you resume."
         case .cutout:

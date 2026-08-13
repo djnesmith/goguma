@@ -149,12 +149,23 @@ enum DaemonError: Error, LocalizedError, Sendable, Equatable {
     /// What the user should do next. Empty when there's nothing useful to say.
     var recoveryHint: String {
         switch self {
+        // Both of these used to name a command the reader may not have. Someone
+        // who installed the CLI does have `goguma` on their PATH; someone who
+        // downloaded the app has it only inside the bundle, and telling them to
+        // run it in Terminal is advice that cannot be followed. Onboarding knows
+        // which case this is.
         case .notInstalled:
-            "Run `goguma install` in Terminal to set it up."
+            Onboarding.canSelfInstall
+                ? "Open the goguma menu and choose Set up."
+                : "Run `goguma install` in Terminal to set it up."
         case .notRunning:
-            "Run `goguma install` in Terminal to set it up. It asks for your Mac "
-                + "login password, which macOS needs to install the part that can wake "
-                + "a sleeping Mac."
+            Onboarding.canSelfInstall
+                ? "Open the goguma menu and choose Set up. It asks for your Mac "
+                    + "login password, which macOS needs to install the part that can "
+                    + "wake a sleeping Mac."
+                : "Run `goguma install` in Terminal to set it up. It asks for your Mac "
+                    + "login password, which macOS needs to install the part that can wake "
+                    + "a sleeping Mac."
         case .permissionDenied:
             "Check the permissions on ~/Library/Application Support/goguma."
         case .timedOut:

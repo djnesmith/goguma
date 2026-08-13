@@ -18,6 +18,9 @@ func testLayout(t *testing.T) paths.Layout {
 		BinDir:        filepath.Join(root, "bin"),
 		UnitDir:       filepath.Join(root, "units"),
 		SystemUnitDir: filepath.Join(root, "system-units"),
+		DaemonService: "test.goguma.absent.daemon",
+		HelperService: "test.goguma.absent.helper",
+		HelperBinary:  filepath.Join(root, "libexec", "goguma-helper"),
 	}
 }
 

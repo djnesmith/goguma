@@ -19,3 +19,4 @@ adrafinil-main*.zip
 
 # Design reference drop — screenshots only, not part of the build.
 refs/
+dist/

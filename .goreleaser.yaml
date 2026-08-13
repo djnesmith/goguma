@@ -6,12 +6,18 @@ before:
   hooks:
     - go mod tidy
 
-# CGO_ENABLED=1 is required, not a preference. internal/power/darwin.go talks to
-# IOKit and CoreFoundation through cgo to take the idle-sleep assertion and read
-# the SMC, and with cgo off that file is dropped and the build fails outright on
-# `undefined: darwinPlatform`. This is also why releases are cut on a macOS
-# runner: cross-compiling darwin with cgo needs the macOS SDK.
-
+# cgo is per-platform here, and both settings are load-bearing.
+#
+# darwin needs CGO_ENABLED=1: internal/power/darwin.go reaches IOKit and
+# CoreFoundation to take the idle-sleep assertion and read the SMC, and with cgo
+# off that file is dropped and the build fails on "undefined: darwinPlatform".
+# That is why releases are cut on a macOS runner, since cgo cross-compiling
+# needs the target platform's SDK.
+#
+# linux needs CGO_ENABLED=0 for the opposite reason: its power layer shells out
+# to systemd-inhibit, journalctl and rtcwake rather than linking anything, so it
+# is pure Go and cross-compiles cleanly from the same macOS runner. Leaving cgo
+# on would ask that runner for a Linux cross-toolchain it does not have.
 builds:
   # All four binaries ship together: `goguma install` copies the daemon, the
   # mark wrapper and the helper out of the same directory as the CLI, so an
@@ -20,46 +26,46 @@ builds:
   - id: goguma
     main: ./cmd/goguma
     binary: goguma
-    env: [CGO_ENABLED=1]
-    goos: [darwin]
+    env: &darwin_env [CGO_ENABLED=1]
+    goos: [darwin, linux]
     goarch: [amd64, arm64]
     ldflags: &ldflags
       - -s -w
       - -X main.version={{ .Version }}
+    overrides: &linux_cgo_off
+      - goos: linux
+        goarch: amd64
+        env: [CGO_ENABLED=0]
+      - goos: linux
+        goarch: arm64
+        env: [CGO_ENABLED=0]
 
   - id: goguma-daemon
     main: ./cmd/goguma-daemon
     binary: goguma-daemon
-    env: [CGO_ENABLED=1]
-    goos: [darwin]
+    env: *darwin_env
+    goos: [darwin, linux]
     goarch: [amd64, arm64]
     ldflags: *ldflags
+    overrides: *linux_cgo_off
 
   - id: goguma-helper
     main: ./cmd/goguma-helper
     binary: goguma-helper
-    env: [CGO_ENABLED=1]
-    goos: [darwin]
+    env: *darwin_env
+    goos: [darwin, linux]
     goarch: [amd64, arm64]
     ldflags: *ldflags
+    overrides: *linux_cgo_off
 
   - id: goguma-mark
     main: ./cmd/goguma-mark
     binary: goguma-mark
-    env: [CGO_ENABLED=1]
-    goos: [darwin]
+    env: *darwin_env
+    goos: [darwin, linux]
     goarch: [amd64, arm64]
     ldflags: *ldflags
-
-# Linux is deliberately not built here.
-#
-# The code exists and CI keeps it compiling and passing tests, but it has never
-# run on real Linux hardware, and shipping a binary nobody has executed is how
-# a launch thread fills with panics. There is also less for it to do: systemd
-# timers already support `WakeSystem=true`, which schedules an RTC wake
-# natively, so the gap goguma fills on macOS is mostly already filled there.
-# Add `linux` to the goos lists above once someone has run a real wake cycle on
-# a real machine.
+    overrides: *linux_cgo_off
 
 archives:
   - formats: [tar.gz]
@@ -80,27 +86,41 @@ changelog:
       - "^test:"
       - "^chore:"
 
-brews:
+# A cask rather than a formula. `brews:` was soft-deprecated in goreleaser 2.10
+# and removed in 2.16; Homebrew now prefers casks for pre-compiled binaries,
+# which is what these are.
+homebrew_casks:
   - name: goguma
+    directory: Casks
     repository:
       owner: junnam586
       name: homebrew-tap
     homepage: https://github.com/junnam586/goguma
-    description: Wakes your Mac for scheduled jobs, then lets it sleep again
-    license: MIT
+    description: Wakes your machine for scheduled jobs, then lets it sleep again
+    # Skipped unless a token that can push to the tap is present, so a tag cut
+    # without one still publishes a working release instead of building every
+    # artifact and then failing on the last step.
+    skip_upload: '{{ if eq (index .Env "HOMEBREW_TAP_GITHUB_TOKEN") "" }}true{{ else }}false{{ end }}'
+
+    # Tells Homebrew the binaries genuinely come from this repository, which is
+    # what lets it skip the "downloaded from the internet" quarantine dance.
+    url:
+      verified: github.com/junnam586/goguma
+
     # Deliberately does NOT install the daemon or the root helper. Those go in
     # behind an explicit `goguma install`, which states what needs a password
-    # and why. A formula that registered a root LaunchDaemon at `brew install`
-    # time would be doing that silently.
+    # and why. A cask that registered a root service at install time would be
+    # doing that silently.
     caveats: |
       goguma is installed but not yet running. To set up the background
       services:
 
         goguma install
 
-      That installs a user daemon and a small privileged helper. The helper
-      only blocks sleep and schedules wakes; everything else runs unprivileged.
-      Run `goguma install --dry-run` first to see exactly what it will do.
+      That installs a user-level daemon and a small privileged helper. The
+      helper only blocks sleep and schedules wakes; everything else runs
+      unprivileged. Run `goguma install --dry-run` first to see exactly what it
+      will do.
 
 release:
   draft: true

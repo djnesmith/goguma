@@ -21,6 +21,26 @@ type Layout struct {
 	UnitDir string
 	// SystemUnitDir is where the privileged helper's definition is written.
 	SystemUnitDir string
+
+	// DaemonService and HelperService name the two services to the init system:
+	// launchd labels on darwin, unit names on linux.
+	//
+	// Fields rather than the package constants they default to, because
+	// install.Uninstall stops services by name, and reading that name from a
+	// constant made the function impossible to test. A test could pass any
+	// Layout it liked and the teardown would still address the real services,
+	// so exercising it would stop the developer's own daemon. Everything else
+	// here is already per-Layout; these were the last two globals holding out.
+	DaemonService string
+	HelperService string
+
+	// HelperBinary is where the privileged helper is installed.
+	//
+	// A field for the same reason as the service names, and more urgently:
+	// uninstall removes this path with `sudo rm`. While it was a constant, a
+	// test that called Uninstall attempted to delete the real helper off the
+	// developer's machine, and was stopped only by sudo wanting a password.
+	HelperBinary string
 }
 
 func (l Layout) JobsFile() string   { return filepath.Join(l.StateDir, "jobs.json") }

@@ -30,17 +30,28 @@ machine is awake when they do.
 
 ## Installation
 
-Requires macOS 26+.
+Requires macOS 26+, or Linux with systemd.
+
+**Download** [the latest release](https://github.com/junnam586/goguma/releases/latest),
+drag goguma to Applications, and open it. It will offer to set itself up; the
+command line tools come with it, so this is the whole install.
+
+**Or from the command line:**
 
 ```sh
 brew install junnam586/tap/goguma
 goguma install
 ```
 
-Or with Go 1.26+:
+Both paths end in the same place: a background daemon, a privileged helper, and
+the `goguma` command. The app is a menu bar viewer for that daemon, so you can
+use either, both, or neither.
+
+Or download a release archive for your platform and run `./goguma install`
+from inside it. Or with Go 1.26+:
 
 ```sh
-go install github.com/junnam586/goguma/cmd/goguma@latest
+go install github.com/junnam586/goguma/cmd/...@latest
 ```
 
 From source:
@@ -51,8 +62,9 @@ go build -ldflags "-X main.version=$(git describe --tags --always)" -o bin/ ./cm
 ./bin/goguma install
 ```
 
-Linux builds and passes its tests, but has not yet been run on real hardware,
-so there is no release binary for it. Build from source if you want to try it.
+On Linux, goguma is aimed at laptops and desktops, since a machine that never
+suspends has nothing to miss. It is tested in CI but has had far less real-world
+use than the macOS build, so please report anything that looks wrong.
 
 `install` sets up a user daemon and a small privileged helper. The helper
 only blocks sleep and schedules wakes; everything else runs unprivileged.
@@ -115,7 +127,8 @@ hardware yet. macOS on Apple silicon is what's tested. Windows is not
 supported.
 
 **Where's the menu bar app?**
-In [`macos/`](macos/). Build it with `cd macos && swift build &&
+In the [release download](https://github.com/junnam586/goguma/releases/latest),
+or build it yourself from [`macos/`](macos/) with `cd macos &&
 ./scripts/make-app.sh`.
 
 **Where can I read more?**

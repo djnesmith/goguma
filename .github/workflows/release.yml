@@ -9,7 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # The command line release: four binaries per platform, archives, checksums,
+  # and the Homebrew formula.
+  cli:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,3 +37,120 @@ jobs:
           # default GITHUB_TOKEN cannot push to another repository, so without
           # this the formula step fails after the artifacts are already built.
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+  # The download: a signed, notarized, stapled disk image containing the menu
+  # bar app, with the command line tools bundled inside it.
+  #
+  # Runs after the CLI job so a failure here cannot leave a half-published
+  # release with no binaries in it.
+  app:
+    needs: cli
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: check signing credentials
+        id: creds
+        env:
+          CERT: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+        run: |
+          if [ -z "$CERT" ]; then
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::MACOS_CERTIFICATE_P12 is not set, so no app will be"
+            echo "::warning::published. The CLI release above is unaffected."
+          else
+            echo "have=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A dedicated keychain, not the login one: the runner has no login
+      # keychain worth speaking of, and a throwaway keychain means the private
+      # key cannot outlive the job.
+      - name: import the Developer ID certificate
+        if: steps.creds.outputs.have == 'true'
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$CERT_P12" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security import /tmp/cert.p12 -k build.keychain -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          # Without this, codesign blocks on a UI prompt that nothing can answer
+          # and the job hangs until it times out.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          rm -f /tmp/cert.p12
+          security find-identity -v -p codesigning build.keychain
+
+      - name: build and sign the app
+        if: steps.creds.outputs.have == 'true'
+        env:
+          VERSION: ${{ github.ref_name }}
+          SIGN_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: cd macos && ./scripts/make-app.sh release
+
+      # Notarized and stapled in two passes, app first and disk image second,
+      # because a ticket is bound to the hash of the thing it was issued for.
+      #
+      # Notarizing only the disk image leaves the app inside it without a ticket
+      # of its own. That looks fine in testing, because a machine that can reach
+      # Apple verifies the app online. It fails on a machine that cannot: the
+      # user drags goguma to Applications, opens it on a plane or behind a
+      # captive portal, and macOS reports that the app is damaged, which is a
+      # spectacularly misleading way to say "I could not phone home".
+      #
+      # So the app is notarized and stapled before the disk image is built
+      # around it, and the disk image is then notarized and stapled in turn.
+      - name: notarize and staple the app
+        if: steps.creds.outputs.have == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # ditto, not zip: zip does not preserve the symlinks and extended
+          # attributes inside a bundle, and notarization rejects what comes out.
+          ditto -c -k --keepParent macos/build/goguma.app /tmp/goguma-app.zip
+          xcrun notarytool submit /tmp/goguma-app.zip \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple macos/build/goguma.app
+          xcrun stapler validate macos/build/goguma.app
+          # Stapling writes into the bundle, so prove the seal still holds.
+          codesign --verify --deep --strict macos/build/goguma.app
+
+      - name: package, notarize and staple the disk image
+        if: steps.creds.outputs.have == 'true'
+        env:
+          VERSION: ${{ github.ref_name }}
+          SIGN_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cd macos && ./scripts/make-dmg.sh && cd ..
+          DMG="macos/build/goguma-${VERSION}.dmg"
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$DMG"
+          # Proves the finished artifact is what a stranger's Mac will accept,
+          # rather than trusting that the previous steps meant to.
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature -vv "$DMG"
+          cp "$DMG" "goguma_${VERSION}.dmg"
+
+      - name: attach the disk image to the release
+        if: steps.creds.outputs.have == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: gh release upload "$VERSION" "goguma_${VERSION}.dmg" --clobber

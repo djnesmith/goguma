@@ -1,6 +1,8 @@
 package install
 
 import (
+	"bytes"
+	"encoding/xml"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,11 +13,27 @@ import (
 	"github.com/junnam586/goguma/internal/paths"
 )
 
+// plistText escapes a value for interpolation into a plist's XML.
+//
+// The plists below are assembled with Sprintf, so any path containing `&` or
+// `<` produced a document launchd cannot parse. That failure is silent in the
+// worst way: install reports every step succeeded, launchctl declines to load
+// the job, and the user is left with a tool that never wakes anything and no
+// indication why. Paths are not all controlled by us — the state directory is
+// user-settable, and a home directory is whatever it is.
+func plistText(s string) string {
+	var b bytes.Buffer
+	if err := xml.EscapeText(&b, []byte(s)); err != nil {
+		return s
+	}
+	return b.String()
+}
+
 func platformArtifacts(l paths.Layout) []string {
 	return []string{
 		l.DaemonPlist(),
 		l.HelperPlist(),
-		paths.HelperBinary,
+		l.HelperBinary,
 		// The unprivileged staging copy. Listed so uninstall's promise that
 		// every file it wrote is removed stays literally true.
 		filepath.Join(l.BinDir, "goguma-helper"),
@@ -27,7 +45,7 @@ func platformArtifacts(l paths.Layout) []string {
 // KeepAlive with SuccessfulExit=false restarts the daemon if it crashes but
 // not if it exits cleanly, so `launchctl bootout` during uninstall does not
 // fight a respawn. RunAtLoad starts it at login.
-func daemonPlist(binary, logDir string) string {
+func daemonPlist(label, binary, logDir string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -53,7 +71,9 @@ func daemonPlist(binary, logDir string) string {
     <string>%s</string>
 </dict>
 </plist>
-`, paths.DaemonLabel, binary, filepath.Join(logDir, "daemon.log"), filepath.Join(logDir, "daemon.err.log"))
+`, plistText(label), plistText(binary),
+		plistText(filepath.Join(logDir, "daemon.log")),
+		plistText(filepath.Join(logDir, "daemon.err.log")))
 }
 
 // helperPlist is the root LaunchDaemon.
@@ -62,7 +82,7 @@ func daemonPlist(binary, logDir string) string {
 // at boot before any user logs in, which is what lets it clear a sleep block
 // stranded by a crash or a forced power-off. Without that, a machine could
 // come back up permanently unable to sleep.
-func helperPlist(binary string, ownerUID int) string {
+func helperPlist(label, binary string, ownerUID int) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -85,7 +105,7 @@ func helperPlist(binary string, ownerUID int) string {
     <string>/var/log/goguma-helper.log</string>
 </dict>
 </plist>
-`, paths.HelperLabel, binary, ownerUID)
+`, plistText(label), plistText(binary), ownerUID)
 }
 
 // BuildPlan assembles the install steps for macOS.
@@ -147,29 +167,29 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 			if err := os.MkdirAll(filepath.Dir(l.DaemonPlist()), 0o755); err != nil {
 				return err
 			}
-			return os.WriteFile(l.DaemonPlist(), []byte(daemonPlist(binDaemon, l.LogDir)), 0o644)
+			return os.WriteFile(l.DaemonPlist(), []byte(daemonPlist(l.DaemonService, binDaemon, l.LogDir)), 0o644)
 		},
 	}, Step{
 		Description: "start the background service",
-		Run:         func() error { return loadAgent(l.DaemonPlist()) },
+		Run:         func() error { return loadAgent(l.DaemonService, l.DaemonPlist()) },
 	})
 
 	if withHelper {
 		uid := os.Getuid()
 
 		p.Steps = append(p.Steps, Step{
-			Description: fmt.Sprintf("install the privileged helper to %s", paths.HelperBinary),
+			Description: fmt.Sprintf("install the privileged helper to %s", l.HelperBinary),
 			Privileged:  true,
-			Path:        paths.HelperBinary,
+			Path:        l.HelperBinary,
 			Run: func() error {
-				if err := sudoRun("mkdir", "-p", filepath.Dir(paths.HelperBinary)); err != nil {
+				if err := sudoRun("mkdir", "-p", filepath.Dir(l.HelperBinary)); err != nil {
 					return err
 				}
 				// Root-owned and not group- or world-writable: a LaunchDaemon
 				// must never execute a binary the unprivileged user can
 				// rewrite, or the privilege separation is decorative.
 				return sudoRun("install", "-o", "root", "-g", "wheel", "-m", "755",
-					helperSrc, paths.HelperBinary)
+					helperSrc, l.HelperBinary)
 			},
 		}, Step{
 			Description: "write the LaunchDaemon for the privileged helper",
@@ -177,12 +197,12 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 			Path:        l.HelperPlist(),
 			Run: func() error {
 				return writeFileSudo(l.HelperPlist(),
-					[]byte(helperPlist(paths.HelperBinary, uid)), 0o644)
+					[]byte(helperPlist(l.HelperService, l.HelperBinary, uid)), 0o644)
 			},
 		}, Step{
 			Description: "load the privileged helper",
 			Privileged:  true,
-			Run:         func() error { return loadDaemon(l.HelperPlist()) },
+			Run:         func() error { return loadDaemon(l.HelperService, l.HelperPlist()) },
 		})
 	}
 	return p, nil
@@ -202,12 +222,12 @@ const (
 )
 
 // loadAgent registers a user LaunchAgent.
-func loadAgent(plist string) error {
+func loadAgent(label, plist string) error {
 	target := fmt.Sprintf("gui/%d", os.Getuid())
 	// Unload first so re-running install picks up a changed plist rather than
 	// silently keeping the old definition running.
-	_ = exec.Command("launchctl", "bootout", target+"/"+paths.DaemonLabel).Run()
-	waitUntilUnloaded(target+"/"+paths.DaemonLabel, false)
+	_ = exec.Command("launchctl", "bootout", target+"/"+label).Run()
+	waitUntilUnloaded(target+"/"+label, false)
 
 	out, err := exec.Command("launchctl", "bootstrap", target, plist).CombinedOutput()
 	if err != nil {
@@ -217,9 +237,9 @@ func loadAgent(plist string) error {
 }
 
 // loadDaemon registers the root LaunchDaemon.
-func loadDaemon(plist string) error {
-	_ = exec.Command("sudo", "launchctl", "bootout", "system/"+paths.HelperLabel).Run()
-	waitUntilUnloaded("system/"+paths.HelperLabel, true)
+func loadDaemon(label, plist string) error {
+	_ = exec.Command("sudo", "launchctl", "bootout", "system/"+label).Run()
+	waitUntilUnloaded("system/"+label, true)
 	return sudoRun("launchctl", "bootstrap", "system", plist)
 }
 
@@ -251,12 +271,12 @@ func Uninstall(l paths.Layout, keepState bool) []error {
 	var errs []error
 
 	target := fmt.Sprintf("gui/%d", os.Getuid())
-	if err := exec.Command("launchctl", "bootout", target+"/"+paths.DaemonLabel).Run(); err != nil {
+	if err := exec.Command("launchctl", "bootout", target+"/"+l.DaemonService).Run(); err != nil {
 		// Not an error worth reporting: the daemon may simply not be loaded.
 		_ = err
 	}
 	if fileExists(l.HelperPlist()) {
-		if err := sudoRun("launchctl", "bootout", "system/"+paths.HelperLabel); err != nil {
+		if err := sudoRun("launchctl", "bootout", "system/"+l.HelperService); err != nil {
 			errs = append(errs, fmt.Errorf("unloading the helper: %w", err))
 		}
 	}
@@ -273,7 +293,7 @@ func Uninstall(l paths.Layout, keepState bool) []error {
 		}
 	}
 
-	for _, path := range []string{l.HelperPlist(), paths.HelperBinary} {
+	for _, path := range []string{l.HelperPlist(), l.HelperBinary} {
 		if !fileExists(path) {
 			continue
 		}

@@ -40,16 +40,27 @@ struct DaemonUnavailableView: View {
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
             } else if error == nil {
-                Text("Run `goguma install` in Terminal to set it up.")
+                // Onboarding, not a literal: a downloaded app has no `goguma`
+                // on the PATH, so naming the command is advice its reader
+                // cannot act on.
+                Text(Format.noWidow(Onboarding.disconnectedAdvice))
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
             }
 
-            if let retry {
-                Button("Try Again", systemImage: Theme.Icon.refresh, action: retry)
-                    .buttonStyle(.bordered)
+            HStack(spacing: Theme.Space.sm) {
+                if Onboarding.canSelfInstall {
+                    Button("Set Up goguma", systemImage: Theme.Icon.add) {
+                        Onboarding.runInstaller()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                if let retry {
+                    Button("Try Again", systemImage: Theme.Icon.refresh, action: retry)
+                        .buttonStyle(.bordered)
+                }
             }
         }
         .padding(Theme.Space.xl)

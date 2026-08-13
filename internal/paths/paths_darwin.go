@@ -26,15 +26,18 @@ func platformLayout(home string) Layout {
 		BinDir:        filepath.Join(home, ".local", "bin"),
 		UnitDir:       filepath.Join(home, "Library", "LaunchAgents"),
 		SystemUnitDir: "/Library/LaunchDaemons",
+		HelperBinary:  HelperBinary,
+		DaemonService: DaemonLabel,
+		HelperService: HelperLabel,
 	}
 }
 
 // DaemonPlist is the user LaunchAgent definition path.
 func (l Layout) DaemonPlist() string {
-	return filepath.Join(l.UnitDir, DaemonLabel+".plist")
+	return filepath.Join(l.UnitDir, l.DaemonService+".plist")
 }
 
 // HelperPlist is the root LaunchDaemon definition path.
 func (l Layout) HelperPlist() string {
-	return filepath.Join(l.SystemUnitDir, HelperLabel+".plist")
+	return filepath.Join(l.SystemUnitDir, l.HelperService+".plist")
 }
