@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -68,10 +69,16 @@ func TestUnreadableTemperatureCannotFireThermalCutout(t *testing.T) {
 }
 
 func TestLowBatteryCutout(t *testing.T) {
-	cfg := config.Default() // 20%
+	cfg := config.Default()
 
 	t.Run("fires on battery below the threshold", func(t *testing.T) {
-		st := power.State{LidClosed: true, OnAC: false, BatteryPct: 20, TempC: tempOf(40)}
+		// Relative to the configured cutout, not a literal. Written as 20 it
+		// passed only because that happened to be the default, and went red
+		// the moment the default moved.
+		st := power.State{
+			LidClosed: true, OnAC: false,
+			BatteryPct: cfg.LowBatteryCutoutPct, TempC: tempOf(40),
+		}
 		d := EvaluateCutout(st, cfg, true)
 		if !d.Fire || d.Kind != model.CutoutLowBattery {
 			t.Errorf("expected a low-battery cutout, got %+v", d)
@@ -188,32 +195,39 @@ func TestThermalTakesPrecedenceOverBattery(t *testing.T) {
 // cannot un-wake a machine (by the time it fires the energy is spent), so on
 // a nearly-flat battery the decision has to be made before the wake.
 func TestWakeIsRefusedOnALowBattery(t *testing.T) {
-	cfg := config.Default() // 20%
+	cfg := config.Default()
+
+	// -1 is "never run on battery, nothing measured", which is the normal case
+	// and the one that gets the baseline.
+	const unmeasured = -1
 
 	tests := []struct {
-		name string
-		st   power.State
-		want bool
+		name  string
+		st    power.State
+		drain int
+		want  bool
 	}{
-		{"flat battery, on battery power", power.State{OnAC: false, BatteryPct: 12}, false},
-		{"at the release threshold", power.State{OnAC: false, BatteryPct: 20}, false},
-		// Just above the release threshold is still refused. Waking costs
-		// charge, so arriving at 21% means landing at or under the 20% limit
-		// and being cut off before the job finishes, energy spent for a run
-		// that did not happen.
-		{"just above the release threshold", power.State{OnAC: false, BatteryPct: 21}, false},
-		{"at the wake floor", power.State{OnAC: false, BatteryPct: 25}, false},
-		{"clear of the wake floor", power.State{OnAC: false, BatteryPct: 26}, true},
-		{"healthy battery", power.State{OnAC: false, BatteryPct: 80}, true},
-		// On AC there is no drain to protect against, so a low reading is
-		// irrelevant and refusing would only lose the job for nothing.
-		{"flat but plugged in", power.State{OnAC: true, BatteryPct: 3}, true},
-		// A desktop reports -1. Refusing there would disable the tool
-		// entirely on machines that have no battery to protect.
-		{"no battery present", power.State{OnAC: false, BatteryPct: -1}, true},
+		{"flat battery", power.State{OnAC: false, BatteryPct: 5}, unmeasured, false},
+		{"at the release threshold", power.State{OnAC: false, BatteryPct: 10}, unmeasured, false},
+		// One point of hysteresis above the cutout, and no more. A job with no
+		// measured cost is almost certainly seconds of held-awake time, which
+		// is a fraction of a percent; refusing it at 20% protected nothing.
+		{"one above the cutout", power.State{OnAC: false, BatteryPct: 11}, unmeasured, false},
+		{"clear of the floor", power.State{OnAC: false, BatteryPct: 12}, unmeasured, true},
+		{"well above the old floor", power.State{OnAC: false, BatteryPct: 20}, unmeasured, true},
+		// A job measured at 8% a run needs 8 points of room, not one.
+		{"expensive job, plenty of charge", power.State{OnAC: false, BatteryPct: 40}, 8, true},
+		{"expensive job, not enough room", power.State{OnAC: false, BatteryPct: 17}, 8, false},
+		{"expensive job, exactly at its floor", power.State{OnAC: false, BatteryPct: 18}, 8, false},
+		{"expensive job, one clear", power.State{OnAC: false, BatteryPct: 19}, 8, true},
+		// On AC there is no drain to protect against, however costly the job.
+		{"flat but plugged in", power.State{OnAC: true, BatteryPct: 3}, 30, true},
+		// A desktop reports -1. Refusing there would disable the tool entirely
+		// on machines that have no battery to protect.
+		{"no battery present", power.State{OnAC: false, BatteryPct: -1}, unmeasured, true},
 	}
 	for _, tc := range tests {
-		got, reason := ShouldScheduleWake(tc.st, cfg)
+		got, reason := ShouldScheduleWake(tc.st, cfg, tc.drain)
 		if got != tc.want {
 			t.Errorf("%s: ShouldScheduleWake = %v, want %v (reason %q)",
 				tc.name, got, tc.want, reason)
@@ -221,6 +235,39 @@ func TestWakeIsRefusedOnALowBattery(t *testing.T) {
 		if !got && reason == "" {
 			t.Errorf("%s: refused without explaining why", tc.name)
 		}
+	}
+}
+
+// TestAnExpensiveJobIsRefusedSoonerThanACheapOne is the whole point of the
+// change: the floor is the job's own cost, not one number for the machine.
+func TestAnExpensiveJobIsRefusedSoonerThanACheapOne(t *testing.T) {
+	cfg := config.Default()
+	st := power.State{OnAC: false, BatteryPct: 15}
+
+	if ok, _ := ShouldScheduleWake(st, cfg, -1); !ok {
+		t.Error("a job with no measured drain was refused at 15%")
+	}
+	if ok, _ := ShouldScheduleWake(st, cfg, 1); !ok {
+		t.Error("a job costing 1%% was refused at 15%")
+	}
+	if ok, reason := ShouldScheduleWake(st, cfg, 9); ok {
+		t.Errorf("a job costing 9%% was allowed at 15%%, which lands under the cutout (%q)", reason)
+	}
+}
+
+// TestTheRefusalSaysWhichLimitWasHit matters because the two cases call for
+// different actions: a low battery wants charging, an expensive job wants a
+// look at whether it should be waking the machine at all.
+func TestTheRefusalSaysWhichLimitWasHit(t *testing.T) {
+	cfg := config.Default()
+
+	_, cheap := ShouldScheduleWake(power.State{OnAC: false, BatteryPct: 10}, cfg, -1)
+	if strings.Contains(cheap, "per run") {
+		t.Errorf("a plain low battery blamed the job: %q", cheap)
+	}
+	_, costly := ShouldScheduleWake(power.State{OnAC: false, BatteryPct: 15}, cfg, 9)
+	if !strings.Contains(costly, "per run") {
+		t.Errorf("an expensive job was refused without saying so: %q", costly)
 	}
 }
 
@@ -232,7 +279,7 @@ func TestTemperatureDoesNotBlockScheduling(t *testing.T) {
 	// wakes for a hazard that will have passed; the reactive thermal cutout
 	// handles the temperature that actually matters, the one after waking.
 	hot := power.State{OnAC: true, BatteryPct: 100, TempC: tempOf(95)}
-	if ok, reason := ShouldScheduleWake(hot, cfg); !ok {
+	if ok, reason := ShouldScheduleWake(hot, cfg, -1); !ok {
 		t.Errorf("scheduling was refused on temperature alone: %q", reason)
 	}
 }
@@ -240,21 +287,21 @@ func TestTemperatureDoesNotBlockScheduling(t *testing.T) {
 // TestWakeFloorSitsAboveTheReleaseThreshold pins the relationship between the
 // two battery limits.
 //
-// If they were equal, a wake scheduled at one point above the cutout would
-// spend charge getting the machine up, arrive at or under the limit, and be
-// released immediately, burning battery for a job that never completed.
+// If they were equal, a wake scheduled at the cutout would spend charge
+// getting the machine up, arrive at the limit, and be released immediately,
+// burning battery for a job that never completed.
 func TestWakeFloorSitsAboveTheReleaseThreshold(t *testing.T) {
 	cfg := config.Default()
 
-	if wakeFloor(cfg) <= cfg.LowBatteryCutoutPct {
-		t.Fatalf("wake floor %d%% must be above the release threshold %d%%",
-			wakeFloor(cfg), cfg.LowBatteryCutoutPct)
+	for _, drain := range []int{-1, 0, 1, 5, 40} {
+		if got := wakeFloor(cfg, drain); got <= cfg.LowBatteryCutoutPct {
+			t.Errorf("wake floor %d%% at drain %d%% must be above the release threshold %d%%",
+				got, drain, cfg.LowBatteryCutoutPct)
+		}
 	}
 
-	// A machine woken exactly at the floor must still have headroom left after
-	// the wake, or the guard achieves nothing.
-	atFloor := power.State{OnAC: false, BatteryPct: wakeFloor(cfg)}
-	if ok, _ := ShouldScheduleWake(atFloor, cfg); ok {
+	atFloor := power.State{OnAC: false, BatteryPct: wakeFloor(cfg, -1)}
+	if ok, _ := ShouldScheduleWake(atFloor, cfg, -1); ok {
 		t.Error("scheduling was allowed with no headroom above the release threshold")
 	}
 }
@@ -265,12 +312,13 @@ func TestBatteryThresholdIsUserConfigurable(t *testing.T) {
 	cfg := config.Default()
 	cfg.LowBatteryCutoutPct = 10
 
-	if got, want := wakeFloor(cfg), 10+cfg.CutoutRearmMarginPct; got != want {
-		t.Errorf("wake floor = %d%%, want %d%% after lowering the cutout", got, want)
+	cfg.LowBatteryCutoutPct = 30
+	if got, want := wakeFloor(cfg, -1), 30+minWakeMarginPct; got != want {
+		t.Errorf("wake floor = %d%%, want %d%% after raising the cutout", got, want)
 	}
-	// A level that was refused at the default must now be allowed.
-	st := power.State{OnAC: false, BatteryPct: 20}
-	if ok, reason := ShouldScheduleWake(st, cfg); !ok {
-		t.Errorf("20%% was refused with a 10%% cutout: %s", reason)
+	// A level that is fine at the default must now be refused.
+	st := power.State{OnAC: false, BatteryPct: 25}
+	if ok, _ := ShouldScheduleWake(st, cfg, -1); ok {
+		t.Error("25%% was allowed with a 30%% cutout")
 	}
 }

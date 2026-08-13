@@ -9,41 +9,22 @@ on:
 permissions:
   contents: read
 
-# Shaped around what a private repository is billed.
+# Two jobs, one per platform.
 #
-# Actions is free and unmetered on public repositories. On private ones the Free
-# plan includes 2,000 minutes a month and macOS runners bill at a 10x
-# multiplier, so roughly 200 real macOS minutes. Three separate macOS jobs, each
-# paying its own checkout and toolchain setup, spent most of that on overhead
-# rather than on testing.
-#
-# So all macOS work is one job now, and everything that can run on Linux does.
-# The cost is coarser failure reporting: one red job instead of three, and no
-# parallelism between the darwin builds and the darwin tests. That is a fair
-# trade while this is private, and worth undoing if it goes public, where the
-# whole question disappears.
+# Kept to two rather than split finer because each additional job pays its own
+# checkout and toolchain setup, and the earlier three-macOS-job shape spent more
+# on that overhead than on testing. macOS also builds the Intel slice, since the
+# runner is arm64 and `go test` therefore proves nothing about darwin/amd64.
 jobs:
   # The platform goguma is developed and used on. Also builds the Intel slice,
   # because the runner is arm64 and `go test` therefore proves nothing about
   # darwin/amd64 — which is exactly where the missing-cgo break showed up.
   macos:
     name: test + build (macos)
-    # Not on every push, deliberately.
-    #
-    # macOS is the one platform the author develops on and runs the suite
-    # against locally, including the on-device probes, so a macOS job on every
-    # branch push mostly re-runs what was already checked a minute earlier — and
-    # it is the only job that costs anything meaningful while this repository is
-    # private. It runs where it earns its keep: on main, on pull requests, and
-    # whenever asked for by hand.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'pull_request' ||
-      github.ref == 'refs/heads/main'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -87,8 +68,8 @@ jobs:
     name: test + build (linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true

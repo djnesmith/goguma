@@ -127,24 +127,33 @@ struct PopoverView: View {
                             + Theme.Typography.Size.title * Theme.Typography.capHeightRatio
                             - Theme.Space.xxs
                     }
-                Text(Format.noWidow(headline))
+                Text("goguma")
                     .font(Theme.Typography.popoverTitle)
                     .foregroundStyle(Theme.Colors.heading)
                     .themeHeading()
-                    // Two lines is enough for every headline this produces, and
-                    // capping it stops one long job name from pushing the whole
-                    // popover down the screen.
-                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
+                Spacer(minLength: Theme.Space.sm)
+                authorLink
             }
 
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
-                if let detail = subheadline {
-                    Text(Format.noWidow(detail))
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .themeProse()
+                VStack(alignment: .leading, spacing: 2) {
+                    // The state, demoted from the title but still the first
+                    // thing under it and the only line here that changes
+                    // colour, so it stays the thing the eye lands on.
+                    Text(Format.noWidow(headline))
+                        .font(Theme.Typography.headline)
+                        .foregroundStyle(stateColour)
+                        .themeHeading()
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let detail = subheadline {
+                        Text(Format.noWidow(detail))
+                            .font(Theme.Typography.caption)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .themeProse()
+                    }
                 }
                 if store.state == .disconnected, Onboarding.canSelfInstall {
                     Button("Set up…") { Onboarding.runInstaller() }
@@ -278,7 +287,16 @@ struct PopoverView: View {
             if store.nextWake != nil {
                 return "Your Mac can sleep. It'll be woken when a job is due."
             }
-            if !store.wakeSuppressed.isEmpty { return store.wakeSuppressed }
+            // Deliberately does NOT repeat store.wakeSuppressed.
+            //
+            // The schedule card below renders that reason in full, and the
+            // daemon writes it as a whole explanatory sentence: at 20% battery
+            // it is thirty words about thresholds. Returning it here printed
+            // the identical paragraph twice, a few points apart, on a 340pt
+            // surface. The header says the situation, the card says why.
+            if !store.wakeSuppressed.isEmpty {
+                return "Nothing is scheduled. See below for why."
+            }
             return store.jobs.isEmpty
                 ? "No jobs registered yet."
                 : "Your Mac can sleep. Nothing is due to wake it."
@@ -705,6 +723,58 @@ struct PopoverView: View {
         }
     }
 
+    // MARK: - Brand
+
+    /// The credit, on the title's row.
+    ///
+    /// It had a row of its own above the title, which left a near-empty band
+    /// across the top of the popover: one short string, right-aligned, over an
+    /// otherwise blank line. Beside the name it costs no vertical space and
+    /// reads as a byline, which is what it is.
+    private var authorLink: some View {
+        Group {
+            Link(destination: URL(string: Self.authorURL)!) {
+                HStack(spacing: 2) {
+                    Text(Self.authorLabel)
+                    Image(systemName: "arrow.up.right")
+                        .font(Theme.Typography.iconInline)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(FooterButtonStyle(underlinesOnHover: true))
+            .help("Open Jun Nam's LinkedIn profile")
+            .accessibilityLabel("Open the profile of Jun Nam, who made goguma")
+        }
+        .font(Theme.Typography.caption)
+        // Sits on the title's baseline rather than its centre, so it reads as
+        // a credit beside the name and not as a control floating next to it.
+        .alignmentGuide(.firstTextBaseline) { d in d[.firstTextBaseline] }
+    }
+
+    // Author rather than project: the popover already says goguma on the left,
+    // so repeating the repository path here spends the widest row on the page
+    // saying the same word twice. Swap to the site when there is one.
+    /// The state's own colour, so the demoted line still reads as the live
+    /// value rather than as a second subtitle.
+    private var stateColour: Color {
+        switch store.state {
+        case .holding: Theme.Colors.stateHolding
+        case .cutout: Theme.Colors.stateCutout
+        case .paused: Theme.Colors.statePaused
+        case .disconnected: Theme.Colors.textSecondary
+        case .idle: Theme.Colors.heading
+        }
+    }
+
+    /// The author, not the project.
+    ///
+    /// The title directly below already says goguma, so pointing this at the
+    /// repository would spend the widest row on the surface saying the same
+    /// word twice. Someone who wants the source has the title, the README and
+    /// the release they installed from; this row is for the person behind it.
+    private static let authorURL = "https://www.linkedin.com/in/jun-nam-4ba16b326/"
+    private static let authorLabel = "made by Jun Nam"
+
     // MARK: - Footer
 
     /// Quiet navigation, not links.
@@ -718,10 +788,48 @@ struct PopoverView: View {
         HStack(spacing: Theme.Space.md) {
             footerButton("Jobs", icon: Theme.Icon.jobs) { coordinator.showJobs() }
             footerButton("Settings", icon: Theme.Icon.settings) { coordinator.showSettings() }
-            Spacer(minLength: Theme.Space.md)
+            Spacer(minLength: Theme.Space.sm)
+            temperature
             footerButton("Quit", icon: Theme.Icon.quit) { coordinator.quit() }
         }
     }
+
+    /// CPU temperature, when the machine reports one.
+    ///
+    /// Here rather than in the status block because it is context, not state:
+    /// the number only becomes interesting as it approaches the thermal cutout,
+    /// and putting it in the footer means it is available without competing
+    /// with what goguma is currently doing.
+    ///
+    /// Omitted entirely when the platform has no reading, rather than shown as
+    /// a dash. A machine with no sensor is not a machine at 0°C, and the
+    /// thermal cutout treats an unavailable sensor as unverifiable rather than
+    /// as cool.
+    @ViewBuilder
+    private var temperature: some View {
+        if let celsius = store.status?.power.cpuTempC,
+            let text = Format.temperature(celsius)
+        {
+            HStack(spacing: Theme.Space.xs) {
+                Image(systemName: "thermometer.medium")
+                    .font(Theme.Typography.iconInline)
+                Text(text)
+                    .font(Theme.Typography.caption)
+                    .monospacedDigit()
+            }
+            // Warm once it is within ten degrees of the cutout, so the colour
+            // arrives before the release does rather than reporting it.
+            .foregroundStyle(
+                celsius >= Self.warmThresholdC
+                    ? Theme.Colors.warning : Theme.Colors.textTertiary
+            )
+            .help("CPU temperature. Holds are released above the thermal cutout.")
+            .accessibilityLabel("CPU temperature \(text)")
+        }
+    }
+
+    /// Ten degrees below the daemon's default 80°C thermal cutout.
+    private static let warmThresholdC: Double = 70
 
     private func footerButton(
         _ title: String, icon: String, action: @escaping () -> Void
@@ -744,7 +852,14 @@ struct PopoverView: View {
 }
 
 /// Secondary text that lifts to primary on hover and dims while pressed.
+///
+/// `underlinesOnHover` is for the one item that leaves the app. Everything else
+/// in the footer navigates within it, where an underline would be web chrome in
+/// a Mac popover; a link out is the exception, because the underline is what
+/// says "this opens a browser" before you click it.
 private struct FooterButtonStyle: ButtonStyle {
+    var underlinesOnHover = false
+
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -752,8 +867,15 @@ private struct FooterButtonStyle: ButtonStyle {
             .foregroundStyle(
                 hovering ? Theme.Colors.textPrimary : Theme.Colors.textSecondary
             )
+            .underline(underlinesOnHover && hovering)
             .opacity(configuration.isPressed ? 0.55 : 1)
-            .onHover { hovering = $0 }
+            .contentShape(Rectangle())
+            .onHover { isHovering in
+                // Eased rather than snapped: the colour lift and the rule
+                // arriving together at speed reads as a flicker on a small
+                // target, and this one is four words wide.
+                withAnimation(.easeOut(duration: 0.12)) { hovering = isHovering }
+            }
     }
 }
 

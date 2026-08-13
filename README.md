@@ -2,7 +2,7 @@
 
 # goguma
 
-**Wakes your machine for scheduled jobs,<br>and lets it sleep the rest of the time.**
+**Wakes your machine for scheduled jobs,<br>and lets it sleep otherwise.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
@@ -10,45 +10,80 @@
 
 </div>
 
-## Why?
+## What it does
 
-If your machine is asleep when a cron job is scheduled to run, the job
-doesn't run. Nothing fails, nothing retries; it just doesn't happen.
+goguma wakes your machine shortly before each scheduled job, keeps it awake
+while the job runs, and lets it sleep again as soon as the job is done.
 
-goguma wakes the machine shortly before each job, keeps it awake while the
-job runs, and lets it go back to sleep afterwards. It doesn't replace cron,
-launchd, or systemd; they keep running your jobs. goguma makes sure the
-machine is awake when they do.
+It does not run your jobs. It makes sure the machine is awake when they fire.
+
+A sleeping machine does not queue the jobs it missed and catch up later. It
+misses them outright. Nothing fails, nothing retries, and no error is written
+anywhere, because as far as the scheduler is concerned nothing went wrong. You
+find out weeks later, when you notice the digest you set up has been arriving
+on some days and not others.
+
+## Are you missing runs?
+
+`goguma import` reads what is already scheduled on your machine and reports
+which jobs have been missing runs, and how often:
+
+<div align="center">
+
+![goguma import finding jobs that have been silently missing runs](Docs/media/import.gif)
+
+</div>
+
+`import` is read-only.
 
 ## Features
 
-- Finds your jobs by scanning crontab, launchd, systemd, and app schedulers
-- Wakes the machine right before each job fires
-- Sleeps again as soon as the job exits; a 2-second job holds sleep for 2 seconds
+- Finds the scheduled work you already have. If Claude, an agent framework, or
+  anything else set up a nightly digest, a repo watcher or a morning briefing,
+  it scheduled that through cron or launchd underneath, which is exactly where
+  goguma looks. You do not register anything by hand
+- Tells you which of them have been missing runs, and how often
+- Wakes the machine right before each job fires, and sleeps again the moment
+  it exits
+- Learns how long each job takes, so the window fits the work instead of
+  guessing
 - Ends a hold early if the machine gets hot or the battery gets low
-- Comes with a menu bar app for macOS
+- Menu bar app for macOS, so it is all visible without the terminal
 
 ## Installation
 
 Requires macOS 26+, or Linux with systemd.
 
-**Download** [the latest release](https://github.com/junnam586/goguma/releases/latest),
-drag goguma to Applications, and open it. It will offer to set itself up; the
-command line tools come with it, so this is the whole install.
+### Download the app
 
-**Or from the command line:**
+[**Download goguma for macOS**](https://github.com/junnam586/goguma/releases/latest),
+drag it to Applications, and open it. It will offer to set itself up, and the
+command line tools are inside the app, so this is the whole install.
+
+<div align="center">
+
+<img src="Docs/media/menubar.png" alt="The goguma menu bar popover, showing the next wake and the jobs it is watching" width="480">
+
+</div>
+
+I'd suggest this one. The menu bar shows whether the machine is being held
+awake and what for, when the next wake is and which job it is for, and how long
+each job has been taking. Keep it awake, skip the next wake, or pause it
+entirely without opening a terminal.
+
+### Or install the CLI only
 
 ```sh
 brew install junnam586/tap/goguma
 goguma install
 ```
 
-Both paths end in the same place: a background daemon, a privileged helper, and
-the `goguma` command. The app is a menu bar viewer for that daemon, so you can
-use either, both, or neither.
+Both paths end in the same place: a background daemon, a privileged helper and
+the `goguma` command. The app is a viewer for that daemon, so adding it later
+is just opening it, and removing it changes nothing about your jobs.
 
-Or download a release archive for your platform and run `./goguma install`
-from inside it. Or with Go 1.26+:
+Other ways: download a release archive for your platform and run
+`./goguma install` from inside it, or with Go 1.26+:
 
 ```sh
 go install github.com/junnam586/goguma/cmd/...@latest
@@ -71,6 +106,12 @@ only blocks sleep and schedules wakes; everything else runs unprivileged.
 Use `--dry-run` to see what it would do first.
 
 ## Usage
+
+If you installed the app, most of this is a click instead. The menu bar shows
+what is being held awake and what is coming next, the jobs window lists
+everything with its learned duration and lets you add, edit or pause a job,
+and settings covers the timing and safety limits. The commands below are the
+same features for people who would rather type.
 
 ```sh
 goguma import    # find scheduled jobs on this machine
@@ -105,10 +146,10 @@ start, end, and exit code, so the machine sleeps the moment the job is done:
 
 ## Safety
 
-Holding a lid-closed laptop awake shouldn't be able to hurt it. A hold is
-released early if the machine gets too hot (80°C by default) or the battery
-drops below 20%, so a laptop can't cook or drain in a bag. If a job hangs,
-a time limit learned from its previous runs ends the hold.
+A hold is released early if the machine gets too hot (80°C by default) or the
+battery drops below 20%, so a laptop in a bag cannot overheat or run itself
+flat. If a job hangs, a time limit learned from its previous runs ends the
+hold rather than letting it run forever.
 
 ## FAQ
 

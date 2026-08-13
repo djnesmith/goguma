@@ -18,13 +18,13 @@ func TestUnreadablePowerDoesNotLookLikeAFlatBattery(t *testing.T) {
 	cfg := config.Default()
 
 	// The zero value is the bug: it is a valid-looking flat battery.
-	if safe, _ := ShouldScheduleWake(power.State{}, cfg); safe {
+	if safe, _ := ShouldScheduleWake(power.State{}, cfg, -1); safe {
 		t.Fatal("precondition: a 0% on-battery state should suppress the wake")
 	}
 
 	// The sentinel a failed read must produce instead.
 	unknown := power.State{BatteryPct: -1}
-	if safe, reason := ShouldScheduleWake(unknown, cfg); !safe {
+	if safe, reason := ShouldScheduleWake(unknown, cfg, -1); !safe {
 		t.Fatalf("an unknown battery must not suppress the wake, got: %s", reason)
 	}
 	// `holding: true`; the cutout only has anything to release while a hold

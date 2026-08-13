@@ -24,25 +24,32 @@ func (d *Daemon) scheduleNextWake(now time.Time, cfg config.Config) {
 	st := d.lastState
 	d.mu.RUnlock()
 
-	if safe, reason := ShouldScheduleWake(st, cfg); !safe {
-		d.mu.Lock()
-		had := d.nextWake != nil
-		d.nextWake, d.nextJob, d.nextFire = nil, "", nil
-		d.wakeOK, d.wakeErr = false, ""
-		d.wakeSuppressed = reason
-		d.mu.Unlock()
+	// The target is chosen before the battery decision, because that decision
+	// now depends on which job it is: a job that has been costing a percent a
+	// run is refused far sooner than one that costs nothing measurable. It used
+	// to be a blanket gate evaluated first, which is what made it a single flat
+	// threshold for every job on the machine.
+	job, fire, wakeAt, ok := d.nextWakeTarget(now, cfg)
+	if ok {
+		if safe, reason := ShouldScheduleWake(st, cfg, d.expectedDrainPct(job)); !safe {
+			d.mu.Lock()
+			had := d.nextWake != nil
+			d.nextWake, d.nextJob, d.nextFire = nil, "", nil
+			d.wakeOK, d.wakeErr = false, ""
+			d.wakeSuppressed = reason
+			d.mu.Unlock()
 
-		if had {
-			d.log.Warn("cancelling the scheduled wake", "reason", reason)
-			_ = d.helper.CancelWake()
+			if had {
+				d.log.Warn("cancelling the scheduled wake", "reason", reason)
+				_ = d.helper.CancelWake()
+			}
+			return
 		}
-		return
 	}
 	d.mu.Lock()
 	d.wakeSuppressed = ""
 	d.mu.Unlock()
 
-	job, fire, wakeAt, ok := d.nextWakeTarget(now, cfg)
 	if !ok {
 		d.mu.Lock()
 		had := d.nextWake != nil

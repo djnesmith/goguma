@@ -90,31 +90,61 @@ func EvaluateCutout(st power.State, cfg config.Config, holding bool) CutoutDecis
 // so its temperature at scheduling time says nothing useful about its
 // temperature hours later at wake time. Charge only ever falls while asleep,
 // which makes it the one signal that remains meaningful.
-// The wake floor sits above the release threshold by a margin, rather than at
-// it. Waking at exactly the cutout level is self-defeating: the wake itself
-// costs charge, so the machine arrives already at or under the limit, the
-// cutout fires immediately, and the hold is released before the job can
-// finish. The result is energy spent for a run that did not happen, precisely
-// the waste this check exists to avoid.
+// The wake floor sits above the release threshold, but only by what the job
+// is actually going to cost.
 //
-// The rearm margin is reused because it already expresses the same idea: how
-// far above the danger line counts as genuinely clear.
-func wakeFloor(cfg config.Config) int {
-	return cfg.LowBatteryCutoutPct + cfg.CutoutRearmMarginPct
+// Waking at exactly the cutout level is self-defeating: the wake itself costs
+// charge, so the machine arrives at or under the limit, the cutout fires, and
+// the hold is released before the job can finish. Energy spent for a run that
+// did not happen.
+//
+// But a flat margin above the cutout refuses far more than it needs to. Almost
+// every job here is seconds to a couple of minutes of held-awake time, which is
+// a fraction of a percent; refusing to wake at 24% for a 57-second sync
+// protected nobody from anything. So the margin is the job's own measured
+// drain, and only a job that genuinely eats charge pushes the floor up.
+//
+// drainPct is what the job has been observed to consume, or -1 when it has
+// never run on battery and there is nothing to read. Unknown gets the minimum,
+// deliberately: the baseline is the answer until evidence says otherwise.
+func wakeFloor(cfg config.Config, drainPct int) int {
+	margin := minWakeMarginPct
+	if drainPct > margin {
+		margin = drainPct
+	}
+	return cfg.LowBatteryCutoutPct + margin
 }
 
-func ShouldScheduleWake(st power.State, cfg config.Config) (bool, string) {
+// minWakeMarginPct is the smallest gap kept above the cutout.
+//
+// Not zero, because a machine sitting exactly on the threshold would wake,
+// trip the cutout, sleep, and wake again for the next job, oscillating on the
+// boundary and spending more on the flapping than on the work. One point is
+// enough hysteresis for that, and is itself larger than a typical job's drain.
+const minWakeMarginPct = 1
+
+func ShouldScheduleWake(st power.State, cfg config.Config, drainPct int) (bool, string) {
 	// An unknown battery level (-1, e.g. a desktop) is not a reason to refuse.
 	if st.OnAC || st.BatteryPct < 0 {
 		return true, ""
 	}
-	if floor := wakeFloor(cfg); st.BatteryPct <= floor {
-		return false, fmt.Sprintf(
-			"battery is at %d%% on battery power, staying asleep to preserve charge "+
-				"(needs more than %d%% to be worth waking, since holds are released at %d%%)",
-			st.BatteryPct, floor, cfg.LowBatteryCutoutPct)
+	floor := wakeFloor(cfg, drainPct)
+	if st.BatteryPct > floor {
+		return true, ""
 	}
-	return true, ""
+	// Says which of the two reasons applies, because they call for different
+	// actions: a low battery wants charging, an expensive job wants a look at
+	// whether it should be waking the machine at all.
+	if drainPct > minWakeMarginPct {
+		return false, fmt.Sprintf(
+			"battery is at %d%% and this job has been using about %d%% per run, "+
+				"which would take it under the %d%% floor where holds are released",
+			st.BatteryPct, drainPct, cfg.LowBatteryCutoutPct)
+	}
+	return false, fmt.Sprintf(
+		"battery is at %d%% on battery power, staying asleep to preserve charge "+
+			"(holds are released at %d%%)",
+		st.BatteryPct, cfg.LowBatteryCutoutPct)
 }
 
 // CutoutLatch suppresses re-acquisition after a cutout fires.

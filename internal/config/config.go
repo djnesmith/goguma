@@ -141,7 +141,7 @@ func Default() Config {
 		WakeReassertInterval: model.Duration(60 * time.Second),
 		UseWakeOrPowerOn:     false,
 		ThermalCutoutC:       80,
-		LowBatteryCutoutPct:  20,
+		LowBatteryCutoutPct:  10,
 		CutoutRearmMarginC:   5,
 		CutoutRearmMarginPct: 5,
 		NotifyOnMissedJob:    true,

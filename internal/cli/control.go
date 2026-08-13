@@ -184,10 +184,12 @@ func configGet(ctx *Context, args []string) error {
 		{"min_runs_for_estimate", fmt.Sprintf("%d runs", c.MinRunsForEstimate)},
 		{"thermal_cutout_c", fmt.Sprintf("%.0f°C", c.ThermalCutoutC)},
 		{"low_battery_cutout_pct", fmt.Sprintf("%d%%", c.LowBatteryCutoutPct) +
-			r.Muted(fmt.Sprintf("  holds released below this; will not wake below %d%%",
-				c.LowBatteryCutoutPct+c.CutoutRearmMarginPct))},
+			// No longer states a single wake floor, because there is not one:
+			// the floor is this plus whatever the job has been measured to
+			// cost, so it differs per job.
+			r.Muted("  holds released below this; wakes need this plus the job's own drain")},
 		{"cutout_rearm_margin_pct", fmt.Sprintf("%d%%", c.CutoutRearmMarginPct) +
-			r.Muted("  headroom above the cutout before holds or wakes resume")},
+			r.Muted("  headroom above the cutout before a released hold resumes")},
 		{"cutout_rearm_margin_c", fmt.Sprintf("%.0f°C", c.CutoutRearmMarginC) +
 			r.Muted("  how far it must cool before holds resume")},
 		{"webhook_url", orNone(r, c.WebhookURL)},
