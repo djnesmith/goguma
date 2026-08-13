@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam586/goguma/internal/model"
 )
 
 // TestIntervalWakeTargetDoesNotRecede is the end-to-end regression test for
@@ -14,7 +14,7 @@ import (
 // schedules were unanchored, each parse answered "one interval from now", so
 // the target moved forward by exactly the time between ticks. scheduleNextWake
 // compares the new target against the registered one, sees a different time,
-// and re-registers — every tick, forever. The wake was always in the future
+// and re-registers, every tick, forever. The wake was always in the future
 // and never arrived, so an interval job's machine was never woken.
 //
 // The assertion is the one the live reproduction failed: the same job, polled
@@ -58,7 +58,7 @@ func TestIntervalWakeTargetDoesNotRecede(t *testing.T) {
 			wake1.Format(time.RFC3339), wake2.Format(time.RFC3339))
 	}
 	if want := created.Add(6 * time.Hour); !fire1.Equal(want) {
-		t.Errorf("fire = %s, want %s — six hours from the job's created_at",
+		t.Errorf("fire = %s, want %s; six hours from the job's created_at",
 			fire1.Format(time.RFC3339), want.Format(time.RFC3339))
 	}
 }
@@ -69,7 +69,7 @@ func TestIntervalWakeTargetDoesNotRecede(t *testing.T) {
 // The job list feeds the GUI's countdown and the wake scheduler drives the
 // machine. They parse the same schedule in different files, so if they
 // anchored it differently the machine would wake at a time the user was never
-// shown — and neither number would look wrong on its own.
+// shown, and neither number would look wrong on its own.
 func TestIntervalJobListAgreesWithTheWakeScheduler(t *testing.T) {
 	d := testDaemon(t)
 	if err := d.store.Load(); err != nil {

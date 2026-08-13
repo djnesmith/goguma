@@ -1,11 +1,16 @@
 package daemon
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/scan"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/scan"
 )
 
 func candidate(name string, source scan.Source, wrappable bool) scan.Candidate {
@@ -47,7 +52,7 @@ func TestAdoptSkipsWrappableJobs(t *testing.T) {
 
 	// A wrappable job needs its command line edited before it can be detected.
 	// Adopting one unprompted creates a job that is registered, looks correct,
-	// and is recorded as never-detected on every run — a permanent warning
+	// and is recorded as never-detected on every run, a permanent warning
 	// about a configuration nobody chose.
 	d.adoptNew([]scan.Candidate{
 		candidate("crontab job", scan.SourceCrontab, true),
@@ -110,7 +115,7 @@ func TestRetireRemovesVanishedManagedJobs(t *testing.T) {
 	// The source now reports only one of them.
 	d.retireVanished([]scan.Entry{
 		{Name: "still there", Source: "hermes"},
-	}, []string{"hermes"})
+	}, []scan.Coverage{{Source: "hermes", Available: true}}, []string{"hermes"})
 
 	jobs := d.store.Jobs()
 	if len(jobs) != 1 || jobs[0].Name != "still there" {
@@ -133,7 +138,7 @@ func TestRetireNeverTouchesHandRegisteredJobs(t *testing.T) {
 	}
 
 	d.retireVanished([]scan.Entry{{Name: "something else", Source: "hermes"}},
-		[]string{"hermes"})
+		[]scan.Coverage{{Source: "hermes", Available: true}}, []string{"hermes"})
 
 	if len(d.store.Jobs()) != 1 {
 		t.Error("a hand-registered job was retired by a scan")
@@ -147,13 +152,165 @@ func TestRetireIgnoresASourceThatReturnedNothing(t *testing.T) {
 	}
 	d.adoptNew([]scan.Candidate{candidate("briefing", "hermes", false)}, []string{"hermes"})
 
-	// The source produced no entries at all. That is far more likely to be a
-	// momentarily unreadable file than every job having been deleted at once,
-	// so retiring on it would wipe the user's whole set over a transient error.
-	d.retireVanished(nil, []string{"hermes"})
+	// The read failed this pass. Retiring on it would wipe the user's whole
+	// set over a transient error, so a failed source retires nothing.
+	d.retireVanished(nil,
+		[]scan.Coverage{{Source: "hermes", Available: true, Err: errors.New("transient")}},
+		[]string{"hermes"})
 
 	if n := len(d.store.Jobs()); n != 1 {
-		t.Errorf("got %d jobs; an empty read must not retire anything", n)
+		t.Errorf("got %d jobs; a failed read must not retire anything", n)
+	}
+
+	// An unavailable source is the same story.
+	d.retireVanished(nil,
+		[]scan.Coverage{{Source: "hermes", Available: false}},
+		[]string{"hermes"})
+
+	if n := len(d.store.Jobs()); n != 1 {
+		t.Errorf("got %d jobs; an unavailable source must not retire anything", n)
+	}
+}
+
+func TestRetireFollowsACleanReadThatFoundNothing(t *testing.T) {
+	d := testDaemon(t)
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	d.adoptNew([]scan.Candidate{candidate("briefing", "hermes", false)}, []string{"hermes"})
+
+	// The user deleted (or paused) their only job in the source. The read
+	// succeeded and legitimately found nothing, and that is an authoritative
+	// answer: keeping the job means waking the machine for it forever.
+	d.retireVanished(nil,
+		[]scan.Coverage{{Source: "hermes", Available: true}},
+		[]string{"hermes"})
+
+	if n := len(d.store.Jobs()); n != 0 {
+		t.Errorf("got %d jobs; the last job of a cleanly-read source must be retirable", n)
+	}
+}
+
+func TestUpdateFollowsAScheduleChangeInTheSource(t *testing.T) {
+	d := testDaemon(t)
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	d.adoptNew([]scan.Candidate{candidate("briefing", "hermes", false)}, []string{"hermes"})
+
+	// The user moved the job an hour earlier in the source scheduler. Same
+	// name, so adoption skips it; only an update can follow the change.
+	d.updateChanged([]scan.Entry{{
+		Name: "briefing", Source: "hermes",
+		Schedule: "0 7 * * *", Command: "hermes run briefing",
+	}}, []string{"hermes"}, config.Default())
+
+	job, ok := d.store.Job("briefing")
+	if !ok {
+		t.Fatal("the job vanished during an update")
+	}
+	if job.Schedule != "0 7 * * *" {
+		t.Errorf("schedule is %q, want the source's new 0 7 * * *", job.Schedule)
+	}
+	if job.Command != "hermes run briefing" {
+		t.Errorf("command is %q, want the source's new one", job.Command)
+	}
+	if !job.Managed {
+		t.Error("an update cleared the managed flag")
+	}
+}
+
+func TestUpdateNeverTouchesHandRegisteredJobs(t *testing.T) {
+	d := testDaemon(t)
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.store.Add(&model.Job{
+		ID: "mine", Name: "mine", Schedule: "0 9 * * *",
+		Detection: model.DetectNone, Source: "hermes", Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	d.updateChanged([]scan.Entry{{Name: "mine", Source: "hermes", Schedule: "0 7 * * *"}},
+		[]string{"hermes"}, config.Default())
+
+	job, _ := d.store.Job("mine")
+	if job.Schedule != "0 9 * * *" {
+		t.Errorf("schedule is %q; a scan must not rewrite a hand-registered job", job.Schedule)
+	}
+}
+
+func TestUpdateKeepsTheOldDefinitionWhenTheNewOneIsInvalid(t *testing.T) {
+	d := testDaemon(t)
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	d.adoptNew([]scan.Candidate{candidate("briefing", "hermes", false)}, []string{"hermes"})
+
+	d.updateChanged([]scan.Entry{{
+		Name: "briefing", Source: "hermes", Schedule: "not a schedule at all",
+	}}, []string{"hermes"}, config.Default())
+
+	job, _ := d.store.Job("briefing")
+	if job.Schedule != "0 9 * * *" {
+		t.Errorf("schedule is %q; an unparseable source entry must not replace a working one", job.Schedule)
+	}
+}
+
+func TestUpdateRetiresAJobThatBecameTooFrequent(t *testing.T) {
+	d := testDaemon(t)
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	d.adoptNew([]scan.Candidate{candidate("briefing", "hermes", false)}, []string{"hermes"})
+
+	// The user moved the job from daily to every 10 minutes. Adoption would
+	// have refused this schedule outright (ReasonTooFrequent), so the update
+	// path must not smuggle it in: 144 wakes a day is the battery drain the
+	// import policy exists to prevent. The adoption decision is revisited
+	// and the job retired; it will still run on natural wakes.
+	d.updateChanged([]scan.Entry{{
+		Name: "briefing", Source: "hermes", Schedule: "every 10m",
+	}}, []string{"hermes"}, config.Default())
+
+	if _, ok := d.store.Job("briefing"); ok {
+		t.Error("a schedule adoption would refuse was accepted through the update path")
+	}
+}
+
+// Editing an adopted job is a takeover. Without one, the next sync silently
+// reverts the human's schedule back to the source's, and the edit looks like
+// it never happened.
+func TestEditingAManagedJobStopsSyncFromRevertingIt(t *testing.T) {
+	d := testDaemon(t)
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	d.adoptNew([]scan.Candidate{candidate("briefing", "hermes", false)}, []string{"hermes"})
+
+	// The human edits the schedule through the same op the CLI and app use.
+	stored, _ := d.store.Job("briefing")
+	edited := *stored
+	edited.Schedule = "0 8 * * *"
+	payload, err := json.Marshal(edited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.handle(context.Background(), ipc.OpJobsPut, payload); err != nil {
+		t.Fatal(err)
+	}
+
+	// The source still says 9:00. Sync must not undo the human.
+	d.updateChanged([]scan.Entry{{Name: "briefing", Source: "hermes", Schedule: "0 9 * * *"}},
+		[]string{"hermes"}, config.Default())
+
+	job, _ := d.store.Job("briefing")
+	if job.Schedule != "0 8 * * *" {
+		t.Errorf("schedule is %q; sync reverted an explicit human edit", job.Schedule)
+	}
+	if job.Managed {
+		t.Error("an edited job is still marked managed")
 	}
 }
 

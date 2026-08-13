@@ -1,8 +1,8 @@
-# WakeGuard menu bar app
+# goguma menu bar app
 
-A macOS menu bar client for the WakeGuard daemon. It shows what WakeGuard is
+A macOS menu bar client for the goguma daemon. It shows what goguma is
 doing right now, what it will wake the Mac for next, and how much battery each
-job's wake window actually costs — and it lets you skip a wake, release the
+job's wake window actually costs; and it lets you skip a wake, release the
 holds, pause, and edit jobs without dropping to the CLI.
 
 The app holds no state and does nothing privileged. Everything lives in the Go
@@ -12,7 +12,7 @@ daemon; this is a viewer with buttons.
 
 - macOS 26.0 or later
 - Swift 6.3 / Xcode 26 toolchain
-- The WakeGuard daemon (optional — the app renders a clear "not running" state
+- The goguma daemon (optional: the app renders a clear "not running" state
   in every window when the daemon is absent)
 
 ## Build and run
@@ -26,19 +26,19 @@ swift build -c release            # release
 ```
 
 Run the binary directly. It puts itself into accessory (`LSUIElement`) mode at
-launch, so there is no Dock icon and no app-switcher entry — look for the icon
+launch, so there is no Dock icon and no app-switcher entry; look for the icon
 in the menu bar:
 
 ```sh
-.build/debug/WakeGuardUI
+.build/debug/GogumaUI
 ```
 
-To get a real `.app` — bundle identifier, `Info.plist` with `LSUIElement`,
-launchable by `open` and usable as a Login Item:
+To get a real `.app` (bundle identifier, `Info.plist` with `LSUIElement`,
+launchable by `open` and usable as a Login Item):
 
 ```sh
-scripts/make-app.sh release       # writes build/WakeGuard.app
-open build/WakeGuard.app
+scripts/make-app.sh release       # writes build/goguma.app
+open build/goguma.app
 ```
 
 The script ad-hoc signs the bundle, which is enough to run locally. Replace the
@@ -47,11 +47,11 @@ signature with a Developer ID identity before distributing.
 ### Pointing at a different daemon
 
 The socket path is
-`~/Library/Application Support/WakeGuard/daemon.sock`, and — exactly as on the
-Go side — `WAKEGUARD_STATE_DIR` overrides the containing directory:
+`~/Library/Application Support/goguma/daemon.sock`, and, exactly as on the
+Go side, `GOGUMA_STATE_DIR` overrides the containing directory:
 
 ```sh
-WAKEGUARD_STATE_DIR=/tmp/wg-dev .build/debug/WakeGuardUI
+GOGUMA_STATE_DIR=/tmp/wg-dev .build/debug/GogumaUI
 ```
 
 Useful for running against a development daemon without touching a real
@@ -60,7 +60,7 @@ nested override directory will fail with a clear error rather than silently.
 
 ## Design: `Theme.swift` is the single file to edit
 
-**When design principles arrive, edit `Sources/WakeGuardUI/Theme.swift` and
+**When design principles arrive, edit `Sources/GogumaUI/Theme.swift` and
 nothing else.**
 
 Every visual decision in the app is a named token in that one file: semantic
@@ -72,7 +72,7 @@ constant.
 
 Two consequences worth knowing:
 
-- Tokens are named by **meaning**, not appearance — `Colors.stateHolding`, not
+- Tokens are named by **meaning**, not appearance: `Colors.stateHolding`, not
   `Colors.amber`; `Colors.chartReference`, not `Colors.dashedOrange`. A new
   palette reassigns roles without any call site changing.
 - The current values resolve to stock system semantics (`Color.accentColor`,
@@ -89,8 +89,8 @@ There are also two token-backed view modifiers (`themeCard()`, `themeRow()`,
 macos/
 ├── Package.swift                 SwiftPM manifest (tools 6.2, Swift 6 mode, macOS 26)
 ├── README.md
-├── scripts/make-app.sh           Assembles build/WakeGuard.app around the binary
-└── Sources/WakeGuardUI/
+├── scripts/make-app.sh           Assembles build/goguma.app around the binary
+└── Sources/GogumaUI/
     ├── main.swift                NSApplication entry point
     ├── Theme.swift               ← every visual token, the file to edit
     ├── Model/
@@ -132,12 +132,12 @@ one connection per call. It handles, distinctly:
 
 | Condition | Result |
 | --- | --- |
-| Socket file absent | `notInstalled` — "run `wakeguard install`" |
+| Socket file absent | `notInstalled`: "run `goguma install`" |
 | Socket present, nobody listening (`ECONNREFUSED`) | `notRunning` |
 | `EACCES` / `EPERM` | `permissionDenied` |
 | Read/write deadline (5s, `SO_RCVTIMEO`/`SO_SNDTIMEO`) | `timedOut` |
 | Peer closes mid-frame | `io` with byte counts |
-| Response `protocol` ≠ 1 | `protocolMismatch` — "update both" |
+| Response `protocol` ≠ 1 | `protocolMismatch`: "update both" |
 | `ok: false` | `refused`, carrying the daemon's message |
 
 Reads loop until the requested byte count is satisfied, so a stream socket that
@@ -151,8 +151,8 @@ own error message rather than a generic decode failure.
 
 ### Concurrency
 
-All socket I/O runs on a dedicated serial `DispatchQueue` inside `DaemonClient`
-— off the main thread, and off the Swift concurrency cooperative pool, where a
+All socket I/O runs on a dedicated serial `DispatchQueue` inside `DaemonClient`:
+off the main thread, and off the Swift concurrency cooperative pool, where a
 blocking `read` would starve unrelated tasks. `StatusStore` is `@MainActor` and
 `@Observable`; it only writes state after awaiting a client call. The target
 builds under Swift 6 language mode with strict concurrency and **no warnings**.
@@ -186,7 +186,7 @@ polling continues at **30 seconds** (`Theme.Timing.idlePollInterval`) rather tha
 stopping outright. The menu bar item is always on screen and shows both the state
 glyph and the next wake time; an icon that never refreshes is a broken icon. At
 1/30th the request rate this is negligible, and both cadences are tokens in
-`Theme.swift` if you want to change them — set `idlePollInterval` very high to
+`Theme.swift` if you want to change them; set `idlePollInterval` very high to
 approximate a full stop.
 
 ## Detection modes
@@ -195,12 +195,12 @@ A job's `detection` decides what the UI may honestly claim about it.
 
 | Mode | Wire | Observable | Meaning |
 | --- | --- | --- | --- |
-| Mark | `mark` | yes | Wrapped in `wakeguard-mark`; real start, exit, and exit code. |
+| Mark | `mark` | yes | Wrapped in `goguma-mark`; real start, exit, and exit code. |
 | Pattern | `pattern` | yes | Process-table regexp. The only mode that can fail silently, so it is the only one tinted as a caution. |
 | Wake only | `none` | **no** | Not watched. Wake, hold for `wake_only_hold`, release. |
 
 Wake-only is what automatically adopted jobs use, so on a typical machine it is
-the *most common* mode — which makes getting its presentation right load-bearing.
+the *most common* mode, which makes getting its presentation right load-bearing.
 It exists for jobs that run inside another application's own process, where
 there is nothing to wrap and no distinct process to match.
 
@@ -210,12 +210,12 @@ empty, its ceiling is a fixed window rather than a learned one, and it can never
 every observation-derived warning and statistic: no cold-start badge, no
 never-detected badge, no ceiling-hit badge, no "wasted" column, no duration
 sparkline (which would otherwise draw a flat line along zero and assert that
-every run took no time). Real problems that are independent of observation — a
-schedule that doesn't parse — are still reported for these jobs.
+every run took no time). Real problems that are independent of observation (a
+schedule that doesn't parse) are still reported for these jobs.
 
 ## Managed jobs
 
-`job.managed` is true when WakeGuard adopted the job from a watched scheduler
+`job.managed` is true when goguma adopted the job from a watched scheduler
 rather than the user adding it. They are badged in the jobs list so it is
 obvious what was chosen versus what was adopted.
 
@@ -227,8 +227,8 @@ deletion sticks.
 
 ## Suppressed wakes
 
-`status.wake_suppressed` is non-empty when WakeGuard is deliberately *not*
-scheduling a wake — currently when the battery is too low for waking to be worth
+`status.wake_suppressed` is non-empty when goguma is deliberately *not*
+scheduling a wake: currently when the battery is too low for waking to be worth
 it. This is a safeguard working correctly, and it is rendered as its own third
 state, distinct from both a scheduled wake and a genuine failure:
 
@@ -244,7 +244,7 @@ failure, which is the fastest way to teach users to ignore warnings.
 
 ## Surfaces
 
-**Menu bar item.** Glyph reflects state — idle (`moon`), holding
+**Menu bar item.** Glyph reflects state: idle (`moon`), holding
 (`sun.max.fill`), paused (`pause.circle`), cutout (`exclamationmark.triangle.fill`),
 disconnected. The next wake time appears as the title (`08:58`) when one is
 scheduled. Left click opens the popover; right click opens a plain menu, so the
@@ -256,7 +256,7 @@ daemon warnings, prominently; a compact job list with enable toggles (click a ro
 for its history); and Skip next wake, Let it sleep now, Pause/Resume, Jobs,
 Settings, Quit.
 
-**Jobs window.** A table of every job — name, schedule, next run, typical,
+**Jobs window.** A table of every job: name, schedule, next run, typical,
 ceiling, detection mode, and an inline duration sparkline drawn from
 `stats.recent` with non-`ok` runs marked. A badge appears when `schedule_error`
 is non-empty, or (for observable jobs only) `stats.never_detected > 0`,
@@ -265,8 +265,8 @@ Add/Edit sheet, Remove behind a confirmation, and **Sync** to re-read watched
 schedulers immediately.
 
 **Add / edit sheet.** Name, schedule, timezone, command, detection mode, match
-pattern (pattern mode only) with live `match.test` validation — debounced while
-typing, plus an explicit Test button — optional max-runtime and wake-buffer
+pattern (pattern mode only) with live `match.test` validation (debounced while
+typing, plus an explicit Test button), optional max-runtime and wake-buffer
 overrides, enabled toggle. The pattern tester is the point of the sheet: a wrong
 regexp otherwise fails silently at 3am.
 
@@ -274,11 +274,11 @@ regexp otherwise fails silently at 3am.
 reference line and hold duration as a second series, so the gap between "what the
 job needed" and "how long the Mac stayed awake" is visible at a glance. Below it,
 a table of runs with started / duration / held / wasted / outcome / exit code /
-whether WakeGuard actually woke the machine. Rows where the hold greatly exceeds
-the runtime are called out — that is wasted battery, and the thing worth fixing.
+whether goguma actually woke the machine. Rows where the hold greatly exceeds
+the runtime are called out; that is wasted battery, and the thing worth fixing.
 
 **Settings.** `wake_buffer`, `default_ceiling`, `wake_only_hold`,
-`thermal_cutout_c` (70–95), `low_battery_cutout_pct` (5–50), `auto_adopt`,
+`thermal_cutout_c` (70-95), `low_battery_cutout_pct` (5-50), `auto_adopt`,
 `webhook_url`, `notify_on_missed_job`, `use_wake_or_power_on`, plus a **Sync
 Now** button, daemon version, helper connection and version, protocol version,
 socket path, and last-updated. Text fields commit on Return; sliders on release.
@@ -293,43 +293,31 @@ Two things Settings is careful about:
   `cutout_rearm_margin_pct`. Showing only the cutout would understate the second
   by the margin, so the derived wake floor is spelled out beneath the slider.
 - **`auto_adopt` has three states, not two.** `null` (never configured) means
-  every adoptable source is watched — i.e. ON. `[]` means explicitly off. A
+  every adoptable source is watched, i.e. ON. `[]` means explicitly off. A
   non-empty list means exactly those sources. `null` and `[]` are opposites, so
   the decoder keeps them distinct and never collapses one into the other.
 
 ## Notes on the protocol
 
-### `auto_adopt` cannot be restored to its default over IPC
-
-This one constrains the UI, so it is worth stating plainly.
+### `auto_adopt` over IPC
 
 `config.set` carries a **string**, and the daemon's parser
-(`daemon.validateAutoAdopt`) accepts only:
+(`daemon.validateAutoAdopt`) accepts:
 
 - `""`, `"none"`, or `"off"` → an explicit empty list (adoption **off**);
+- `"all"`, `"default"`, or `"auto"` → `nil`, the unconfigured "watch
+  everything adoptable" state;
 - a comma-separated list of watchable source names → exactly those.
 
-There is deliberately no string that yields `nil`, and the comment in
-`validateAutoAdopt` explains why: `nil` means "never configured" and expands to
-every adoptable source, so mapping `"off"` to `nil` would turn adoption *on* —
+`"off"` maps to the explicit empty list rather than `nil` because `nil`
+expands to every adoptable source: collapsing them would turn adoption *on*,
 the exact inversion of what the user asked for.
 
-The consequence is that **turning adoption off is lossless, but turning it back
-on is not**: the app must name sources explicitly, and no op reports which
-sources are adoptable (`daemon.AdoptableSources()` is not exposed over IPC). So
-the toggle:
-
-- **off** → sends `"off"`. Always correct.
-- **on** → sends a comma-joined list built from the `source` values of
-  registered jobs, minus the ones the daemon refuses to watch (`crontab`,
-  `launchd`, `systemd`, `manual`). If that list is empty the toggle is disabled
-  and Settings shows the exact CLI command instead of sending a value that would
-  be rejected.
-
-A small op returning `AdoptableSources()` — or accepting `"all"`/`"default"` to
-mean `nil` — would remove the guesswork entirely. Until then, a user who toggles
-off and on may end up watching a narrower set than the unconfigured default, and
-the UI says which sources it is watching for exactly that reason.
+The toggle is therefore lossless in both directions: **off** sends `"off"`,
+**on** sends `"all"`. (An earlier version scraped a source list from
+registered jobs when re-enabling, which permanently narrowed coverage to
+whatever happened to be visible at the moment of the click; `"all"` exists so
+the toggle is not a one-way door.)
 
 ### Other places the app had to decide
 
@@ -343,13 +331,13 @@ the UI says which sources it is watching for exactly that reason.
 2. **Duration encoding.** `model.Duration` *renders* as `"1h 30m"` (with a
    space) but Go's `time.ParseDuration` rejects that, and rejects `d`/`w` in a
    multi-unit string. Outbound durations are therefore encoded in a strictly
-   parseable form — `"1h30m"`, `"90s"`, `""` for zero — while the display form
+   parseable form (`"1h30m"`, `"90s"`, `""` for zero) while the display form
    keeps the spaces. See `WGDuration.wireString` vs `displayString`.
 
 3. **`managed` is echoed back on edit.** `jobs.put` takes a whole `job` object,
    and `managed` is `omitempty` on the Go side. Sending `managed: false` for a
    job that was adopted would silently un-adopt it, and the next sync would then
-   register a duplicate — so the decoded value is round-tripped rather than
+   register a duplicate, so the decoded value is round-tripped rather than
    assumed.
 
 ### Naming

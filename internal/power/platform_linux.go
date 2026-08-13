@@ -13,13 +13,18 @@ import (
 	"time"
 )
 
-// Sysfs and procfs roots. They are named constants rather than inlined so the
-// parsing helpers can be pointed at a fixture tree in tests — none of this
-// code can be exercised on the developer's machine otherwise.
+// Sysfs and procfs roots. Named rather than inlined so the parsing helpers
+// can be pointed at a fixture tree in tests; none of this code can be
+// exercised on the developer's machine otherwise. The thermal pair are vars
+// because readThermalTemp reads them directly and its probe lifecycle is
+// tested through them.
+var (
+	thermalRoot = "/sys/class/thermal"
+	hwmonRoot   = "/sys/class/hwmon"
+)
+
 const (
 	powerSupplyRoot = "/sys/class/power_supply"
-	thermalRoot     = "/sys/class/thermal"
-	hwmonRoot       = "/sys/class/hwmon"
 	rtcRoot         = "/sys/class/rtc"
 
 	// lidStateGlob is the ACPI lid button's state file. The directory name in
@@ -67,7 +72,7 @@ func (p *linuxPlatform) Name() string { return "linux" }
 // usually still routes its suspend through logind's Suspend() method, which
 // our sleep inhibitor does block; the second does not exist in normal use.
 //
-// None of this has been verified on real hardware yet — see the notes in the
+// None of this has been verified on real hardware yet; see the notes in the
 // helper. Reporting true is the useful answer for the UI, but it is a claim
 // about the mechanism being available, not about it having been observed to
 // hold a specific laptop awake with the lid shut.
@@ -79,7 +84,7 @@ func (p *linuxPlatform) SupportsClamshellHold() bool { return true }
 // firmware-dependent (PRD §12.3): plenty of machines expose an RTC with no
 // alarm IRQ, and plenty more accept an alarm that the firmware then declines
 // to act on. This can only rule out the cases that are detectable from
-// userspace — a machine that passes this check can still fail to wake, and the
+// userspace: a machine that passes this check can still fail to wake, and the
 // daemon's own wake verification is what catches that.
 func (p *linuxPlatform) WakeScheduleSupported() (bool, string) {
 	if _, err := exec.LookPath("rtcwake"); err != nil {
@@ -121,12 +126,12 @@ func rtcWakealarmPaths(root string) []string {
 
 // inhibitWho tags our logind locks. `systemd-inhibit --list` prints this
 // verbatim, so a user debugging "why won't my laptop sleep" sees who to blame.
-const inhibitWho = "WakeGuard"
+const inhibitWho = "goguma"
 
 // inhibitStartGrace is how long HoldIdleSleep waits to see whether the
 // inhibitor process survives its own startup.
 //
-// systemd-inhibit reports a refused lock — no logind, no D-Bus, polkit denial —
+// systemd-inhibit reports a refused lock (no logind, no D-Bus, polkit denial)
 // by exiting, not by failing to spawn. Without this pause the daemon would
 // believe it holds a lock that never existed, which is the one failure mode
 // that must not be silent: it would let the machine sleep through a job while
@@ -147,10 +152,10 @@ const inhibitStopTimeout = 5 * time.Second
 // The lock is owned by a child `systemd-inhibit` process rather than by this
 // one. That is a deliberate tradeoff and it is worth being clear about the
 // cost: logind's Inhibit() method hands the lock back as a file descriptor
-// over D-Bus, so taking it in-process means implementing D-Bus — SASL
-// handshake, type-signature marshalling and SCM_RIGHTS fd passing — which is
+// over D-Bus, so taking it in-process means implementing D-Bus (SASL
+// handshake, type-signature marshalling and SCM_RIGHTS fd passing), which is
 // several hundred lines of wire protocol that cannot be added here without a
-// dependency, and WakeGuard has committed to none beyond cron and x/sys.
+// dependency, and goguma has committed to none beyond cron and x/sys.
 //
 // The subprocess buys back the property that actually matters. The child's
 // stdin is a pipe whose write end this process holds, and the child is `cat`,
@@ -180,14 +185,14 @@ var (
 // "idle" is the lock that matches this method's contract; "sleep" is included
 // because it also blocks the Suspend() call a desktop environment makes when
 // it decides the session is idle, which "idle" alone does not. Neither covers
-// lid close — see SupportsClamshellHold — which is exactly the split the
+// lid close (see SupportsClamshellHold), which is exactly the split the
 // Platform interface documents.
 func (p *linuxPlatform) HoldIdleSleep(reason string) (IdleAssertion, error) {
 	if _, err := exec.LookPath("systemd-inhibit"); err != nil {
 		return nil, fmt.Errorf("systemd-inhibit not found on PATH: %w", err)
 	}
 	if strings.TrimSpace(reason) == "" {
-		reason = "WakeGuard is holding the machine awake for a scheduled job"
+		reason = "goguma is holding the machine awake for a scheduled job"
 	}
 
 	pr, pw, err := os.Pipe()
@@ -267,8 +272,8 @@ func (a *linuxAssertion) Release() error {
 	case <-time.After(inhibitStopTimeout):
 	}
 
-	// The child ignored EOF on stdin. Killing it is safe — logind drops the
-	// lock when the process dies — and leaving it alive would hold sleep off
+	// The child ignored EOF on stdin. Killing it is safe (logind drops the
+	// lock when the process dies), and leaving it alive would hold sleep off
 	// indefinitely, which is the worst outcome available here.
 	if err := a.cmd.Process.Kill(); err != nil {
 		return fmt.Errorf("killing unresponsive systemd-inhibit (pid %d): %w", a.cmd.Process.Pid, err)
@@ -314,8 +319,8 @@ func (p *linuxPlatform) ReadState() (State, error) {
 	// sysfs exposes no lid attribute, logind's LidClosed property is only
 	// reachable over D-Bus, and the evdev SW_LID switch needs read access to
 	// /dev/input, which the unprivileged daemon does not have. Reporting open
-	// is the safe direction — it keeps the lid-gated cutouts armed instead of
-	// skipping them — but it also means the cutouts will never fire on a
+	// is the safe direction; it keeps the lid-gated cutouts armed instead of
+	// skipping them, but it also means the cutouts will never fire on a
 	// machine whose lid we cannot see, so the hazard they guard against is
 	// simply not detected there.
 
@@ -441,8 +446,8 @@ func readPowerSupply(root string) (pct int, onAC bool, ok bool) {
 
 	// Some machines expose no mains device at all. A pack that reports itself
 	// as actively charging is unambiguous evidence of external power. The
-	// converse is not true — ThinkPads with charge thresholds sit at "Not
-	// charging" while plugged in — so only the positive case is used.
+	// converse is not true (ThinkPads with charge thresholds sit at "Not
+	// charging" while plugged in), so only the positive case is used.
 	if !onAC && charging {
 		onAC = true
 	}
@@ -530,12 +535,24 @@ type tempCandidate struct {
 // SMC key that worked. Probing every zone on every tick would be pure waste on
 // a machine with a dozen of them.
 var (
-	tempMu      sync.Mutex
-	tempPath    string
-	tempLabel   string
-	tempProbed  bool
-	tempUseless bool
+	tempMu     sync.Mutex
+	tempPath   string
+	tempLabel  string
+	tempProbed bool
+	// tempRecheckAt backs off re-enumeration after a fully failed probe.
+	//
+	// A cooldown, deliberately not a permanent verdict: sensors vanish
+	// transiently (sysfs mid-resume, a driver reloading), and one bad pass
+	// on the first post-resume tick used to disable the thermal cutout for
+	// the daemon's whole life. The valve staying blind forever over a
+	// moment's flap is exactly backwards for a safety mechanism.
+	tempRecheckAt time.Time
 )
+
+// tempRecheckInterval is how long a fully failed probe pass suppresses
+// re-enumeration. Long enough that a genuinely sensorless machine is not
+// re-scanned every tick; short enough that a resume flap heals itself.
+const tempRecheckInterval = 10 * time.Minute
 
 // readThermalTemp returns the CPU temperature in celsius and whether a reading
 // was obtained. It never returns a value it does not trust: an unavailable
@@ -545,7 +562,7 @@ func readThermalTemp() (float64, string, bool) {
 	tempMu.Lock()
 	defer tempMu.Unlock()
 
-	if tempUseless {
+	if !tempRecheckAt.IsZero() && time.Now().Before(tempRecheckAt) {
 		return 0, "", false
 	}
 	if tempProbed && tempPath != "" {
@@ -561,10 +578,11 @@ func readThermalTemp() (float64, string, bool) {
 	for _, c := range thermalCandidates(thermalRoot, hwmonRoot) {
 		if v, ok := readCelsius(c.path); ok {
 			tempPath, tempLabel, tempProbed = c.path, c.label, true
+			tempRecheckAt = time.Time{}
 			return v, c.label, true
 		}
 	}
-	tempProbed, tempUseless = true, true
+	tempRecheckAt = time.Now().Add(tempRecheckInterval)
 	return 0, "", false
 }
 
@@ -638,7 +656,7 @@ func rankedCandidates(root string, prefer []string, include func(string) bool, i
 //
 // Both thermal_zone/temp and hwmon/tempN_input are specified as millidegrees,
 // and that is tried first. A handful of out-of-tree drivers report whole
-// degrees instead, so that is tried second — unambiguously, because the two
+// degrees instead, so that is tried second, unambiguously, because the two
 // plausible ranges (5000..120000 and 5..120) cannot overlap.
 func readCelsius(path string) (float64, bool) {
 	b, err := os.ReadFile(path)
@@ -660,8 +678,8 @@ func readCelsius(path string) (float64, bool) {
 
 // readSysfsString reads a sysfs attribute, returning "" when it is missing.
 //
-// Absence is the normal case in sysfs — an attribute file only exists when the
-// driver implements it — so this deliberately does not distinguish "missing"
+// Absence is the normal case in sysfs (an attribute file only exists when the
+// driver implements it), so this deliberately does not distinguish "missing"
 // from "empty". Callers treat both as "this device did not tell us".
 func readSysfsString(path string) string {
 	b, err := os.ReadFile(path)

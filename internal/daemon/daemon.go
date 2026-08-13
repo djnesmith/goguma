@@ -1,7 +1,7 @@
-// Package daemon is the unprivileged brain of WakeGuard. It owns all policy:
+// Package daemon is the unprivileged brain of goguma. It owns all policy:
 // schedule evaluation, wake-time computation, duration history, job detection,
 // hold lifecycle, and the safety cutouts. It asks the privileged helper only
-// for the two things it cannot do itself — block sleep, and register an OS
+// for the two things it cannot do itself: block sleep, and register an OS
 // wake.
 package daemon
 
@@ -14,15 +14,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/detect"
-	"github.com/junnam/wakeguard/internal/estimate"
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/power"
-	"github.com/junnam/wakeguard/internal/scan"
-	"github.com/junnam/wakeguard/internal/schedule"
-	"github.com/junnam/wakeguard/internal/store"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/detect"
+	"github.com/junnam586/goguma/internal/estimate"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
+	"github.com/junnam586/goguma/internal/scan"
+	"github.com/junnam586/goguma/internal/schedule"
+	"github.com/junnam586/goguma/internal/store"
 )
 
 // Daemon is the long-running service.
@@ -45,12 +45,16 @@ type Daemon struct {
 	warnings []model.Warning
 
 	// nextWake / nextJob describe the wake currently registered with the OS.
-	nextWake       *time.Time
-	nextJob        string
-	nextFire       *time.Time
-	wakeOK         bool
-	wakeErr        string
-	skipUntil      map[string]time.Time // job id -> suppress wakes for fires before this
+	nextWake  *time.Time
+	nextJob   string
+	nextFire  *time.Time
+	wakeOK    bool
+	wakeErr   string
+	skipUntil map[string]time.Time // job id -> suppress wakes for fires before this
+	served    map[string]time.Time // job id -> last fire time a window completed for
+	// lateWatch holds recently closed unobservable windows whose scheduler
+	// may still report a completion; see pollSchedulerState.
+	lateWatch      map[string]lateWindow
 	skipNextGlobal time.Time
 
 	// wakeSuppressed explains why no wake is registered when the machine is
@@ -75,14 +79,14 @@ type Daemon struct {
 	observers map[string]scan.RunObserver
 
 	// lastWokeAt is when a sleep gap was last observed, used to attribute a
-	// run to a WakeGuard-initiated wake.
+	// run to a goguma-initiated wake.
 	lastWokeAt time.Time
 
 	// sleepHist caches the reconstructed sleep history.
 	//
 	// Reading it costs ~4 seconds on macOS because `pmset -g log` dumps weeks
 	// of power-management events. Doing that on every sync put a plain
-	// `wakeguard sync` right at the CLI's 5-second timeout. The data covers a
+	// `goguma sync` right at the CLI's 5-second timeout. The data covers a
 	// fortnight and changes only when the machine sleeps, so re-reading it
 	// more than occasionally buys nothing.
 	sleepHist   *schedule.SleepHistory
@@ -108,11 +112,13 @@ func New(version string, log *slog.Logger, st *store.Store, plat power.Platform)
 		hooks:     newWebhookSender(log),
 		holds:     map[string]*hold{},
 		skipUntil: map[string]time.Time{},
+		served:    map[string]time.Time{},
+		lateWatch: map[string]lateWindow{},
 		cfg:       config.Default(),
 		observers: resolveObservers(),
 		// Unknown until the first tick reads the machine. The zero value of
 		// power.State is "0%, not on AC", which is a perfectly plausible
-		// reading of a nearly-flat battery — so before this, a daemon that had
+		// reading of a nearly-flat battery, so before this, a daemon that had
 		// simply not looked yet was indistinguishable from one looking at a
 		// laptop about to die, both to the safety guards and to the user.
 		lastState: power.State{BatteryPct: -1},
@@ -137,7 +143,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 	d.srv = srv
 
-	d.event(store.Event{Kind: store.EventDaemonStart, Message: "wakeguard " + d.version})
+	d.event(store.Event{Kind: store.EventDaemonStart, Message: "goguma " + d.version})
 	d.log.Info("daemon started",
 		"version", d.version,
 		"socket", d.store.Layout().DaemonSocket(),
@@ -154,10 +160,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	d.loop(ctx)
 
+	// Stop serving BEFORE releasing holds. The old order left the listener
+	// up while shutdown cleared the sleep block, so a mark or keep-awake
+	// request landing in that window (cron firing at logout) re-blocked
+	// sleep on a daemon about to exit, stranding the global block until the
+	// helper's dead-man switch noticed. Closing first also severs keep-alive
+	// clients, whose open connections otherwise pinned wg.Wait until launchd
+	// killed the process.
+	srv.Close()
+
 	// Release everything before exiting. A stranded hold would leave the
 	// machine unable to sleep, so this runs even on an abrupt shutdown path.
 	d.shutdown()
-	srv.Close()
 	wg.Wait()
 	return nil
 }
@@ -202,8 +216,8 @@ func (d *Daemon) loop(ctx context.Context) {
 			d.pollSchedulerState(ctx, now)
 			// Ceilings are enforced on the fast timer as well as the main
 			// tick. Checking only on the tick means a short ceiling overshoots
-			// by up to a full tick interval — a 5s ceiling fired at 10.2s in
-			// testing — which matters because the ceiling exists to bound how
+			// by up to a full tick interval (a 5s ceiling fired at 10.2s in
+			// testing), which matters because the ceiling exists to bound how
 			// long a hung job can pin the machine awake.
 			d.enforceCeilings(now, cfg)
 			d.syncSleepBlock()
@@ -225,7 +239,7 @@ func (d *Daemon) tick(ctx context.Context, now time.Time) {
 		// Unknown, not flat.
 		//
 		// A failed read leaves `st` as the zero value, which is `OnAC: false,
-		// BatteryPct: 0` — indistinguishable from a machine about to die. Both
+		// BatteryPct: 0`, indistinguishable from a machine about to die. Both
 		// battery guards then act on it: `ShouldScheduleWake` refuses to
 		// register any wake ("staying asleep to preserve charge"), and the
 		// low-battery cutout fires and force-releases every hold. So a
@@ -281,7 +295,28 @@ func (d *Daemon) openDueWindows(ctx context.Context, now time.Time, cfg config.C
 		if err != nil {
 			continue // surfaced as a warning by refreshWarnings
 		}
-		fire := sched.Next(now.Add(-cfg.WakeBuffer.D()))
+		// Same source of truth as the wake itself. The wake is registered for
+		// the owning scheduler's own next-run time when it has one (see
+		// nextWakeTarget); opening the window from the parsed recurrence
+		// instead means the machine can wake for a fire this loop never
+		// holds for, and hold for a fire the scheduler will never use.
+		fire := d.schedulerFireTime(job, now)
+		if fire.IsZero() {
+			fire = sched.Next(now.Add(-cfg.WakeBuffer.D()))
+		}
+		// The buffer look-back above deliberately catches a fire that is
+		// already inside its window, but that same look-back re-finds a fire
+		// whose window already opened, served the job, and closed, for as
+		// long as `now` stays inside the buffer. Re-opening it holds the
+		// machine awake for a job that just finished and then records a
+		// phantom never_detected run every night. A fire already served is
+		// done.
+		d.mu.RLock()
+		srv, wasServed := d.served[job.ID]
+		d.mu.RUnlock()
+		if wasServed && !fire.After(srv) {
+			continue
+		}
 		buffer := cfg.WakeBuffer.D()
 		if job.WakeBuffer > 0 {
 			buffer = job.WakeBuffer.D()
@@ -291,7 +326,7 @@ func (d *Daemon) openDueWindows(ctx context.Context, now time.Time, cfg config.C
 			continue
 		}
 		// Do not open a window for a fire time that has already passed by
-		// more than the detection grace — that run is gone, and holding for
+		// more than the detection grace; that run is gone, and holding for
 		// it would waste battery for nothing.
 		if now.After(detectDeadlineFor(fire, 0)) {
 			continue
@@ -322,7 +357,7 @@ func (d *Daemon) openWindow(ctx context.Context, job *model.Job, fire, now time.
 
 	// The unprivileged idle assertion is taken directly; the clamshell block
 	// goes through the helper in syncSleepBlock.
-	if a, err := d.plat.HoldIdleSleep("wakeguard: " + job.Name); err != nil {
+	if a, err := d.plat.HoldIdleSleep("goguma: " + job.Name); err != nil {
 		d.log.Error("could not hold idle sleep", "job", job.ID, "err", err)
 	} else {
 		h.assertion = a
@@ -331,7 +366,7 @@ func (d *Daemon) openWindow(ctx context.Context, job *model.Job, fire, now time.
 	d.mu.Lock()
 	if _, exists := d.holds[job.ID]; exists {
 		// Another path opened a window for this job while we were doing the
-		// slow work above — reading history from disk, and taking the idle
+		// slow work above, reading history from disk, and taking the idle
 		// assertion, which on Linux deliberately waits 300ms. Overwriting the
 		// map entry would strand the other hold's assertion with no owner and
 		// nothing to release it, leaving the machine unable to idle-sleep
@@ -417,7 +452,7 @@ func (d *Daemon) updatePatternHold(h *hold, procs []detect.Process, now time.Tim
 
 	case h.detected && len(matches) == 0:
 		// The process is gone. Release immediately rather than waiting out
-		// the remaining window — this is what keeps hold time close to real
+		// the remaining window; this is what keeps hold time close to real
 		// runtime.
 		d.finishHoldLocked(h, now, model.OutcomeOK)
 	}
@@ -444,7 +479,7 @@ func (d *Daemon) checkMarkedPIDs(now time.Time) {
 //
 // A job that is *still running* when its ceiling arrives does not get cut off.
 // The ceiling is an estimate of how long the job takes, and a job outlasting it
-// is proof the estimate is low — not evidence of a problem. Releasing there did
+// is proof the estimate is low, not evidence of a problem. Releasing there did
 // two bad things at once: the machine became free to sleep out from under a
 // healthy job, and the run was discarded by the estimator (a truncated duration
 // cannot be trained on), so the next run inherited the same wrong ceiling. A
@@ -453,7 +488,7 @@ func (d *Daemon) checkMarkedPIDs(now time.Time) {
 // --max-runtime by hand.
 //
 // So while the process is alive the hold is extended, and the true duration is
-// recorded when it finally exits — which is what teaches the estimator the real
+// recorded when it finally exits, which is what teaches the estimator the real
 // number. MaxCeiling remains a hard backstop for a job that never exits at all,
 // and the thermal and battery cutouts are unaffected: they fire on hazard, not
 // on elapsed time, and they are what actually protects the machine.
@@ -467,7 +502,7 @@ func (d *Daemon) enforceCeilings(now time.Time, cfg config.Config) {
 		switch {
 		// `&& !h.detected` matters now that a job's detectability is not fixed
 		// by its declared mode. A hermes job is registered DetectNone because
-		// no process can be watched for it — but its scheduler reports its own
+		// no process can be watched for it, but its scheduler reports its own
 		// runs, so the hold may well know it is running. Without this guard
 		// the first case fired first and closed the window at the ceiling on a
 		// job we could see was still going, discarding the very measurement
@@ -477,8 +512,30 @@ func (d *Daemon) enforceCeilings(now time.Time, cfg config.Config) {
 			// its window is how it is supposed to work, not a failure. Calling
 			// it never-detected would generate a permanent warning about a
 			// configuration that is correct.
+			//
+			// But when the job's scheduler keeps run records, the story may
+			// not be over: a run that outgrew its learned window finishes
+			// *after* this release, and its completion record is the only
+			// evidence the ceiling is now too small. Watch for it, or the
+			// estimator can never learn the job got slower and the machine
+			// sleeps out from under it identically forever.
+			if _, hasObs := d.observers[h.job.Source]; hasObs {
+				d.lateWatch[h.job.ID] = lateWindow{
+					opened: h.openedAt, fired: h.fireAt, closed: now,
+				}
+			}
 			d.log.Info("wake-only window complete", "job", h.job.ID)
 			d.finishHoldLocked(h, now, model.OutcomeOK)
+		case h.detected && h.job.MaxRuntime > 0:
+			// An explicit --max-runtime is the one promise the daemon must
+			// keep. The still-running extension below exists for learned
+			// guesses, where outlasting the estimate is proof the estimate
+			// was low; a cap a human typed is not an estimate, and the
+			// ceiling-hit warning explicitly tells users this flag is the
+			// fix. Ignoring it here made that advice a no-op.
+			d.log.Warn("job reached its explicit --max-runtime and is still running; releasing",
+				"job", h.job.ID, "max", h.job.MaxRuntime.D())
+			d.finishHoldLocked(h, now, model.OutcomeCeiling)
 		case h.detected && now.Before(h.hardDeadline(cfg)):
 			// Still running, and inside the backstop. Keep holding, and say so
 			// once per run rather than every tick.
@@ -501,6 +558,12 @@ func (d *Daemon) enforceCeilings(now time.Time, cfg config.Config) {
 	}
 }
 
+// lateWindow is a closed unobservable window whose scheduler may still
+// report a completion; see pollSchedulerState.
+type lateWindow struct {
+	opened, fired, closed time.Time
+}
+
 // finishHoldLocked closes a hold and records it. Caller holds d.mu.
 func (d *Daemon) finishHoldLocked(h *hold, now time.Time, outcome model.Outcome) {
 	if h.assertion != nil {
@@ -509,15 +572,18 @@ func (d *Daemon) finishHoldLocked(h *hold, now time.Time, outcome model.Outcome)
 		}
 	}
 	delete(d.holds, h.job.ID)
+	if !h.manual() {
+		d.served[h.job.ID] = h.fireAt
+	}
 
 	// A manual keep-awake window is not a job execution, and stops here.
 	//
 	// Everything downstream of AppendRun reads a run as evidence about a job:
 	// the ceiling estimator learns durations from it, per-job statistics count
 	// it, and the never-detected warning counts consecutive misses. A window
-	// whose length is a number the user typed is evidence about nothing — it
+	// whose length is a number the user typed is evidence about nothing; it
 	// would drag every ceiling towards "however long someone once wanted a
-	// coffee break" — and it would be filed under a job id that exists in no
+	// coffee break", and it would be filed under a job id that exists in no
 	// jobs.json. lastRun is left alone for the same reason: `status` prints it
 	// as "last run", and nothing ran.
 	//
@@ -574,7 +640,7 @@ func (d *Daemon) finishHoldLocked(h *hold, now time.Time, outcome model.Outcome)
 	// The URL is read directly from d.cfg rather than through webhookURL(),
 	// which takes a read lock: this function runs with d.mu already held for
 	// writing, and Go's RWMutex is not reentrant, so calling the accessor here
-	// deadlocks the daemon. That is not hypothetical — it wedged the process
+	// deadlocks the daemon. That is not hypothetical; it wedged the process
 	// precisely when the ceiling safety valve fired, which is the moment it
 	// most needs to keep running.
 	switch outcome {
@@ -594,7 +660,14 @@ func (d *Daemon) finishHoldLocked(h *hold, now time.Time, outcome model.Outcome)
 // reference counting in the unprivileged tier.
 func (d *Daemon) syncSleepBlock() {
 	d.mu.RLock()
-	want := len(d.holds) > 0 && !d.paused
+	// Any hold blocks sleep, paused or not. Pause stops job wakes and
+	// windows from opening, and released every hold it found; the only holds
+	// that can exist during a pause are a manual keep-awake or a wrapped job
+	// that reported in, both explicit statements that the machine must stay
+	// up. Gating on paused here made those holds report "blocked" in status
+	// while affirmatively telling the helper "not blocked": the lid closes,
+	// the machine sleeps, and the upload the user asked to protect dies.
+	want := len(d.holds) > 0
 	var names []string
 	for _, h := range d.holds {
 		names = append(names, h.job.Name)
@@ -760,14 +833,14 @@ func resolveObservers() map[string]scan.RunObserver {
 //
 // This is what makes an in-process scheduler measurable. Hermes runs its cron
 // jobs inside the gateway, so no process ever appears or exits for one and
-// process watching has nothing to look at — but it writes a claim when a run
+// process watching has nothing to look at, but it writes a claim when a run
 // is dispatched and a completion timestamp when it ends. Reading that turns a
 // blind fixed window into a real start, a real end, and a real duration, for
 // jobs the user never had to touch.
 //
 // Jobs stay registered as DetectNone: nothing is migrated, and if the observer
 // stops working the behaviour falls straight back to the fixed window it had
-// before. That is the whole degradation story — an observer that cannot make
+// before. That is the whole degradation story: an observer that cannot make
 // sense of what it reads returns false, and this does nothing.
 func (d *Daemon) pollSchedulerState(ctx context.Context, now time.Time) {
 	if len(d.observers) == 0 {
@@ -817,7 +890,7 @@ func (d *Daemon) pollSchedulerState(ctx context.Context, now time.Time) {
 				// This is the normal case, not an edge one: hermes only stamps
 				// `fire_claim` for externally-dispatched runs, so a job fired
 				// by its own in-process ticker goes from idle to complete with
-				// nothing in between. Verified live — a job that had just run
+				// nothing in between. Verified live: a job that had just run
 				// still read `fire_claim: None`.
 				//
 				// The floor is the *fire time*, not the window opening. The
@@ -846,13 +919,77 @@ func (d *Daemon) pollSchedulerState(ctx context.Context, now time.Time) {
 			d.finishHoldLocked(h, now, outcome)
 		}
 	}
+
+	// Second pass: windows that already closed at their ceiling with the job
+	// unseen. A run that outgrew its learned window finishes after the
+	// release; its completion record is the only evidence the ceiling is too
+	// small, and skipping it left the estimator stuck at the old number with
+	// the machine sleeping out from under the job identically every night.
+	// The extra run recorded here is what teaches the estimator the truth.
+	for id, w := range d.lateWatch {
+		if now.Sub(w.closed) > time.Hour {
+			delete(d.lateWatch, id)
+			continue
+		}
+		job, ok := d.store.Job(id)
+		if !ok {
+			delete(d.lateWatch, id)
+			continue
+		}
+		obs, ok := d.observers[job.Source]
+		if !ok {
+			delete(d.lateWatch, id)
+			continue
+		}
+		rec, ok := obs.ObserveRun(ctx, id)
+		if !ok || rec.Running || !rec.CompletedAt.After(w.opened) {
+			continue // nothing new yet; keep watching
+		}
+		delete(d.lateWatch, id)
+
+		started := rec.StartedAt
+		if started.IsZero() || started.Before(w.opened) || started.After(rec.CompletedAt) {
+			// Same floor as the in-window path: the job cannot have started
+			// before it was due.
+			started = w.fired
+		}
+		outcome := model.OutcomeOK
+		if rec.Status == "error" {
+			outcome = model.OutcomeFailed
+		}
+		run := model.Run{
+			JobID:        id,
+			WindowOpened: w.opened,
+			Started:      started,
+			Ended:        rec.CompletedAt,
+			Duration:     model.Duration(rec.CompletedAt.Sub(started)),
+			HoldDuration: model.Duration(w.closed.Sub(w.opened)),
+			BatteryStart: -1, BatteryEnd: -1,
+			Outcome:   outcome,
+			Detection: job.Detection,
+		}
+		d.log.Info("job finished after its window closed; learning the real duration",
+			"job", id, "ran", run.Duration.D(), "window", run.HoldDuration.D())
+		d.eventLocked(store.Event{
+			Kind: store.EventJobFinished, JobID: id, JobName: job.Name,
+			Outcome: outcome, Duration: run.Duration,
+			Message: "completed after the window closed; the next window will be sized to it",
+		})
+		d.bg.Add(1)
+		go func() {
+			defer d.bg.Done()
+			if err := d.store.AppendRun(run); err != nil {
+				d.log.Warn("could not record late completion", "job", run.JobID, "err", err)
+			}
+		}()
+	}
 }
 
 // batteryLevel is the charge to record against a hold, or -1 when there is no
 // cost to measure.
 //
 // On AC the battery is not paying for the hold, so recording a percentage
-// there would attribute a cost to the wrong thing — a charging machine can even
+// there would attribute a cost to the wrong thing: a charging machine can even
 // gain charge across a window, which as a "drain" is nonsense.
 func batteryLevel(st power.State) int {
 	if st.OnAC || st.BatteryPct < 0 {

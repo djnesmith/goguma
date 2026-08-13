@@ -1,7 +1,7 @@
 // Package scan discovers scheduled jobs already configured on the machine
 // and decides which of them are worth waking for.
 //
-// The hard problem is not finding entries — it is not drowning the user in
+// The hard problem is not finding entries; it is not drowning the user in
 // them. A typical Mac has hundreds of loaded launchd services and, usually,
 // an empty crontab. Presenting all of that would be worse than presenting
 // nothing.
@@ -11,7 +11,7 @@
 // they belong to the OS, they are always running, they have no time trigger
 // at all, or they fire so often that waking for them would cost far more
 // battery than the run is worth. What survives is ranked by measured
-// miss-risk — how often the entry has genuinely been firing while this
+// miss-risk: how often the entry has genuinely been firing while this
 // machine was asleep.
 package scan
 
@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 // Source identifies where a candidate came from.
@@ -46,7 +46,7 @@ type Entry struct {
 	Label string
 
 	// AlwaysRunning marks a service that stays resident (KeepAlive, a live
-	// pid, or socket-activated). Such a service is never "missed" — it is
+	// pid, or socket-activated). Such a service is never "missed"; it is
 	// already there when the machine wakes.
 	AlwaysRunning bool
 
@@ -62,12 +62,12 @@ type Entry struct {
 	// LastRun and NextRun are the scheduler's own records, when it keeps
 	// them. Most schedulers do not: cron keeps nothing, launchd exposes
 	// nothing useful. Application schedulers frequently do, and when
-	// available this is far better evidence than anything WakeGuard can
-	// infer — see ObservedLateness.
+	// available this is far better evidence than anything goguma can
+	// infer; see ObservedLateness.
 	LastRun time.Time
 	NextRun time.Time
 
-	// Wrappable reports whether the user can put `wakeguard-mark` in front of
+	// Wrappable reports whether the user can put `goguma-mark` in front of
 	// this job's command.
 	//
 	// False for application schedulers, which invoke their jobs internally:
@@ -79,7 +79,7 @@ type Entry struct {
 	// Dialect is the syntax this entry's Schedule is written in.
 	//
 	// Declared by the provider, because only the engine that will execute the
-	// schedule determines how to read it — see dialect.go. Empty means
+	// schedule determines how to read it; see dialect.go. Empty means
 	// DialectCron, which is what every current provider produces.
 	Dialect Dialect
 
@@ -88,7 +88,7 @@ type Entry struct {
 	//
 	// The distinction matters for how much lateness costs. "Every 6 hours"
 	// only asks to happen periodically, and running an hour late is nearly
-	// free. "At 09:00" states that 09:00 is the point — a morning briefing
+	// free. "At 09:00" states that 09:00 is the point: a morning briefing
 	// delivered at 13:00 has lost most of its value even though it did
 	// eventually run.
 	TimeSensitive bool
@@ -106,7 +106,7 @@ const (
 	ReasonSelfHealing   Reason = "the scheduler re-runs it automatically after a missed window"
 	ReasonUnparseable   Reason = "its schedule could not be parsed"
 	// ReasonUnsupportedDialect is deliberately distinct from unparseable. The
-	// schedule is perfectly valid — in a syntax WakeGuard would misread — so
+	// schedule is perfectly valid (in a syntax goguma would misread), so
 	// the honest report is "not supported", not "malformed".
 	ReasonUnsupportedDialect Reason = "its schedule syntax would be misread by this parser"
 	ReasonNeverMissed        Reason = "has not been missed, the machine is awake when it fires"
@@ -156,7 +156,7 @@ type Options struct {
 
 	// IncludeNeverMissed keeps entries that measurably never get missed.
 	// Off by default: if the machine is reliably awake when a job fires,
-	// WakeGuard has nothing to contribute.
+	// goguma has nothing to contribute.
 	IncludeNeverMissed bool
 }
 
@@ -202,7 +202,7 @@ func Evaluate(entries []Entry, hist *schedule.SleepHistory, now time.Time, opts 
 
 		// Plain Parse: a scanned entry is not a job yet and has no CreatedAt to
 		// anchor an interval schedule to. That leaves an interval entry's
-		// computed phase arbitrary — but it is only ever a fallback here,
+		// computed phase arbitrary, but it is only ever a fallback here,
 		// because the source's own next-run time wins immediately below, and
 		// nothing else this function decides depends on phase. Cadence, which
 		// the frequency filter and the cost estimate do depend on, is exact
@@ -215,8 +215,8 @@ func Evaluate(entries []Entry, hist *schedule.SleepHistory, now time.Time, opts 
 		}
 		c.Parsed = sched
 		// The scheduler's own next-run time is authoritative when it publishes
-		// one. Recomputing it from the expression can disagree — an interval
-		// schedule counts from its last run, not from now — and showing a time
+		// one. Recomputing it from the expression can disagree (an interval
+		// schedule counts from its last run, not from now), and showing a time
 		// that differs from what will actually happen is worse than showing
 		// nothing.
 		if !e.NextRun.IsZero() && e.NextRun.After(now) {
@@ -229,7 +229,7 @@ func Evaluate(entries []Entry, hist *schedule.SleepHistory, now time.Time, opts 
 		// schedule like "*/5 * * * *" is caught even though it declares no
 		// interval.
 		// Inclusive on purpose. With an exclusive comparison a job running at
-		// exactly the threshold slips through — a 30-minute job against a
+		// exactly the threshold slips through: a 30-minute job against a
 		// 30-minute limit is kept, which alone is 48 wakes a day.
 		if gap := sched.TypicalInterval(now); gap > 0 && gap <= opts.MinInterval {
 			c.Filtered, c.Reason = true, ReasonTooFrequent
@@ -240,12 +240,24 @@ func Evaluate(entries []Entry, hist *schedule.SleepHistory, now time.Time, opts 
 		// Self-healing is deliberately NOT excluded here. It is checked after
 		// lateness below, so that a scheduler which claims to catch up but
 		// demonstrably runs hours late still surfaces.
-		c.Risk = schedule.EstimateMissRisk(sched, hist, now, opts.Lookback)
+		//
+		// The replay is skipped for interval schedules. Their phase here is
+		// arbitrary (anchored at whatever moment this process started, per
+		// the Parse comment above), so replayed fire times are fiction: a
+		// daily job that really fires at 03:00 replays at the process start
+		// hour, reads confidently "never missed" against a machine that was
+		// awake then, and is filtered, permanently hiding exactly the job
+		// this scan exists to find. An unconfident zero Risk is kept by the
+		// never-missed filter below, which is the honest outcome: for these
+		// entries the truth arrives via observed lateness, not replay.
+		if _, interval := sched.Interval(); !interval {
+			c.Risk = schedule.EstimateMissRisk(sched, hist, now, opts.Lookback)
+		}
 		c.Lateness, c.HasLateness = observedLateness(sched, e.LastRun)
 
 		// Observed lateness beats every other consideration, including the
 		// self-healing exclusion. A scheduler that reliably catches up after a
-		// missed window is not a problem in principle — but if its own records
+		// missed window is not a problem in principle, but if its own records
 		// show a run four hours behind a 09:00 schedule, then in practice this
 		// job is not happening when the user expects, and no amount of
 		// catch-up logic changes that.
@@ -286,7 +298,7 @@ func Evaluate(entries []Entry, hist *schedule.SleepHistory, now time.Time, opts 
 // by a special case: an interval entry is parsed with no anchor, so its fire
 // times start at process start and the walk finds none before lastRun. That is
 // the honest answer. Lateness means "late against the time this was supposed
-// to run", and an unanchored interval schedule has no such time — the number
+// to run", and an unanchored interval schedule has no such time; the number
 // the walk used to produce measured the lookback's own phase, not the job's.
 func observedLateness(s *schedule.Schedule, lastRun time.Time) (time.Duration, bool) {
 	if s == nil || lastRun.IsZero() {
@@ -312,7 +324,7 @@ func observedLateness(s *schedule.Schedule, lastRun time.Time) (time.Duration, b
 	return d, true
 }
 
-// rank orders candidates by how badly they need WakeGuard.
+// rank orders candidates by how badly they need goguma.
 func rank(cs []Candidate) {
 	score := func(c Candidate) float64 {
 		// Directly observed lateness outranks everything inferred. A job the

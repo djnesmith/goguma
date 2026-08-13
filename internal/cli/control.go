@@ -8,17 +8,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/daemon"
-	"github.com/junnam/wakeguard/internal/ipc"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/daemon"
+	"github.com/junnam586/goguma/internal/ipc"
 )
 
 var cmdSkipNext = &Command{
 	Name:    "skip-next",
 	Summary: "skip the next scheduled wake",
-	Usage: `wakeguard skip-next [job]
+	Usage: `goguma skip-next [job]
 
-Skips the next wake — either for a specific job, or the very next one if no
+Skips the next wake, either for a specific job, or the very next one if no
 job is named. Everything after it is unaffected, so this is the right tool for
 "not tonight" rather than disabling a job.`,
 	Run: func(ctx *Context, args []string) error {
@@ -43,10 +43,10 @@ job is named. Everything after it is unaffected, so this is the right tool for
 var cmdSleepNow = &Command{
 	Name:    "sleep-now",
 	Summary: "release every hold so the machine can sleep",
-	Usage: `wakeguard sleep-now
+	Usage: `goguma sleep-now
 
-Releases every active hold immediately. Does not put the machine to sleep — it
-removes WakeGuard's reason not to. Any job currently running keeps running.`,
+Releases every active hold immediately. Does not put the machine to sleep; it
+removes goguma's reason not to. Any job currently running keeps running.`,
 	Run: func(ctx *Context, args []string) error {
 		var resp struct {
 			Released int `json:"released"`
@@ -68,17 +68,17 @@ removes WakeGuard's reason not to. Any job currently running keeps running.`,
 var cmdPause = &Command{
 	Name:    "pause",
 	Summary: "stop scheduling wakes until resumed",
-	Usage: `wakeguard pause
+	Usage: `goguma pause
 
 Releases all holds and stops scheduling wakes. Jobs stay registered and their
-history is preserved; nothing wakes the machine until 'wakeguard resume'.`,
+history is preserved; nothing wakes the machine until 'goguma resume'.`,
 	Run: func(ctx *Context, args []string) error {
 		if err := callDaemon(ctx, ipc.OpPause, nil, nil); err != nil {
 			return err
 		}
 		r := ctx.Out
 		r.Printf("%s paused · no wakes will be scheduled\n", r.Warn(r.Sym().Idle))
-		r.Printf("  %s\n", r.Muted("resume with: wakeguard resume"))
+		r.Printf("  %s\n", r.Muted("resume with: goguma resume"))
 		return nil
 	},
 }
@@ -86,7 +86,7 @@ history is preserved; nothing wakes the machine until 'wakeguard resume'.`,
 var cmdResume = &Command{
 	Name:    "resume",
 	Summary: "resume scheduling wakes",
-	Usage:   "wakeguard resume",
+	Usage:   "goguma resume",
 	Run: func(ctx *Context, args []string) error {
 		if err := callDaemon(ctx, ipc.OpResume, nil, nil); err != nil {
 			return err
@@ -102,8 +102,8 @@ var cmdResume = &Command{
 	},
 }
 
-const configUsage = `wakeguard config get [--json]
-wakeguard config set <key> <value>
+const configUsage = `goguma config get [--json]
+goguma config set <key> <value>
 
 Settings:
   wake_buffer              how early to wake before a job fires (default 90s)
@@ -115,7 +115,7 @@ Settings:
   min_runs_for_estimate    runs needed before the learned ceiling is used
   thermal_cutout_c         force-release above this temperature, 70-95
   low_battery_cutout_pct   release holds below this charge, 5-50 (default 20).
-                           WakeGuard also refuses to wake the machine at all
+                           goguma also refuses to wake the machine at all
                            until it is this plus the rearm margin, so a wake
                            cannot land straight into a release.
   cutout_rearm_margin_pct  headroom above the cutout, 1-50 (default 5)
@@ -133,7 +133,7 @@ var cmdConfig = &Command{
 	Usage:   configUsage,
 	Run: func(ctx *Context, args []string) error {
 		if len(args) == 0 {
-			return fmt.Errorf("usage: wakeguard config get|set ...\n\n%s", configUsage)
+			return fmt.Errorf("usage: goguma config get|set ...\n\n%s", configUsage)
 		}
 		switch args[0] {
 		case "get", "show", "list":
@@ -215,7 +215,7 @@ func orNone(r interface{ Muted(string) string }, s string) string {
 
 func configSet(ctx *Context, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: wakeguard config set <key> <value>\n\nvalid keys:\n  %s",
+		return fmt.Errorf("usage: goguma config set <key> <value>\n\nvalid keys:\n  %s",
 			strings.Join(daemon.ConfigKeys(), "\n  "))
 	}
 	key, value := args[0], strings.Join(args[1:], " ")

@@ -49,7 +49,7 @@ func AllowOwnerOrRoot(owner uint32) func(Peer) error {
 		if p.UID == owner || p.UID == 0 {
 			return nil
 		}
-		return fmt.Errorf("uid %d is not authorized to control WakeGuard", p.UID)
+		return fmt.Errorf("uid %d is not authorized to control goguma", p.UID)
 	}
 }
 

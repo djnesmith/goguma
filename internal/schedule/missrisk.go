@@ -25,7 +25,7 @@ func (s SleepInterval) Contains(t time.Time) bool {
 	return t.Before(s.Wake)
 }
 
-// SleepHistory is the machine's observed sleep/wake record. WakeGuard uses
+// SleepHistory is the machine's observed sleep/wake record. goguma uses
 // it to answer the only question that matters when deciding whether a job is
 // worth waking for: has this job actually been getting skipped?
 //
@@ -107,11 +107,17 @@ const minFiresForConfidence = 3
 
 // EstimateMissRisk replays a schedule backwards over the sleep history and
 // counts how many of its past fire times landed while the machine was
-// asleep. Those are runs that were silently skipped — no error, no retry,
-// which is the entire problem WakeGuard exists to solve.
+// asleep. Those are runs that were silently skipped: no error, no retry,
+// which is the entire problem goguma exists to solve.
 func EstimateMissRisk(s *Schedule, h *SleepHistory, now time.Time, lookback time.Duration) MissRisk {
+	// The nil checks must run before anything touches s or h; computing
+	// Coverage first dereferenced a nil history one line above the guard
+	// that promises to handle it.
+	if s == nil || h == nil {
+		return MissRisk{}
+	}
 	risk := MissRisk{Coverage: h.Coverage(now)}
-	if s == nil || h == nil || len(h.Intervals) == 0 {
+	if len(h.Intervals) == 0 {
 		return risk
 	}
 	// Never claim to evaluate a period the history does not cover.
@@ -137,28 +143,45 @@ func EstimateMissRisk(s *Schedule, h *SleepHistory, now time.Time, lookback time
 }
 
 // pastFires enumerates fire times in [start, now). The cron library only
-// walks forward, so this steps forward from start and collects. The cap
-// bounds the work for a pathologically frequent schedule — such a schedule
-// is filtered out on frequency grounds anyway.
+// walks forward, so this steps forward from start and collects into a ring,
+// keeping the MOST RECENT fires when the cap is exceeded. Keeping the
+// earliest slice instead meant a frequent schedule was scored on the stalest
+// days of the window while recent misses (a new overnight sleep pattern)
+// were invisible, and the cap is reachable whenever min_import_interval is
+// configured low.
 func pastFires(s *Schedule, start, now time.Time, cap int) []time.Time {
-	var out []time.Time
+	ring := make([]time.Time, 0, cap)
+	next := 0 // ring write position once full
+	total := 0
 	cur := start
-	for len(out) < cap {
+	for {
 		cur = s.Next(cur)
 		if cur.IsZero() || !cur.Before(now) {
 			break
 		}
-		out = append(out, cur)
+		if len(ring) < cap {
+			ring = append(ring, cur)
+		} else {
+			ring[next] = cur
+			next = (next + 1) % cap
+		}
+		total++
+		if total > 100000 {
+			break // a runaway Next; bounded regardless
+		}
 	}
-	return out
+	if len(ring) < cap || next == 0 {
+		return ring
+	}
+	return append(ring[next:], ring[:next]...)
 }
 
 // DarkWakeGap is how long a gap between two sleep periods may be while still
 // counting as continuous sleep.
 //
 // macOS punctuates a long sleep with frequent maintenance DarkWakes lasting
-// two to five seconds each. The machine is not usefully awake during those —
-// user cron jobs do not reliably run — so a fire time landing in such a gap
+// two to five seconds each. The machine is not usefully awake during those
+// (user cron jobs do not reliably run), so a fire time landing in such a gap
 // was still missed. Without coalescing, an overnight sleep is recorded as
 // dozens of separate intervals with live gaps between them, and a job that
 // happened to fire in one would be scored "not missed", which is exactly

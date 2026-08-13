@@ -10,7 +10,7 @@ import (
 //
 // The helper bounds each pmset invocation at 10s. The daemon used to wait only
 // DefaultTimeout (5s) for the reply, so any pmset between those two numbers
-// timed out on the caller while the callee was still working — the helper then
+// timed out on the caller while the callee was still working; the helper then
 // answered into a closed connection, the daemon declared it lost, reconnected,
 // and repeated. Both sides were behaving as written; the deadlines simply
 // disagreed.

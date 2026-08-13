@@ -1,7 +1,7 @@
 // Package render is the CLI's presentation layer.
 //
 // Output is rich when stdout is a terminal and plain when it is not, decided
-// once at construction. Piping `wakeguard list` into grep or a script yields
+// once at construction. Piping `goguma list` into grep or a script yields
 // clean text with no escape sequences and no box drawing, without the user
 // needing a --no-color flag.
 package render
@@ -108,12 +108,12 @@ func (r *Renderer) Problem(message, fix string) {
 // Errorf writes an error to stderr in the standard shape.
 func Errorf(format string, a ...any) {
 	r := New(os.Stderr)
-	fmt.Fprintf(os.Stderr, "%s %s\n", r.Danger("wakeguard:"), fmt.Sprintf(format, a...))
+	fmt.Fprintf(os.Stderr, "%s %s\n", r.Danger("goguma:"), fmt.Sprintf(format, a...))
 }
 
 // Sparkline renders values as a compact inline chart.
 //
-// Used by `history` to make a duration trend visible at a glance — the point
+// Used by `history` to make a duration trend visible at a glance, the point
 // being to see whether a job's ceiling has converged on its real runtime, or
 // whether one run is wildly out of line with the rest.
 func (r *Renderer) Sparkline(values []float64) string {

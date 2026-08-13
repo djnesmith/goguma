@@ -107,7 +107,7 @@ func (t *Table) Render() {
 	for _, row := range t.rows {
 		if row.label.Plain != "" {
 			// Breathing room above a label, so it reads as introducing the
-			// rows below rather than trailing the ones above — and so it is
+			// rows below rather than trailing the ones above, and so it is
 			// not mistaken for a second line of column headings.
 			if wrote {
 				t.r.Blank()

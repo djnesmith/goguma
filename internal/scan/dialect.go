@@ -13,11 +13,11 @@ import "fmt"
 //
 // Nothing about the string reveals which reading is correct. Only the engine
 // that will execute it does. So dialect is recorded as a property of the
-// *source* an entry was discovered from, never inferred from its text — a
+// *source* an entry was discovered from, never inferred from its text: a
 // crontab line will be run by cron, a Hermes job by Hermes.
 //
 // Unsupported dialects are refused rather than parsed under cron semantics.
-// Refusing loses a job WakeGuard could have woken for; guessing wakes the
+// Refusing loses a job goguma could have woken for; guessing wakes the
 // machine at confidently wrong times and reports success, which is worse.
 type Dialect string
 
@@ -37,7 +37,7 @@ const (
 	DialectSystemdCal Dialect = "systemd-calendar"
 )
 
-// Supported reports whether WakeGuard can evaluate this dialect correctly.
+// Supported reports whether goguma can evaluate this dialect correctly.
 func (d Dialect) Supported() bool {
 	return d == "" || d == DialectCron || d == DialectInterval
 }

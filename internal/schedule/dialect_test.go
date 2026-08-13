@@ -8,7 +8,7 @@ import (
 // TestSundayAsSevenIsAccepted guards a false negative that would have silently
 // dropped working jobs.
 //
-// POSIX and vixie cron — the cron actually installed on macOS and Linux —
+// POSIX and vixie cron (the cron actually installed on macOS and Linux)
 // accept day-of-week 0-7 with both 0 and 7 meaning Sunday. The underlying
 // parser follows the stricter 0-6 range. Without normalisation a legitimate
 // crontab line is reported as unparseable and never woken for, while the
@@ -93,18 +93,18 @@ func TestStepsAreNotRewritten(t *testing.T) {
 // TestForeignDialectsFailLoudly documents which constructs are deliberately
 // not supported.
 //
-// These come from other schedulers — Quartz, Jenkins, AWS EventBridge — whose
+// These come from other schedulers (Quartz, Jenkins, AWS EventBridge) whose
 // syntax overlaps cron's without matching it. The important property is that
 // they are REJECTED rather than misread: a construct that parsed successfully
 // under the wrong semantics would schedule wakes at confidently wrong times,
 // which is far worse than refusing the line.
 func TestForeignDialectsFailLoudly(t *testing.T) {
 	foreign := []struct{ expr, from string }{
-		{"0 0 12 ? * WED", "Quartz — ? means no specific value"},
-		{"H/15 * * * *", "Jenkins — H spreads load by hashing the job name"},
-		{"0 0 L * *", "Quartz — L is the last day of the month"},
-		{"0 0 * * 6#3", "Quartz — #3 is the third occurrence"},
-		{"0 0 1 * ? *", "AWS EventBridge — six fields with a required ?"},
+		{"0 0 12 ? * WED", "Quartz, ? means no specific value"},
+		{"H/15 * * * *", "Jenkins, H spreads load by hashing the job name"},
+		{"0 0 L * *", "Quartz, L is the last day of the month"},
+		{"0 0 * * 6#3", "Quartz, #3 is the third occurrence"},
+		{"0 0 1 * ? *", "AWS EventBridge, six fields with a required ?"},
 		{"*/0 * * * *", "a step of zero is undefined"},
 	}
 	for _, f := range foreign {
@@ -119,7 +119,7 @@ func TestForeignDialectsFailLoudly(t *testing.T) {
 //
 // "0 0 31 4 *" is April 31st. It is valid cron syntax and an easy off-by-one,
 // but it has no next occurrence, so the parser returns the zero time forever.
-// A job built on it sat in the list looking scheduled while never running —
+// A job built on it sat in the list looking scheduled while never running,
 // and rendering that list crashed the CLI, because a zero time subtracted from
 // now saturates to the most negative int64, which the duration formatter
 // recursed on until the stack was exhausted.
@@ -147,7 +147,7 @@ func TestImpossibleSchedulesAreRejected(t *testing.T) {
 // TestSundaySevenInStepRangesAndSelfRanges guards two forms that were dropped.
 //
 // "0-7/2" was skipped entirely because of its slash, so the 7 reached a parser
-// that rejects it and a valid vixie crontab line was reported unparseable —
+// that rejects it and a valid vixie crontab line was reported unparseable,
 // the exact failure the normalisation exists to prevent. "7-7" was rewritten
 // to the backwards range "7-6,0" and rejected the same way.
 func TestSundaySevenInStepRangesAndSelfRanges(t *testing.T) {

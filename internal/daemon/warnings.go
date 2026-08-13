@@ -6,11 +6,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/power"
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 func osHostname() (string, error) { return os.Hostname() }
@@ -20,7 +20,7 @@ func osHostname() (string, error) { return os.Hostname() }
 //
 // Every warning carries a Fix string that is literally the command to run.
 // The failure mode this guards against is a job that is registered, looks
-// fine in `list`, and silently never does anything — which without this is
+// fine in `list`, and silently never does anything, which without this is
 // indistinguishable from working correctly.
 func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 	var out []model.Warning
@@ -36,13 +36,13 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 	// One cause, not its symptoms.
 	//
 	// Scheduling an OS wake goes through the helper, so a helper that is not
-	// reachable makes every wake registration fail — and reporting both reads
+	// reachable makes every wake registration fail, and reporting both reads
 	// as two independent problems when there is one, with one fix. Listing the
 	// symptom alongside the cause also puts the wrong fix first: `doctor`
 	// diagnoses, where `install` is what actually resolves it.
 	//
 	// The wake failure is still reported whenever the helper is fine, because
-	// then it is a genuinely separate fault — pmset refusing the entry, or a
+	// then it is a genuinely separate fault: pmset refusing the entry, or a
 	// competing wake owned by something else.
 	helperDown := !d.helper.Connected()
 
@@ -51,21 +51,21 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 			Kind: model.WarnWakeFailed,
 			Message: fmt.Sprintf("could not register an OS wake for %q, it will be missed if the machine is asleep: %s",
 				nextJob, wakeErr),
-			Fix: "wakeguard doctor",
+			Fix: "goguma doctor",
 		})
 	}
 
 	if helperDown {
 		// Says what is lost, plainly, without the raw error. The failures it
-		// causes — wakes that cannot be registered, holds that cannot survive a
-		// closed lid — are consequences of this one line and are not repeated
+		// causes, wakes that cannot be registered, holds that cannot survive a
+		// closed lid, are consequences of this one line and are not repeated
 		// as separate warnings.
 		msg := "the privileged helper isn't running, so the Mac can't be woken for jobs and " +
-			"sleep can't be held with the lid shut. Run the fix in Terminal — it asks for your " +
+			"sleep can't be held with the lid shut. Run the fix in Terminal; it asks for your " +
 			"Mac login password"
 		// "Not listening" is already what the sentence above says. Appending
 		// the raw dial error would read as "the helper is not reachable
-		// (wakeguard daemon is not running)", which names the wrong process
+		// (goguma daemon is not running)", which names the wrong process
 		// and sends the user looking in the wrong place.
 		if err := d.helper.LastError(); err != nil && !errors.Is(err, ipc.ErrNotRunning) {
 			msg += " (" + err.Error() + ")"
@@ -73,7 +73,7 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 		out = append(out, model.Warning{
 			Kind:    model.WarnHelperDown,
 			Message: msg,
-			Fix:     "wakeguard install",
+			Fix:     "goguma install",
 		})
 	}
 
@@ -110,7 +110,7 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 				Kind:    model.WarnScheduleParse,
 				JobID:   job.ID,
 				Message: fmt.Sprintf("job %q has an unparseable schedule and will never run: %v", job.Name, err),
-				Fix:     fmt.Sprintf("wakeguard edit %s --cron '<expression>'", job.ID),
+				Fix:     fmt.Sprintf("goguma edit %s --cron '<expression>'", job.ID),
 			})
 			continue
 		}
@@ -137,10 +137,10 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 			}
 			if job.Detection == model.DetectPattern {
 				w.Message += fmt.Sprintf("; the pattern %q may not match the running process", job.Match)
-				w.Fix = fmt.Sprintf("wakeguard test-match %q   # then: wakeguard edit %s --match '<pattern>'", job.Match, job.ID)
+				w.Fix = fmt.Sprintf("goguma test-match %q   # then: goguma edit %s --match '<pattern>'", job.Match, job.ID)
 			} else {
 				w.Message += "; the wrapper may no longer be in the crontab line"
-				w.Fix = fmt.Sprintf("wakeguard doctor %s", job.ID)
+				w.Fix = fmt.Sprintf("goguma doctor %s", job.ID)
 			}
 			out = append(out, w)
 		}
@@ -158,12 +158,12 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 					"job %q was still running at the maximum hold in the last %d runs, "+
 						"so it was released before finishing",
 					job.Name, hits),
-				Fix: fmt.Sprintf("wakeguard edit %s --max-runtime <duration>", job.ID),
+				Fix: fmt.Sprintf("goguma edit %s --max-runtime <duration>", job.ID),
 			})
 		}
 	}
 
-	// Jobs this machine has that WakeGuard is not waking for.
+	// Jobs this machine has that goguma is not waking for.
 	//
 	// This is last in the list but it is the most consequential thing here:
 	// every other warning describes a job that runs imperfectly, while this
@@ -190,7 +190,7 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 			Message: fmt.Sprintf(
 				"%s on this machine %s not being woken for, so %s missed while it sleeps (%s)",
 				pluralJobs(n), verbIs(n), verbThey(n), list),
-			Fix: "wakeguard import",
+			Fix: "goguma import",
 		})
 	}
 

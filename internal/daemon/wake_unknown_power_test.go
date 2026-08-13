@@ -3,8 +3,8 @@ package daemon
 import (
 	"testing"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/power"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/power"
 )
 
 // TestUnreadablePowerDoesNotLookLikeAFlatBattery guards a failure that silently
@@ -12,7 +12,7 @@ import (
 //
 // A failed read used to leave the zero-value state in place: 0% and not on AC.
 // That is a perfectly plausible reading, so nothing downstream could tell it
-// from a real one — the wake guard refused to schedule anything and the
+// from a real one: the wake guard refused to schedule anything and the
 // low-battery cutout fired, both citing a 0% battery that was never measured.
 func TestUnreadablePowerDoesNotLookLikeAFlatBattery(t *testing.T) {
 	cfg := config.Default()
@@ -27,7 +27,7 @@ func TestUnreadablePowerDoesNotLookLikeAFlatBattery(t *testing.T) {
 	if safe, reason := ShouldScheduleWake(unknown, cfg); !safe {
 		t.Fatalf("an unknown battery must not suppress the wake, got: %s", reason)
 	}
-	// `holding: true` — the cutout only has anything to release while a hold
+	// `holding: true`; the cutout only has anything to release while a hold
 	// is open, which is exactly when a false low-battery reading does damage.
 	if d := EvaluateCutout(unknown, cfg, true); d.Fire {
 		t.Fatalf("an unknown battery must not fire a cutout, got: %s", d.Detail)

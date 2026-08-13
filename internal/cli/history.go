@@ -7,15 +7,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/render"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/render"
 )
 
 var cmdHistory = &Command{
 	Name:    "history",
 	Summary: "show a job's duration trend",
-	Usage: `wakeguard history <job> [--limit N] [--json]
+	Usage: `goguma history <job> [--limit N] [--json]
 
 Shows how long a job has actually been taking, and how much sleep-hold time
 was spent beyond that. A large gap between the two is wasted battery, usually
@@ -37,7 +37,7 @@ caused by a match pattern that fails to see the job exit.
 			return err
 		}
 		if ref == "" {
-			return fmt.Errorf("which job? usage: wakeguard history <job>")
+			return fmt.Errorf("which job? usage: goguma history <job>")
 		}
 
 		var resp ipc.HistoryResp
@@ -85,11 +85,11 @@ func printHistory(r *render.Renderer, resp ipc.HistoryResp) {
 		{"trend", r.Accent(spark)},
 	})
 
-	if st.BatteryDrained > 0 {
+	if st.BatteryPerRun > 0 {
 		r.Blank()
 		r.Printf("  %s\n", r.Muted(fmt.Sprintf(
-			"%d%% of battery went on holding the Mac awake for this job",
-			st.BatteryDrained)))
+			"about %s of battery per run, holding the Mac awake for this job",
+			model.Percent(st.BatteryPerRun))))
 	}
 
 	r.Blank()
@@ -112,7 +112,7 @@ func printHistory(r *render.Renderer, resp ipc.HistoryResp) {
 
 		ran := run.Duration.String()
 		if run.Duration == 0 {
-			ran = "—"
+			ran = "-"
 		}
 
 		// Flag runs where the hold vastly exceeded the work, which is the
@@ -142,7 +142,7 @@ func printHistory(r *render.Renderer, resp ipc.HistoryResp) {
 		r.Blank()
 		r.Problem(
 			fmt.Sprintf("%d of these windows never detected the job at all", st.NeverSeen),
-			fmt.Sprintf("wakeguard doctor %s", resp.Job.ID))
+			fmt.Sprintf("goguma doctor %s", resp.Job.ID))
 	}
 	_ = sym
 }

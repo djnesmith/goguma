@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
 )
 
 // TestARunningJobIsNotCutOffAtItsCeiling guards the failure that made a slow
@@ -13,8 +13,8 @@ import (
 //
 // The ceiling is a guess at how long a job takes. A job still running when it
 // arrives has disproved the guess, not misbehaved. Releasing there freed the
-// machine to sleep under a healthy job *and* discarded the run — truncated
-// durations cannot train the estimator — so the next run inherited the same
+// machine to sleep under a healthy job *and* discarded the run, truncated
+// durations cannot train the estimator, so the next run inherited the same
 // wrong ceiling and was cut off in exactly the same place, indefinitely.
 func TestARunningJobIsNotCutOffAtItsCeiling(t *testing.T) {
 	d, _ := keepAwakeDaemon(t)
@@ -84,7 +84,7 @@ func TestAWakeOnlyWindowStillEndsOnTime(t *testing.T) {
 // TestAnObservedWakeOnlyJobIsNotCutOffAtItsCeiling guards the interaction
 // between two features that were built separately.
 //
-// A hermes job is registered DetectNone because no process exists to watch —
+// A hermes job is registered DetectNone because no process exists to watch,
 // so `enforceCeilings` classified it as wake-only and closed its window on the
 // timer. That was right until the scheduler-state observer arrived, which can
 // see such a job running. The wake-only branch ran first and released anyway,

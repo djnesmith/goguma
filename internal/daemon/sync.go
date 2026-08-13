@@ -3,14 +3,16 @@ package daemon
 import (
 	"context"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/power"
-	"github.com/junnam/wakeguard/internal/scan"
-	"github.com/junnam/wakeguard/internal/schedule"
-	"github.com/junnam/wakeguard/internal/store"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
+	"github.com/junnam586/goguma/internal/scan"
+	"github.com/junnam586/goguma/internal/schedule"
+	"github.com/junnam586/goguma/internal/store"
 )
 
 // syncProviders adopts and retires jobs from watched scheduler sources.
@@ -18,29 +20,29 @@ import (
 // This exists because the moment a job is created is almost never a moment
 // anyone is thinking about sleep. Someone asks their agent for a morning
 // briefing; the agent writes a schedule into its own store; nothing prompts
-// anyone to also tell WakeGuard. Without watching, coverage depends on the
-// user remembering to re-run `import` after every change — which is exactly
+// anyone to also tell goguma. Without watching, coverage depends on the
+// user remembering to re-run `import` after every change, which is exactly
 // the kind of silent gap this tool exists to close.
 //
-// On by default for every adoptable source. Installing WakeGuard is itself the
+// On by default for every adoptable source. Installing goguma is itself the
 // statement that jobs should survive sleep, and requiring a second opt-in
 // mostly produces installs that quietly do nothing. The safeguard is
-// visibility — what was adopted and what it costs is reported — rather than a
+// visibility (what was adopted and what it costs is reported) rather than a
 // switch the user has to discover.
-func (d *Daemon) syncProviders(ctx context.Context) {
+func (d *Daemon) syncProviders(ctx context.Context) (adopted, updated, retired int) {
 	d.mu.RLock()
 	sources := effectiveAutoAdopt(d.cfg.AutoAdopt)
 	cfg := d.cfg
 	d.mu.RUnlock()
 
 	if len(sources) == 0 {
-		return
+		return 0, 0, 0
 	}
 
-	entries, _ := scan.DiscoverAll(ctx)
+	entries, coverage := scan.DiscoverAll(ctx)
 
-	// Miss-risk needs sleep history, but adoption should not be blocked on it
-	// — an empty history simply means risk is unknown, which the filter treats
+	// Miss-risk needs sleep history, but adoption should not be blocked on it:
+	// an empty history simply means risk is unknown, which the filter treats
 	// as "keep" rather than "discard".
 	hist := d.cachedSleepHistory()
 
@@ -48,8 +50,10 @@ func (d *Daemon) syncProviders(ctx context.Context) {
 	opts.MinInterval = cfg.MinImportInterval.D()
 	keep, _ := scan.Evaluate(entries, hist, time.Now(), opts)
 
-	d.adoptNew(keep, sources)
-	d.retireVanished(entries, sources)
+	adopted = d.adoptNew(keep, sources)
+	updated, freqRetired := d.updateChanged(entries, sources, cfg)
+	retired = d.retireVanished(entries, coverage, sources) + freqRetired
+	return adopted, updated, retired
 }
 
 // sleepHistoryTTL is how long a reconstructed sleep history is reused.
@@ -77,6 +81,27 @@ func (d *Daemon) cachedSleepHistory() *schedule.SleepHistory {
 		hist = &schedule.SleepHistory{}
 	}
 
+	// Merge in the daemon's own observed sleep log. It is written exactly for
+	// machines whose OS log is unreadable (no journalctl, log rotated away),
+	// but it was write-only: the documented fallback did not exist, and on
+	// those machines miss-risk stayed unknowable forever. Overlap with the OS
+	// log is harmless; AsleepAt and the replay treat intervals as a union.
+	if rec, recErr := d.store.RecordedSleep(); recErr == nil && len(rec) > 0 {
+		cutoff := time.Now().Add(-14 * 24 * time.Hour)
+		for _, iv := range rec {
+			if iv.Wake.After(cutoff) {
+				hist.Intervals = append(hist.Intervals, iv)
+			}
+		}
+		sort.Slice(hist.Intervals, func(i, j int) bool {
+			return hist.Intervals[i].Sleep.Before(hist.Intervals[j].Sleep)
+		})
+		if first := rec[0].Sleep; !first.Before(cutoff) &&
+			(hist.Since.IsZero() || first.Before(hist.Since)) {
+			hist.Since = first
+		}
+	}
+
 	d.mu.Lock()
 	d.sleepHist, d.sleepHistAt = hist, time.Now()
 	d.mu.Unlock()
@@ -84,7 +109,7 @@ func (d *Daemon) cachedSleepHistory() *schedule.SleepHistory {
 }
 
 // adoptNew registers candidates from watched sources that are not yet known.
-func (d *Daemon) adoptNew(candidates []scan.Candidate, sources []string) {
+func (d *Daemon) adoptNew(candidates []scan.Candidate, sources []string) (adopted int) {
 	var uncovered []scan.Candidate
 	existing := map[string]bool{}
 	for _, j := range d.store.Jobs() {
@@ -105,11 +130,11 @@ func (d *Daemon) adoptNew(candidates []scan.Candidate, sources []string) {
 		// A wrappable job needs its command line edited to be detectable.
 		// Adopting one automatically would create a job that is registered,
 		// looks correct, and is recorded as never-detected on every single
-		// run — generating a permanent warning about a configuration nobody
+		// run, generating a permanent warning about a configuration nobody
 		// chose. Those stay a deliberate `import` decision.
 		if c.Wrappable {
-			// Not adopted — but no longer forgotten. Skipping silently meant a
-			// user with a crontab full of jobs saw a healthy WakeGuard and a
+			// Not adopted, but no longer forgotten. Skipping silently meant a
+			// user with a crontab full of jobs saw a healthy goguma and a
 			// Mac that still slept through every one of them.
 			uncovered = append(uncovered, c)
 			continue
@@ -142,35 +167,130 @@ func (d *Daemon) adoptNew(candidates []scan.Candidate, sources []string) {
 			Message: "adopted automatically from " + string(c.Source),
 		})
 		existing[id] = true
+		adopted++
 	}
 
 	d.mu.Lock()
 	d.uncovered = uncovered
 	d.mu.Unlock()
+	return adopted
 }
 
-// retireVanished removes managed jobs whose source entry is gone.
+// updateChanged refreshes managed jobs whose source entry still exists but
+// now carries a different schedule or command.
 //
-// Only jobs WakeGuard adopted itself are retired. A hand-registered job is
-// left alone even if it looks unmatched, because a human's explicit intent
-// should never be undone by a scan that might simply have failed to read a
-// source this time.
-func (d *Daemon) retireVanished(entries []scan.Entry, sources []string) {
-	present := map[string]bool{}
-	sawSource := map[string]bool{}
+// A schedule edit happens in the source scheduler, not in goguma, and the
+// job's name usually survives it. Adoption skips names it already knows, so
+// without this pass the stored copy would keep the old fire time forever:
+// the machine wakes at a time nobody means anymore, and sleeps through the
+// time they do.
+//
+// Only jobs goguma adopted itself are updated. A hand-registered job is the
+// user's own definition, and a scan never overwrites an explicit human
+// decision; retireVanished draws the same line.
+func (d *Daemon) updateChanged(entries []scan.Entry, sources []string, cfg config.Config) (updated, retired int) {
+	type key struct{ source, id string }
+	latest := map[key]scan.Entry{}
 	for _, e := range entries {
-		present[model.Slug(e.Name)] = true
-		sawSource[string(e.Source)] = true
+		latest[key{string(e.Source), model.Slug(e.Name)}] = e
 	}
 
 	for _, j := range d.store.Jobs() {
 		if !j.Managed || !slices.Contains(sources, j.Source) {
 			continue
 		}
-		// If the source produced nothing at all this pass, treat it as a read
-		// failure rather than as every job having been deleted. Otherwise a
-		// momentarily unreadable file would retire the user's whole set.
-		if !sawSource[j.Source] {
+		e, ok := latest[key{j.Source, j.ID}]
+		if !ok {
+			continue
+		}
+		if e.Schedule == j.Schedule && e.Command == j.Command {
+			continue
+		}
+
+		refreshed := *j
+		refreshed.Schedule = e.Schedule
+		refreshed.Command = e.Command
+		// A source entry that no longer parses keeps the old, working
+		// definition instead of replacing it with a broken one. Validate does
+		// not parse schedules, so check here, the same way the scheduler will.
+		sched, err := schedule.ParseAt(refreshed.Schedule, refreshed.Location(), refreshed.ScheduleAnchor())
+		if err != nil {
+			d.log.Warn("skipped updating a job to an unparseable schedule",
+				"job", j.ID, "schedule", e.Schedule, "err", err)
+			continue
+		}
+		// An update must keep the promise adoption made: goguma never
+		// auto-covers a schedule that fires more often than the import
+		// interval floor, because waking for it costs more battery than the
+		// run is worth. A managed job is goguma's own adoption decision, so
+		// when its schedule crosses that line the decision is revisited under
+		// the same policy and the job is retired, exactly as if the too
+		// frequent schedule had been there on the day of the scan. Keeping
+		// the stale schedule instead would wake the machine for fire times
+		// the source no longer has. Inclusive comparison for the same reason
+		// as scan.Evaluate's.
+		if gap := sched.TypicalInterval(time.Now()); gap > 0 && gap <= cfg.MinImportInterval.D() {
+			if _, err := d.store.Remove(j.ID); err != nil {
+				d.log.Warn("could not retire a job whose schedule became too frequent",
+					"job", j.ID, "err", err)
+				continue
+			}
+			d.releaseJob(j.ID)
+			d.log.Info("retired a job whose new schedule fires too often to be worth dedicated wakes",
+				"job", j.ID, "source", j.Source, "schedule", e.Schedule, "interval", gap)
+			d.event(store.Event{
+				Kind: store.EventWindowOpened, JobID: j.ID, JobName: j.Name,
+				Message: "retired: the new schedule fires every " + model.HumanDuration(gap) +
+					", too often to wake for",
+			})
+			retired++
+			continue
+		}
+		if err := d.store.Put(&refreshed); err != nil {
+			d.log.Warn("could not update a changed job", "job", j.ID, "err", err)
+			continue
+		}
+
+		d.log.Info("updated a job that changed in its source",
+			"job", j.ID, "source", j.Source, "schedule", e.Schedule)
+		d.event(store.Event{
+			Kind: store.EventWindowOpened, JobID: j.ID, JobName: j.Name,
+			Message: "definition updated from " + j.Source,
+		})
+		updated++
+	}
+	return updated, retired
+}
+
+// retireVanished removes managed jobs whose source entry is gone.
+//
+// Only jobs goguma adopted itself are retired. A hand-registered job is
+// left alone even if it looks unmatched, because a human's explicit intent
+// should never be undone by a scan that might simply have failed to read a
+// source this time.
+func (d *Daemon) retireVanished(entries []scan.Entry, coverage []scan.Coverage, sources []string) (retired int) {
+	present := map[string]bool{}
+	for _, e := range entries {
+		present[model.Slug(e.Name)] = true
+	}
+	// Retire only from sources that were actually read successfully this
+	// pass. A clean read returning zero entries is an authoritative statement
+	// that everything was deleted or paused; an errored or unavailable source
+	// is skipped, so a momentarily unreadable file cannot wipe the user's
+	// whole set. Inferring failure from "produced no entries" conflated the
+	// two, which meant the last job of a source could never be retired.
+	readOK := map[string]bool{}
+	for _, c := range coverage {
+		if c.Available && c.Err == nil {
+			readOK[c.Source] = true
+		}
+	}
+
+	for _, j := range d.store.Jobs() {
+		if !j.Managed || !slices.Contains(sources, j.Source) {
+			continue
+		}
+		if !readOK[j.Source] {
 			continue
 		}
 		if present[j.ID] {
@@ -184,23 +304,28 @@ func (d *Daemon) retireVanished(entries []scan.Entry, sources []string) {
 		d.releaseJob(j.ID)
 		d.log.Info("retired a job that no longer exists in its source",
 			"job", j.ID, "source", j.Source)
+		retired++
 	}
+	return retired
 }
 
-// SyncNow runs a sync immediately, for `wakeguard sync`.
-func (d *Daemon) SyncNow(ctx context.Context) int {
-	before := len(d.store.Jobs())
-	d.syncProviders(ctx)
-	after := len(d.store.Jobs())
+// SyncNow runs a sync immediately, for `goguma sync`.
+//
+// The real action counts are returned rather than a before/after size delta:
+// a rename is one adoption plus one retirement, which a delta reports as
+// "up to date" while the job actually lost its identity, its history, and
+// its learned ceiling.
+func (d *Daemon) SyncNow(ctx context.Context) (adopted, updated, retired int) {
+	adopted, updated, retired = d.syncProviders(ctx)
 	d.afterJobChange()
-	return after - before
+	return adopted, updated, retired
 }
 
 // effectiveAutoAdopt resolves the configured value.
 //
 // A nil list means the user has never expressed a preference, which becomes
 // every adoptable source. An explicitly empty list is a deliberate "off" and
-// is left alone — the two are distinguishable precisely so that turning the
+// is left alone; the two are distinguishable precisely so that turning the
 // feature off is not silently undone on the next start.
 func effectiveAutoAdopt(configured []string) []string {
 	if configured == nil {
@@ -242,11 +367,11 @@ func AdoptableSources() []string { return adoptableSources() }
 //
 // Turning the feature off returns an empty but NON-nil slice. nil means "never
 // configured" and expands to every adoptable source, so returning nil here
-// would make `config set auto_adopt off` switch it on — the exact inversion of
+// would make `config set auto_adopt off` switch it on, the exact inversion of
 // what the user asked for.
 //
 // "all" is the inverse: it returns nil, restoring the unconfigured default.
-// Without it the setting is a one-way door over IPC — a client could turn
+// Without it the setting is a one-way door over IPC: a client could turn
 // watching off but never fully back on, only approximate it by naming the
 // sources it happened to know about. That approximation silently narrows as
 // schedulers are added, so a UI toggle would quietly stop covering things it

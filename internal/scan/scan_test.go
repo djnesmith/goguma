@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 // alwaysAsleepAt3am builds a history where the machine sleeps 23:00-08:00.
@@ -87,7 +87,7 @@ func TestSelfHealingIsExcluded(t *testing.T) {
 }
 
 func TestNeverMissedIsExcluded(t *testing.T) {
-	// The machine is reliably awake at 14:00, so WakeGuard adds nothing.
+	// The machine is reliably awake at 14:00, so goguma adds nothing.
 	c, kept := evalOne(t, Entry{Name: "afternoon", Schedule: "0 14 * * *", Source: SourceCrontab})
 	if kept || c.Reason != ReasonNeverMissed {
 		t.Errorf("expected exclusion as never-missed, got kept=%v reason=%q", kept, c.Reason)
@@ -131,7 +131,7 @@ func TestRankingPutsMostMissedFirst(t *testing.T) {
 
 	// Asleep 01:00-06:00 every night, and additionally 22:00-23:00 on only
 	// half the nights. A 03:00 job is therefore always missed, while a 22:30
-	// job is missed about half the time — so their ranking is unambiguous
+	// job is missed about half the time, so their ranking is unambiguous
 	// rather than a tie broken by discovery order.
 	hist := alwaysAsleepAt3am(0)
 	for d := 1; d <= 14; d++ {
@@ -259,8 +259,8 @@ not a real line
 func TestSixFieldCrontabIsRefusedNotMisparsed(t *testing.T) {
 	// A six-field (seconds-precision) line splits at five fields into a
 	// schedule that is silently wrong but still valid: "0 0 9 * * * cmd"
-	// becomes "0 0 9 * *" — 00:00 on the 9th of each month, not 09:00:00
-	// daily. WakeGuard would wake the machine at confidently incorrect times,
+	// becomes "0 0 9 * *": 00:00 on the 9th of each month, not 09:00:00
+	// daily. goguma would wake the machine at confidently incorrect times,
 	// which is worse than not handling the line at all.
 	entries := ParseCrontab("0 0 9 * * * /opt/six-field.sh")
 	if len(entries) != 0 {

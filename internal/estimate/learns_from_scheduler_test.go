@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
 )
 
 func measuredRuns(n int, d time.Duration) []model.Run {
@@ -14,15 +14,40 @@ func measuredRuns(n int, d time.Duration) []model.Run {
 		out = append(out, model.Run{
 			Outcome:  model.OutcomeOK,
 			Duration: model.Duration(d),
+			// Real runs always carry the job's mode; see hold.finish.
+			Detection: model.DetectNone,
 		})
 	}
 	return out
 }
 
+// History is keyed by name alone, so a re-added name with a different
+// detection mode is a different job wearing the same slug. Inheriting an
+// observed job's hour-long p95 into a wake-only hold would pin the machine
+// awake for the hour, nightly, with nothing to ever correct it.
+func TestAWakeOnlyJobIgnoresAForeignJobsHistory(t *testing.T) {
+	cfg := config.Default()
+	job := &model.Job{ID: "db-dump", Detection: model.DetectNone}
+
+	foreign := make([]model.Run, 0, 30)
+	for i := 0; i < 30; i++ {
+		foreign = append(foreign, model.Run{
+			Outcome: model.OutcomeOK, Duration: model.Duration(time.Hour),
+			Detection: model.DetectPattern,
+		})
+	}
+
+	res := Compute(job, foreign, cfg)
+	if res.Ceiling != cfg.WakeOnlyHold.D() {
+		t.Errorf("ceiling %s inherited a foreign job's history; want the blind %s window",
+			res.Ceiling, cfg.WakeOnlyHold.D())
+	}
+}
+
 // TestAWakeOnlyJobLearnsOnceItIsMeasured is the payoff for reading a
 // scheduler's own run records.
 //
-// A hermes job is registered DetectNone — no process exists to watch — but its
+// A hermes job is registered DetectNone (no process exists to watch), but its
 // scheduler records a real start, end and status for every run. Once those
 // arrive the ceiling must follow them. Keying the fixed window off the declared
 // mode meant a job with a shelf full of true durations kept a blind 3-minute
@@ -46,7 +71,7 @@ func TestAWakeOnlyJobLearnsOnceItIsMeasured(t *testing.T) {
 	}
 }
 
-// Until there are enough measurements it must stay on the fixed window — one
+// Until there are enough measurements it must stay on the fixed window; one
 // fast sample must not collapse the ceiling and start truncating the job.
 func TestAWakeOnlyJobKeepsTheFixedWindowUntilItHasEnough(t *testing.T) {
 	cfg := config.Default()

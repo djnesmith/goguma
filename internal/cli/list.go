@@ -9,19 +9,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/render"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/render"
 )
 
 var cmdList = &Command{
 	Name:    "list",
 	Summary: "list registered jobs and their learned durations",
-	Usage: `wakeguard list [--json] [--explain]
+	Usage: `goguma list [--json] [--explain]
 
 Shows every registered job with its schedule, next run, typical duration, and
 the ceiling that will be enforced. Jobs that have been filed into a group are
-listed under that group's heading, ungrouped ones last; see 'wakeguard group'.
+listed under that group's heading, ungrouped ones last; see 'goguma group'.
 
   --json      emit machine-readable JSON
   --explain   show how each ceiling was derived`,
@@ -54,8 +54,8 @@ func printJobs(r *render.Renderer, resp ipc.JobsListResp, explain bool) {
 	if len(jobs) == 0 {
 		r.Line(r.Muted("No jobs registered yet."))
 		r.Blank()
-		r.Printf("  %s  scan this machine for jobs worth waking for\n", r.Accent("wakeguard import"))
-		r.Printf("  %s  register one by hand\n", r.Accent("wakeguard add --help"))
+		r.Printf("  %s  scan this machine for jobs worth waking for\n", r.Accent("goguma import"))
+		r.Printf("  %s  register one by hand\n", r.Accent("goguma add --help"))
 		return
 	}
 
@@ -103,7 +103,7 @@ func printJobs(r *render.Renderer, resp ipc.JobsListResp, explain bool) {
 		notes = append(notes, r.Muted("* ceiling is a conservative default until enough runs accumulate"))
 	}
 	if anyProblem(jobs) {
-		notes = append(notes, r.Muted(sym.Warn+" needs attention · run 'wakeguard doctor'"))
+		notes = append(notes, r.Muted(sym.Warn+" needs attention · run 'goguma doctor'"))
 	}
 	if len(notes) > 0 {
 		r.Blank()
@@ -125,16 +125,19 @@ func printJobs(r *render.Renderer, resp ipc.JobsListResp, explain bool) {
 		}
 	}
 
-	// What the whole schedule costs, in the unit the user pays it in.
-	var drained int
+	// What one round of the whole schedule costs, in the unit the user pays
+	// it in. Summed per-run costs rather than a grand total: the question is
+	// "what do these jobs cost me each time", not "how much have they ever
+	// used", which only ever climbs.
+	var perRound float64
 	for _, v := range jobs {
-		drained += v.Stats.BatteryDrained
+		perRound += v.Stats.BatteryPerRun
 	}
-	if drained > 0 {
+	if perRound > 0 {
 		r.Blank()
 		r.Printf("  %s\n", r.Muted(fmt.Sprintf(
-			"%d%% of battery has gone on holding the Mac awake for these jobs",
-			drained)))
+			"about %s of battery each time these jobs run",
+			model.Percent(perRound))))
 	}
 }
 
@@ -187,8 +190,8 @@ func jobRow(r *render.Renderer, t *render.Table, v ipc.JobView, now time.Time) {
 		schedText = "invalid"
 	}
 
-	next := r.Muted("—")
-	nextPlain := "—"
+	next := r.Muted("-")
+	nextPlain := "-"
 	if v.NextFire != nil {
 		nextPlain = model.HumanUntil(*v.NextFire, now)
 		next = nextPlain
@@ -197,7 +200,7 @@ func jobRow(r *render.Renderer, t *render.Table, v ipc.JobView, now time.Time) {
 		next, nextPlain = r.Muted("disabled"), "disabled"
 	}
 
-	typical := "—"
+	typical := "-"
 	if v.Stats.Typical > 0 {
 		typical = v.Stats.Typical.String()
 	}

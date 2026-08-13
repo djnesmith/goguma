@@ -497,7 +497,7 @@ func TestReadCelsius(t *testing.T) {
 
 // TestThermalCandidatesOrdering checks that the CPU package sensor is tried
 // before the chassis sensor, and that hwmon is only reached after every
-// thermal zone. Getting this backwards would not fail loudly — it would just
+// thermal zone. Getting this backwards would not fail loudly; it would just
 // silently monitor the wrong part of the machine.
 func TestThermalCandidatesOrdering(t *testing.T) {
 	thermal := t.TempDir()
@@ -552,5 +552,48 @@ func TestRTCWakealarmPaths(t *testing.T) {
 	}
 	if got := rtcWakealarmPaths(filepath.Join(root, "absent")); len(got) != 0 {
 		t.Errorf("got %v, want none", got)
+	}
+}
+
+// One failed probe pass must be a cooldown, not a life sentence: a sensor
+// that vanishes across suspend/resume comes back, and the thermal cutout
+// staying blind forever is exactly backwards for a safety valve.
+func TestThermalProbeRecoversAfterAFailedPass(t *testing.T) {
+	oldThermal, oldHwmon := thermalRoot, hwmonRoot
+	defer func() { thermalRoot, hwmonRoot = oldThermal, oldHwmon }()
+	thermalRoot, hwmonRoot = t.TempDir(), t.TempDir()
+	tempMu.Lock()
+	tempPath, tempLabel, tempProbed, tempRecheckAt = "", "", false, time.Time{}
+	tempMu.Unlock()
+
+	if _, _, ok := readThermalTemp(); ok {
+		t.Fatal("empty sysfs produced a temperature reading")
+	}
+
+	// The sensor re-appears (resume completed).
+	zone := filepath.Join(thermalRoot, "thermal_zone0")
+	if err := os.MkdirAll(zone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(zone, "type"), []byte("x86_pkg_temp\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(zone, "temp"), []byte("45000\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Still inside the cooldown: blind, by design, so a sensorless machine
+	// is not re-enumerated on every tick.
+	if _, _, ok := readThermalTemp(); ok {
+		t.Fatal("a reading appeared inside the cooldown")
+	}
+
+	tempMu.Lock()
+	tempRecheckAt = time.Now().Add(-time.Second)
+	tempMu.Unlock()
+
+	v, _, ok := readThermalTemp()
+	if !ok || v != 45 {
+		t.Fatalf("sensor did not recover after the cooldown: v=%v ok=%v", v, ok)
 	}
 }

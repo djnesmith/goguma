@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/detect"
-	"github.com/junnam/wakeguard/internal/estimate"
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/schedule"
-	"github.com/junnam/wakeguard/internal/store"
+	"github.com/junnam586/goguma/internal/detect"
+	"github.com/junnam586/goguma/internal/estimate"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/schedule"
+	"github.com/junnam586/goguma/internal/store"
 )
 
-// handle dispatches an IPC request from the CLI, the GUI, or wakeguard-mark.
+// handle dispatches an IPC request from the CLI, the GUI, or goguma-mark.
 func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage) (any, error) {
 	switch op {
 	case ipc.OpPing:
@@ -34,6 +34,13 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 		if job.ID == "" {
 			job.ID = model.Slug(job.Name)
 		}
+		// Parse the schedule before storing, not just Validate it: a stored
+		// unparseable schedule is a poison pill every tick trips over, and
+		// clients cannot be trusted to have checked (the CLI once stored one
+		// and then crashed before its own check ran).
+		if _, perr := schedule.ParseAt(job.Schedule, job.Location(), job.ScheduleAnchor()); perr != nil {
+			return nil, perr
+		}
 		if err := d.store.Add(&job); err != nil {
 			return nil, err
 		}
@@ -44,6 +51,19 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 		var job model.Job
 		if err := json.Unmarshal(payload, &job); err != nil {
 			return nil, err
+		}
+		// A client edit that changes what sync mirrors (schedule or command)
+		// is a takeover: clear Managed so the next sync does not silently
+		// revert an explicit human decision back to the source's values.
+		// Sync's own refreshes call store.Put directly, not this op, so
+		// untouched adopted jobs keep tracking their source.
+		if existing, ok := d.store.Job(job.ID); ok && existing.Managed &&
+			(job.Schedule != existing.Schedule || job.Command != existing.Command) {
+			job.Managed = false
+		}
+		// Same parse-before-store guard as jobs.add.
+		if _, perr := schedule.ParseAt(job.Schedule, job.Location(), job.ScheduleAnchor()); perr != nil {
+			return nil, perr
 		}
 		if err := d.store.Put(&job); err != nil {
 			return nil, err
@@ -111,7 +131,8 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 		return map[string]any{"skipped_fire": fire}, nil
 
 	case ipc.OpSync:
-		return map[string]int{"added": d.SyncNow(ctx)}, nil
+		adopted, updated, retired := d.SyncNow(ctx)
+		return map[string]int{"added": adopted, "updated": updated, "retired": retired}, nil
 
 	case ipc.OpSleepNow:
 		return map[string]int{"released": d.SleepNow()}, nil
@@ -215,7 +236,17 @@ func (d *Daemon) jobsList() ipc.JobsListResp {
 		} else {
 			v.ScheduleDisplay = sched.Display
 			v.ScheduleShort = sched.DisplayShort
-			fire := sched.Next(now)
+			// Same source of truth as the wake itself.
+			//
+			// This computed the fire time independently, so after the wake
+			// path started trusting the scheduler's own answer the list still
+			// showed the re-derived one, the app would have displayed a time
+			// the daemon had no intention of waking for, which is worse than
+			// either being wrong on its own.
+			fire := d.schedulerFireTime(job, now)
+			if fire.IsZero() {
+				fire = sched.Next(now)
+			}
 			v.NextFire = &fire
 			buffer := cfg.WakeBuffer.D()
 			if job.WakeBuffer > 0 {
@@ -294,7 +325,7 @@ func (d *Daemon) markStart(req ipc.MarkStartReq) ipc.MarkResp {
 	d.mu.Lock()
 	h, open := d.holds[job.ID]
 	if !open {
-		// The job started outside any window WakeGuard opened — a manual run,
+		// The job started outside any window goguma opened, a manual run,
 		// or a schedule that has drifted from what is registered. Open a hold
 		// anyway: something real is running and the machine should stay awake
 		// for it. This is a genuine advantage of the wrapper over pattern
@@ -374,7 +405,7 @@ func (d *Daemon) openAdHocWindow(job *model.Job, now time.Time) {
 		ceiling:        est.Ceiling,
 		detectDeadline: detectDeadlineFor(now, est.Ceiling),
 	}
-	if a, err := d.plat.HoldIdleSleep("wakeguard: " + job.Name); err == nil {
+	if a, err := d.plat.HoldIdleSleep("goguma: " + job.Name); err == nil {
 		h.assertion = a
 	}
 	d.mu.Lock()
@@ -410,6 +441,15 @@ func (d *Daemon) setPaused(p bool) {
 	if p {
 		d.SleepNow()
 		_ = d.helper.CancelWake()
+		// Clear the wake bookkeeping to match the cancel. Leaving it in
+		// place made resume a no-op: scheduleNextWake saw the same target
+		// still marked registered and short-circuited, so no OS wake existed,
+		// while status kept printing the stale time with no warning. The
+		// machine then slept through the very next job.
+		d.mu.Lock()
+		d.nextWake, d.nextJob, d.nextFire = nil, "", nil
+		d.wakeOK, d.wakeErr = false, ""
+		d.mu.Unlock()
 		d.log.Info("paused: no wakes will be scheduled and all holds are released")
 	} else {
 		d.log.Info("resumed")

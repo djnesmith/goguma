@@ -24,7 +24,7 @@ func TestDurationRoundTrip(t *testing.T) {
 		90 * time.Second,
 		5 * time.Minute,
 		time.Hour,
-		90 * time.Minute, // renders "1h 30m" — the original failure
+		90 * time.Minute, // renders "1h 30m", the original failure
 		2*time.Hour + 5*time.Minute,
 		24 * time.Hour,
 		36 * time.Hour, // renders "1d 12h"
@@ -216,7 +216,7 @@ func contains(s, sub string) bool {
 func TestInvalidMatchPatternIsRejected(t *testing.T) {
 	// An uncompilable pattern used to be accepted and stored. The job then
 	// looked correctly registered while the daemon's matcher failed to build
-	// on every tick, so the job was never observed — waking the machine and
+	// on every tick, so the job was never observed, waking the machine and
 	// holding it for the full ceiling on every run, indefinitely, with nothing
 	// visibly wrong.
 	j := &Job{

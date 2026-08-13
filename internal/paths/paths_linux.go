@@ -7,19 +7,19 @@ import (
 
 // HelperSocket is the daemon-to-helper channel. /run is tmpfs on every
 // systemd distro, so a stale socket cannot survive a reboot.
-const HelperSocket = "/run/wakeguard-helper.sock"
+const HelperSocket = "/run/goguma-helper.sock"
 
 // HelperBinary must live on a root-owned path; see the darwin note.
-const HelperBinary = "/usr/local/libexec/wakeguard-helper"
+const HelperBinary = "/usr/local/libexec/goguma-helper"
 
 const (
-	DaemonUnit = "wakeguard-daemon.service"
-	HelperUnit = "wakeguard-helper.service"
+	DaemonUnit = "goguma-daemon.service"
+	HelperUnit = "goguma-helper.service"
 )
 
 func platformLayout(home string) Layout {
 	// XDG_STATE_HOME is the correct base for data that persists but is not
-	// user-portable config — history and logs are exactly that.
+	// user-portable config; history and logs are exactly that.
 	stateHome := os.Getenv("XDG_STATE_HOME")
 	if stateHome == "" {
 		stateHome = filepath.Join(home, ".local", "state")
@@ -28,7 +28,7 @@ func platformLayout(home string) Layout {
 	if configHome == "" {
 		configHome = filepath.Join(home, ".config")
 	}
-	stateDir := filepath.Join(stateHome, "wakeguard")
+	stateDir := filepath.Join(stateHome, "goguma")
 	return Layout{
 		StateDir:      stateDir,
 		LogDir:        filepath.Join(stateDir, "logs"),

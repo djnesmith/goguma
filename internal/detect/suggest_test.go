@@ -5,7 +5,7 @@ import "testing"
 // TestSuggestPatternUsesTheDistinguishingToken guards the failure that made
 // every job of a given runner share one pattern.
 //
-// Task runners put the job's identity last — `hermes cron run <job>`,
+// Task runners put the job's identity last: `hermes cron run <job>`,
 // `npm run <script>`, `make <target>`. Anchoring on the first arguments gave
 // `hermes.*cron.*run` for every hermes job, so each job's pattern matched all
 // of its siblings.

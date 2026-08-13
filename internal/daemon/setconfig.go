@@ -6,18 +6,18 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
 )
 
-// configSetters maps the keys accepted by `wakeguard config set` to their
+// configSetters maps the keys accepted by `goguma config set` to their
 // parsers.
 //
 // An explicit table rather than reflection over the struct: it keeps the
 // user-facing key names decoupled from Go field names, gives each key a
 // purpose-built error message, and makes the settable surface obvious to a
-// reader — reflection would silently expose every field the moment one is
+// reader; reflection would silently expose every field the moment one is
 // added, including ones that must not be changed at runtime.
 var configSetters = map[string]func(*config.Config, string) error{
 	"wake_buffer":     func(c *config.Config, v string) error { return setDur(&c.WakeBuffer, v) },

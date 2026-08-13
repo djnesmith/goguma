@@ -1,12 +1,13 @@
 package daemon
 
 import (
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/paths"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/paths"
 )
 
 // helperLink talks to the privileged helper.
@@ -26,6 +27,8 @@ type helperLink struct {
 	wantBlocked   bool
 	blockReason   string
 	scheduledAt   *time.Time
+	scheduledKind bool // UseWakeOrPowerOn for scheduledAt
+	cancelPending bool // a cancel was issued and has not been confirmed
 	lastPush      time.Time
 	unavailable   bool // helper is not installed at all
 	unavailableAt time.Time
@@ -41,6 +44,20 @@ func (h *helperLink) call(op ipc.Op, payload, out any) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if err != nil {
+		// An application-level rejection means the helper answered: the
+		// link is up. Treating it as lost contact flipped status to "the
+		// privileged helper isn't running, run goguma install" after every
+		// refused request; an older helper rejecting a newer op did that on
+		// every single wake registration, forever, on a skew the installer
+		// explicitly supports.
+		var app *ipc.AppError
+		if errors.As(err, &app) {
+			if !h.connected {
+				h.log.Info("connected to the privileged helper")
+			}
+			h.connected, h.lastErr = true, nil
+			return err
+		}
 		if h.connected {
 			h.log.Warn("lost contact with the privileged helper", "err", err)
 		}
@@ -95,8 +112,19 @@ func (h *helperLink) SetBlocked(blocked bool, reason string) error {
 // is idempotent, so this is a no-op when nothing was lost and a repair when
 // something was.
 func (h *helperLink) Repush() {
+	// Refresh the cached version while we are talking to it anyway.
+	//
+	// Status is the only call that returns the helper's version, and nothing
+	// used to call it, so `h.version` stayed empty for the life of the daemon
+	// and every surface that reports it printed a blank: `goguma version` said
+	// "helper" with nothing after it, and doctor said "connected, version ".
+	// That is worse than cosmetic here, because this package goes out of its
+	// way to support a daemon and helper at different versions, and the skew it
+	// tolerates was the one thing it could not show.
+	_, _ = h.Status()
+
 	h.mu.Lock()
-	want, reason, at := h.wantBlocked, h.blockReason, h.scheduledAt
+	want, reason, at, kind, cancel := h.wantBlocked, h.blockReason, h.scheduledAt, h.scheduledKind, h.cancelPending
 	h.mu.Unlock()
 
 	if err := h.call(ipc.OpHelperSetSleepBlocked, ipc.SetSleepBlockedReq{
@@ -108,11 +136,26 @@ func (h *helperLink) Repush() {
 	h.lastPush = time.Now()
 	h.mu.Unlock()
 
+	// A cancel that failed is retried here, the same way a lost schedule is
+	// re-asserted below. Without this, one dropped IPC call leaves the wake
+	// registered with the OS forever: the machine keeps waking for a job
+	// that was skipped, removed, or disabled.
+	if cancel {
+		if h.call(ipc.OpHelperCancelWake, nil, nil) == nil {
+			h.mu.Lock()
+			h.cancelPending = false
+			h.mu.Unlock()
+		}
+		return
+	}
+
 	// Re-assert the wake schedule too. macOS can drop pmset entries when
 	// other applications register their own, so set-once-and-forget loses
-	// jobs (PRD §5.2).
+	// jobs (PRD §5.2). The kind must ride along: re-asserting without it
+	// downgrades a wakeorpoweron entry to wake, and the helper then records
+	// a kind the OS entry does not have, so later cancels stop matching.
 	if at != nil && at.After(time.Now()) {
-		_ = h.call(ipc.OpHelperScheduleWake, ipc.ScheduleWakeReq{At: *at}, nil)
+		_ = h.call(ipc.OpHelperScheduleWake, ipc.ScheduleWakeReq{At: *at, UseWakeOrPowerOn: kind}, nil)
 	}
 }
 
@@ -125,17 +168,40 @@ func (h *helperLink) ScheduleWake(at time.Time, useWakeOrPowerOn bool) error {
 		return err
 	}
 	h.mu.Lock()
-	h.scheduledAt = &at
+	// A new schedule supersedes any cancel still in flight: the helper's
+	// ScheduleWake reconciles against the OS and removes stale entries.
+	h.scheduledAt, h.scheduledKind = &at, useWakeOrPowerOn
+	h.cancelPending = false
 	h.mu.Unlock()
 	return nil
 }
 
+// VerifyWake asks the helper whether the OS genuinely holds a wake at t.
+func (h *helperLink) VerifyWake(at time.Time) (bool, error) {
+	var resp ipc.VerifyWakeResp
+	if err := h.call(ipc.OpHelperVerifyWake, ipc.VerifyWakeReq{At: at}, &resp); err != nil {
+		return false, err
+	}
+	return resp.Registered, nil
+}
+
 // CancelWake clears any scheduled wake.
+//
+// The intent is remembered before the call is attempted, so a cancel the
+// helper never heard is retried by Repush instead of being lost, exactly as
+// SetBlocked remembers its desired state.
 func (h *helperLink) CancelWake() error {
 	h.mu.Lock()
 	h.scheduledAt = nil
+	h.cancelPending = true
 	h.mu.Unlock()
-	return h.call(ipc.OpHelperCancelWake, nil, nil)
+	err := h.call(ipc.OpHelperCancelWake, nil, nil)
+	if err == nil {
+		h.mu.Lock()
+		h.cancelPending = false
+		h.mu.Unlock()
+	}
+	return err
 }
 
 func (h *helperLink) Connected() bool {

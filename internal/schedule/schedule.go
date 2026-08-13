@@ -1,5 +1,5 @@
-// Package schedule parses the schedule expressions WakeGuard accepts and
-// computes fire times. WakeGuard never fires anything itself — these times
+// Package schedule parses the schedule expressions goguma accepts and
+// computes fire times. goguma never fires anything itself; these times
 // are used only to decide when the machine must be awake, so being slightly
 // early is harmless and being late means a missed job.
 package schedule
@@ -21,7 +21,7 @@ type Schedule struct {
 	// Display is a human sentence for the CLI and GUI ("daily at 09:00").
 	Display string
 	// DisplayShort is the cadence without the clock detail ("twice daily"),
-	// for the narrow places — a job row, a table column — that sit next to a
+	// for the narrow places (a job row, a table column) that sit next to a
 	// "next run" time. There the clock readings in Display only repeat what is
 	// already on screen.
 	DisplayShort string
@@ -34,13 +34,13 @@ type Schedule struct {
 	// which waking the machine costs more than the job is worth.
 	interval time.Duration
 
-	// delay is the gap for schedules whose fire times are *only* a gap —
+	// delay is the gap for schedules whose fire times are *only* a gap:
 	// "@every 6h" and the "every 6h" spelling of it. Those are the ones with
 	// no phase of their own, so they are the ones that need an anchor.
 	//
 	// It is deliberately narrower than interval, which is also set for
 	// @hourly/@daily/@weekly so that import can price them. Those descriptors
-	// parse to a calendar schedule — midnight, the top of the hour — and they
+	// parse to a calendar schedule (midnight, the top of the hour) and they
 	// already know when they fire. Anchoring them would move @daily off
 	// midnight to whenever the job happened to be created, which is not what
 	// the user wrote and not what their real cron will do.
@@ -59,13 +59,13 @@ type Schedule struct {
 // used to leave interval schedules unanchored, so cron's own relative Next
 // answered "t plus six hours" for whatever t the caller passed. A daemon that
 // re-parses every job on every tick therefore pushed the next fire time
-// forward by exactly the time between ticks — the countdown never counted
+// forward by exactly the time between ticks; the countdown never counted
 // down, and the OS wake was re-registered a tick further out on every tick,
 // so it never arrived.
 var processStart = time.Now()
 
 // parser accepts standard 5-field crontab syntax plus @descriptors. Seconds
-// are deliberately not enabled: WakeGuard's whole reason to exist is jobs
+// are deliberately not enabled: goguma's whole reason to exist is jobs
 // infrequent enough that the machine sleeps between them, and accepting a
 // 6-field form invites confusion with crontab lines pasted from a real
 // crontab, where field 1 is minutes.
@@ -78,7 +78,7 @@ var parser = cron.NewParser(
 // friendlier interval forms "every 6h" / "every 360m".
 //
 // Interval schedules get the process-start anchor, which is the right choice
-// only for callers that have nothing better — a schedule being validated as
+// only for callers that have nothing better, a schedule being validated as
 // the user types it, or one belonging to no job yet. Any caller holding a Job
 // should use ParseAt, so that its answer matches the daemon's.
 func Parse(expr string, loc *time.Location) (*Schedule, error) {
@@ -88,7 +88,7 @@ func Parse(expr string, loc *time.Location) (*Schedule, error) {
 // ParseAt is Parse with an explicit origin for interval schedules.
 //
 // An interval schedule says how often, never when: "every 6h" has a cadence
-// and no phase. The anchor supplies the phase — fires land on anchor + n*6h —
+// and no phase. The anchor supplies the phase (fires land on anchor + n*6h)
 // and it has to come from the caller, because the only sensible source for it
 // is the job, and this package deliberately knows nothing about jobs.
 //
@@ -97,9 +97,9 @@ func Parse(expr string, loc *time.Location) (*Schedule, error) {
 // number, so two callers anchoring differently would mean the machine wakes at
 // a time the user was never shown.
 //
-// The limitation, stated plainly: for a job WakeGuard adopted from another
+// The limitation, stated plainly: for a job goguma adopted from another
 // scheduler, the best anchor available is the job's CreatedAt, which is when
-// WakeGuard first saw the job — not when that scheduler's own interval clock
+// goguma first saw the job, not when that scheduler's own interval clock
 // started. The two coincide only by luck, so the fire times computed here are
 // an estimate that can be up to one full interval out of phase with what
 // actually runs. That is still worth computing: the cadence is right, the wake
@@ -120,9 +120,14 @@ func ParseAt(expr string, loc *time.Location, anchor time.Time) (*Schedule, erro
 		// when they want something to run long before they know how to write
 		// it in cron, and the translation is mechanical.
 		if human, ok := FromHuman(expr); ok {
-			if norm, interval, err = normalize(human); err == nil {
-				if inner, perr := parser.Parse(norm); perr == nil {
-					return newSchedule(human, norm, loc, inner, interval, anchor), nil
+			// Fresh names on purpose: reassigning the outer err here set it
+			// to nil, and when the translated expression then failed to
+			// parse, ParseAt returned (nil, nil). Every caller took nil-err
+			// as success and dereferenced the nil schedule; a stored job
+			// with such a schedule crash-looped the daemon on every tick.
+			if hnorm, hinterval, herr := normalize(human); herr == nil {
+				if inner, perr := parser.Parse(hnorm); perr == nil {
+					return newSchedule(human, hnorm, loc, inner, hinterval, anchor), nil
 				}
 			}
 		}
@@ -146,7 +151,7 @@ func ParseAt(expr string, loc *time.Location, anchor time.Time) (*Schedule, erro
 	//
 	// "0 0 31 4 *" is April 31st and "0 0 30 2 *" is February 30th. Both parse
 	// cleanly and both are easy to write by accident, but neither has a next
-	// fire time — the parser returns the zero time forever. A job built on one
+	// fire time: the parser returns the zero time forever. A job built on one
 	// would sit in the list looking scheduled while never running, which is
 	// exactly the silent failure this tool exists to prevent. It also used to
 	// crash the CLI outright, because the zero time renders as a duration that
@@ -162,8 +167,8 @@ func ParseAt(expr string, loc *time.Location, anchor time.Time) (*Schedule, erro
 // newSchedule assembles a Schedule from an already-parsed expression.
 //
 // Every construction path goes through here on purpose. There are four of
-// them — the plain form, and the plain-English fallback on each of two error
-// paths — and a field set in three of the four is a field that is silently
+// them (the plain form, and the plain-English fallback on each of two error
+// paths), and a field set in three of the four is a field that is silently
 // zero in whichever one the next reader forgets. The anchor is exactly such a
 // field: an unanchored interval schedule does not fail, it quietly goes back
 // to sliding its fire time forward on every call.
@@ -197,8 +202,8 @@ func newSchedule(expr, norm string, loc *time.Location, inner cron.Schedule, int
 // The monotonic reading comes first, because it is the dangerous one. A
 // caller's anchor usually starts life as time.Now(), which carries one, and
 // Sub uses monotonic readings exclusively when both operands have them. The
-// monotonic clock does not advance while the machine is asleep — the same trap
-// the daemon's sleep detection documents — so an anchor holding one would
+// monotonic clock does not advance while the machine is asleep (the same trap
+// the daemon's sleep detection documents), so an anchor holding one would
 // measure a six-hour sleep as no elapsed time at all and the fire time would
 // never arrive. Truncating to the second strips it, and also drops a
 // nanosecond tail that would otherwise appear in every fire time on screen.
@@ -209,7 +214,7 @@ func normalizeAnchor(t time.Time) time.Time {
 	return t.Truncate(time.Second)
 }
 
-// normalize maps WakeGuard's friendly forms onto what the cron parser
+// normalize maps goguma's friendly forms onto what the cron parser
 // accepts, and reports a fixed interval when the schedule has one.
 func normalize(expr string) (string, time.Duration, error) {
 	s := strings.TrimSpace(expr)
@@ -225,8 +230,8 @@ func normalize(expr string) (string, time.Duration, error) {
 		if err != nil {
 			return "", 0, fmt.Errorf("invalid interval %q in %q (try: every 6h)", rest, expr)
 		}
-		if d <= 0 {
-			return "", 0, fmt.Errorf("interval in %q must be positive", expr)
+		if d < time.Second {
+			return "", 0, fmt.Errorf("interval in %q must be at least a second", expr)
 		}
 		return "@every " + d.String(), d, nil
 	}
@@ -234,6 +239,15 @@ func normalize(expr string) (string, time.Duration, error) {
 		d, err := time.ParseDuration(strings.TrimSpace(rest))
 		if err != nil {
 			return "", 0, fmt.Errorf("invalid interval in %q", expr)
+		}
+		// Same guard as the "every" spelling above. This branch skipped it,
+		// so "@every -5m" and "@every 0s" were accepted and floored to a
+		// fires-every-second schedule that pinned the machine awake. The
+		// floor is one second because that is what the cron library rounds
+		// sub-second delays up to; accepting "500ms" while scheduling 1s
+		// would record an interval the schedule does not honor.
+		if d < time.Second {
+			return "", 0, fmt.Errorf("interval in %q must be at least a second", expr)
 		}
 		return lower, d, nil
 	}
@@ -250,7 +264,7 @@ func normalize(expr string) (string, time.Duration, error) {
 	case "@monthly", "@yearly", "@annually":
 		return lower, 0, nil
 	case "@reboot":
-		// launchd/cron @reboot has no fire time to wake for — the machine is
+		// launchd/cron @reboot has no fire time to wake for: the machine is
 		// by definition already awake when it runs.
 		return "", 0, fmt.Errorf("@reboot has no scheduled time to wake for")
 	}
@@ -259,14 +273,14 @@ func normalize(expr string) (string, time.Duration, error) {
 
 // normalizeDayOfWeek rewrites Sunday-as-7 into Sunday-as-0.
 //
-// POSIX and vixie cron — the cron that actually runs on macOS and Linux —
+// POSIX and vixie cron (the cron that actually runs on macOS and Linux)
 // accept day-of-week 0-7 with both 0 and 7 meaning Sunday. The parser used
 // here follows the stricter 0-6 range and rejects 7 outright.
 //
 // That mismatch is the worst kind of failure for this tool: a legitimate,
 // currently-working crontab line would be reported as unparseable, dropped
 // from the job list, and never woken for. The user's cron would keep running
-// it while WakeGuard silently ignored it.
+// it while goguma silently ignored it.
 //
 // Only the fifth field is touched, and only where 7 appears as a value rather
 // than as part of a step, so "*/7" and every other field are left alone.
@@ -289,11 +303,83 @@ func normalizeDayOfWeek(expr string) string {
 }
 
 // Next returns the next fire time strictly after t.
+//
+// Calendar schedules get vixie cron's DST behavior, which the underlying
+// library does not implement in its hour loop: a fire time that falls inside
+// the skipped spring-forward hour runs immediately after the jump instead of
+// vanishing for the day (the machine slept through the job it existed to
+// wake for), and a fixed-time fire inside the repeated fall-back hour runs
+// once, not twice (the second "fire" woke the machine to hold for a run that
+// never came, recording a phantom miss every November).
 func (s *Schedule) Next(t time.Time) time.Time {
 	if s.delay > 0 {
 		return s.nextFromAnchor(t)
 	}
-	return s.inner.Next(t.In(s.loc))
+	next := s.inner.Next(t.In(s.loc))
+	if next.IsZero() {
+		return next
+	}
+	o1 := offsetAt(t, s.loc)
+	o2 := offsetAt(next, s.loc)
+	switch {
+	case o2 > o1:
+		// Spring forward. If a fire's wall-clock time falls inside the
+		// skipped hour, evaluating the schedule in the pre-transition fixed
+		// offset finds it; its absolute instant lands inside [transition,
+		// transition+jump), and vixie runs it right at the jump. (A span
+		// containing both transitions nets to zero offset change and is
+		// left to the plain answer; a schedule that sparse has no annual
+		// 2 a.m. slot to lose.)
+		tr := findTransition(t, next, s.loc)
+		if tr.IsZero() {
+			break
+		}
+		jump := time.Duration(o2-o1) * time.Second
+		fixed := time.FixedZone("", o1)
+		if nf := s.inner.Next(t.In(fixed)); !nf.IsZero() &&
+			!nf.Before(tr) && nf.Before(tr.Add(jump)) {
+			return tr.In(s.loc)
+		}
+	case o2 < o1:
+		// Fall back. The same wall-clock reading occurs twice; if the
+		// earlier twin was already reachable at or before t, this one is
+		// the repeat.
+		jump := time.Duration(o1-o2) * time.Second
+		twin := next.Add(-jump)
+		if !twin.After(t) &&
+			twin.In(s.loc).Format("15:04:05") == next.In(s.loc).Format("15:04:05") {
+			return s.Next(next)
+		}
+	}
+	return next
+}
+
+func offsetAt(t time.Time, loc *time.Location) int {
+	_, off := t.In(loc).Zone()
+	return off
+}
+
+// findTransition locates the first instant in (a, b] whose UTC offset
+// differs from a's, to one-second precision. Zero when there is none.
+func findTransition(a, b time.Time, loc *time.Location) time.Time {
+	oa := offsetAt(a, loc)
+	if offsetAt(b, loc) == oa {
+		return time.Time{}
+	}
+	lo, hi := a, b
+	for hi.Sub(lo) > time.Second {
+		mid := lo.Add(hi.Sub(lo) / 2)
+		if offsetAt(mid, loc) == oa {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	tr := hi.Truncate(time.Second)
+	if offsetAt(tr, loc) == oa {
+		tr = tr.Add(time.Second)
+	}
+	return tr
 }
 
 // nextFromAnchor places t on the lattice of fire times measured from the
@@ -301,7 +387,7 @@ func (s *Schedule) Next(t time.Time) time.Time {
 //
 // cron.ConstantDelaySchedule.Next(t) answers t+delay for any t at all: it is
 // relative to whoever asked, and a Schedule built fresh on each call has no
-// memory of an origin to be relative to. WakeGuard builds one on every poll
+// memory of an origin to be relative to. goguma builds one on every poll
 // and on every daemon tick, so "every 6h" reported a next fire six hours from
 // *now*, every time it was asked. The countdown slid forward instead of
 // counting down, and because the same value drives the OS wake, the daemon
@@ -314,7 +400,7 @@ func (s *Schedule) nextFromAnchor(t time.Time) time.Time {
 	t = t.In(s.loc)
 	anchor := s.usableAnchor(t)
 
-	// An anchor in the future is itself the first fire — a job does not run
+	// An anchor in the future is itself the first fire: a job does not run
 	// before it exists. Reached by a clock that stepped backwards or a
 	// hand-edited created_at, and the alternative, extending the lattice
 	// backwards past the anchor, would hand back a fire time in the past. The
@@ -326,7 +412,7 @@ func (s *Schedule) nextFromAnchor(t time.Time) time.Time {
 
 	// Strictly after t, including when t lands exactly on a fire. Integer
 	// division truncates and the +1 steps past the boundary, so Next never
-	// returns t itself — callers that walk a series by feeding the result back
+	// returns t itself; callers that walk a series by feeding the result back
 	// in (NextN, pastFires) would otherwise spin on the same instant forever.
 	n := int64(t.Sub(anchor)/s.delay) + 1
 	return anchor.Add(time.Duration(n) * s.delay).In(s.loc)
@@ -341,7 +427,7 @@ func (s *Schedule) nextFromAnchor(t time.Time) time.Time {
 // a fire time in the distant past, which the daemon reads as "due now" and
 // would act on by pinning the machine awake indefinitely. A created_at a
 // century out is corruption rather than a date, so it is treated as no anchor
-// at all — the schedule keeps its cadence and loses only a phase that was
+// at all, the schedule keeps its cadence and loses only a phase that was
 // never real.
 const maxAnchorDistance = 100 * 365 * 24 * time.Hour
 
@@ -420,7 +506,7 @@ func (s *Schedule) Location() *time.Location { return s.loc }
 //
 // Simple substitution is not enough. A step range like "0-7/2" was skipped
 // entirely because of its slash, so the 7 reached a parser that rejects it and
-// a valid vixie crontab line was dropped as unparseable — the exact failure
+// a valid vixie crontab line was dropped as unparseable, the exact failure
 // this normalisation exists to prevent. And "7-7" became "7-6,0", which is a
 // backwards range and also rejected.
 //

@@ -8,23 +8,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/power"
-	"github.com/junnam/wakeguard/internal/render"
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
+	"github.com/junnam586/goguma/internal/render"
+	"github.com/junnam586/goguma/internal/schedule"
+	"github.com/junnam586/goguma/internal/store"
 )
 
 var cmdDoctor = &Command{
 	Name:    "doctor",
-	Summary: "diagnose why wakeguard might not be working",
-	Usage: `wakeguard doctor [job]
+	Summary: "diagnose why goguma might not be working",
+	Usage: `goguma doctor [job]
 
 Checks every link in the chain that has to work for a job to survive sleep,
 and reports which one is broken.
 
 The failure this exists to catch is the silent one: a job that is registered,
-looks correct in 'wakeguard list', and quietly never runs.`,
+looks correct in 'goguma list', and quietly never runs.`,
 	Run: runDoctor,
 }
 
@@ -58,7 +59,7 @@ func runDoctor(ctx *Context, args []string) error {
 			name:   "daemon",
 			status: checkFail,
 			detail: "not running, so nothing is being scheduled",
-			fix:    "wakeguard install",
+			fix:    "goguma install",
 		})
 	} else {
 		checks = append(checks, check{
@@ -71,6 +72,7 @@ func runDoctor(ctx *Context, args []string) error {
 	}
 
 	checks = append(checks, checkPlatform()...)
+	checks = append(checks, checkInvalidEntries(ctx)...)
 
 	if statusErr == nil {
 		// State-level problems come before per-job ones. A jobs.json that will
@@ -109,13 +111,30 @@ func runDoctor(ctx *Context, args []string) error {
 	switch {
 	case failed > 0:
 		r.Printf("%s %d check(s) failed.\n", r.Danger(r.Sym().Danger), failed)
-		return fmt.Errorf("wakeguard is not fully working")
+		return fmt.Errorf("goguma is not fully working")
 	case warned > 0:
 		r.Printf("%s working, with %d thing(s) worth attention.\n", r.Warn(r.Sym().Warn), warned)
 	default:
 		r.Printf("%s everything checks out.\n", r.Good(r.Sym().OK))
 	}
 	return nil
+}
+
+// checkInvalidEntries reports jobs.json entries that parsed but failed
+// validation. The store quarantines them rather than erasing them (they are
+// the user's own data mid-typo, kept in the file untouched), and this is
+// the promised place a human learns which entries are broken and why. Read
+// directly from disk so it works whether or not the daemon is up.
+func checkInvalidEntries(ctx *Context) []check {
+	var out []check
+	for _, invalid := range store.New(ctx.Layout).InvalidJobs() {
+		out = append(out, check{
+			name: "jobs.json", status: checkFail,
+			detail: invalid.Error(),
+			fix:    "edit " + ctx.Layout.JobsFile(),
+		})
+	}
+	return out
 }
 
 // checkStateFiles surfaces problems with the daemon's own files, which the
@@ -148,13 +167,13 @@ func hasBrokenJobFile(st model.Status) bool {
 
 func checkBinaries(ctx *Context) []check {
 	var out []check
-	for _, name := range []string{"wakeguard-daemon", "wakeguard-mark"} {
+	for _, name := range []string{"goguma-daemon", "goguma-mark"} {
 		p := filepath.Join(ctx.Layout.BinDir, name)
 		if _, err := os.Stat(p); err != nil {
 			out = append(out, check{
 				name: name, status: checkFail,
 				detail: "not installed at " + p,
-				fix:    "wakeguard install",
+				fix:    "goguma install",
 			})
 			continue
 		}
@@ -173,7 +192,7 @@ func checkHelper(st model.Status) check {
 	return check{
 		name: "privileged helper", status: checkFail,
 		detail: "not reachable, lid-closed holds and OS wakes will not work",
-		fix:    "wakeguard install",
+		fix:    "goguma install",
 	}
 }
 
@@ -252,7 +271,7 @@ func checkJobs(ctx *Context, args []string) []check {
 		return []check{{
 			name: "jobs", status: checkWarn,
 			detail: "none registered, so nothing will wake this machine",
-			fix:    "wakeguard import",
+			fix:    "goguma import",
 		}}
 	}
 
@@ -278,7 +297,7 @@ func checkOneJob(ctx *Context, v ipc.JobView) check {
 		return check{
 			name: name, status: checkFail,
 			detail: "its schedule will not parse: " + v.ScheduleError,
-			fix:    fmt.Sprintf("wakeguard edit %s --cron '<expression>'", v.Job.ID),
+			fix:    fmt.Sprintf("goguma edit %s --cron '<expression>'", v.Job.ID),
 		}
 	}
 	if !v.Job.Enabled {
@@ -289,11 +308,11 @@ func checkOneJob(ctx *Context, v ipc.JobView) check {
 	if v.Stats.NeverSeen > 0 && v.Stats.Runs > 0 {
 		detail := fmt.Sprintf("%d of %d windows never detected it · the machine woke for nothing",
 			v.Stats.NeverSeen, v.Stats.Runs)
-		fix := fmt.Sprintf("wakeguard doctor %s", v.Job.ID)
+		fix := fmt.Sprintf("goguma doctor %s", v.Job.ID)
 		if v.Job.Detection == model.DetectPattern {
-			fix = fmt.Sprintf("wakeguard test-match %q", v.Job.Match)
+			fix = fmt.Sprintf("goguma test-match %q", v.Job.Match)
 		} else {
-			fix = fmt.Sprintf("make sure the crontab line starts with: wakeguard-mark %s --", v.Job.ID)
+			fix = fmt.Sprintf("make sure the crontab line starts with: goguma-mark %s --", v.Job.ID)
 		}
 		return check{name: name, status: checkFail, detail: detail, fix: fix}
 	}
@@ -305,7 +324,7 @@ func checkOneJob(ctx *Context, v ipc.JobView) check {
 			return check{
 				name: name, status: checkFail,
 				detail: "its match pattern is not a valid regular expression: " + resp.Error,
-				fix:    fmt.Sprintf("wakeguard edit %s --match '<pattern>'", v.Job.ID),
+				fix:    fmt.Sprintf("goguma edit %s --match '<pattern>'", v.Job.ID),
 			}
 		}
 	}
@@ -315,7 +334,7 @@ func checkOneJob(ctx *Context, v ipc.JobView) check {
 			name: name, status: checkWarn,
 			detail: fmt.Sprintf("hit its ceiling %d time(s), so it was cut off mid-run",
 				v.Stats.CeilingHits),
-			fix: fmt.Sprintf("wakeguard edit %s --max-runtime <duration>", v.Job.ID),
+			fix: fmt.Sprintf("goguma edit %s --max-runtime <duration>", v.Job.ID),
 		}
 	}
 
@@ -330,12 +349,12 @@ func checkOneJob(ctx *Context, v ipc.JobView) check {
 	// Say which part of that time is a guess.
 	//
 	// An interval schedule names a cadence and no time of day, so its phase
-	// has to come from somewhere else — WakeGuard counts from when the job was
-	// added. For a job adopted from another scheduler that is when WakeGuard
+	// has to come from somewhere else: goguma counts from when the job was
+	// added. For a job adopted from another scheduler that is when goguma
 	// first saw it, not when that scheduler's own interval clock started, so
 	// the predicted time can be up to one full interval away from the real
 	// one. Nothing is broken and there is no command that fixes it, which is
-	// why this qualifies the line instead of becoming a warning — but doctor
+	// why this qualifies the line instead of becoming a warning, but doctor
 	// is where someone comes to ask whether a job is really covered, and the
 	// honest answer here is "on this cadence, at an estimated time".
 	if s, err := schedule.ParseAt(v.Job.Schedule, v.Job.Location(), v.Job.ScheduleAnchor()); err == nil {

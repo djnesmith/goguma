@@ -10,31 +10,31 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/detect"
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/power"
-	"github.com/junnam/wakeguard/internal/render"
-	"github.com/junnam/wakeguard/internal/scan"
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/detect"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
+	"github.com/junnam586/goguma/internal/render"
+	"github.com/junnam586/goguma/internal/scan"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 var cmdImport = &Command{
 	Name:    "import",
 	Summary: "find scheduled jobs on this machine worth waking for",
-	Usage: `wakeguard import [--all] [--dry-run] [--yes]
+	Usage: `goguma import [--all] [--dry-run] [--yes]
 
 Scans your crontab, launchd agents, and systemd timers, then shows only the
 entries that would actually be missed while the machine sleeps.
 
 Most scheduled entries on a typical machine are excluded for structural
-reasons — they belong to the OS, they run continuously, they have no clock
+reasons; they belong to the OS, they run continuously, they have no clock
 trigger, or they fire so often that waking for them would cost more battery
 than the job is worth. What remains is ranked by how often it has genuinely
 been firing while this machine was asleep.
 
   --all       also list everything that was filtered out, with the reason
-  --deep      also search the filesystem for schedulers WakeGuard cannot read.
+  --deep      also search the filesystem for schedulers goguma cannot read.
               These are reported as leads to investigate, never registered:
               a file containing cron syntax may be dormant, commented out, or
               written for a different machine.
@@ -61,7 +61,7 @@ func runImport(ctx *Context, args []string) error {
 	entries, coverage := scan.DiscoverAll(bg)
 
 	// Miss-risk needs sleep history. The OS log reaches back further than
-	// WakeGuard has been installed, which is what makes the first run of
+	// goguma has been installed, which is what makes the first run of
 	// `import` useful rather than empty.
 	hist, err := power.New().SleepHistory(14 * 24 * time.Hour)
 	if err != nil || hist == nil {
@@ -70,6 +70,18 @@ func runImport(ctx *Context, args []string) error {
 
 	now := time.Now()
 	opts := scan.DefaultOptions()
+	// Honor the configured import interval. `goguma config set
+	// min_import_interval 15m` printed success and then this path kept
+	// filtering with the shipped 1h default, so a 30-minute job the user
+	// explicitly lowered the floor for stayed invisible with no explanation.
+	// A daemon that is not running falls back to the defaults, which is the
+	// same answer config get would give.
+	var cfgResp ipc.ConfigResp
+	if err := callDaemon(ctx, ipc.OpConfigGet, nil, &cfgResp); err == nil {
+		if v := cfgResp.Config.MinImportInterval.D(); v > 0 {
+			opts.MinInterval = v
+		}
+	}
 	keep, filtered := scan.Evaluate(entries, hist, now, opts)
 
 	sleepCoverage := hist.Coverage(now)
@@ -95,7 +107,7 @@ func runImport(ctx *Context, args []string) error {
 		// this command could do is tell someone who is unsure what they have
 		// scheduled that nothing needs attention, when the real answer may be
 		// that their jobs live somewhere it never looked.
-		r.Printf("%s Nothing was found that needs WakeGuard.\n", r.Good(r.Sym().OK))
+		r.Printf("%s Nothing was found that needs goguma.\n", r.Good(r.Sym().OK))
 		r.Blank()
 		r.Line(r.Muted("  Everything found either runs while the machine is awake, recovers on"))
 		r.Line(r.Muted("  its own after a missed window, or runs continuously."))
@@ -103,7 +115,7 @@ func runImport(ctx *Context, args []string) error {
 		printBlindSpots(r, coverage)
 		if !*showAll && len(filtered) > 0 {
 			r.Printf("  %s to see all %d entries and why each was excluded.\n",
-				r.Accent("wakeguard import --all"), len(filtered))
+				r.Accent("goguma import --all"), len(filtered))
 		}
 		return nil
 	}
@@ -112,6 +124,7 @@ func runImport(ctx *Context, args []string) error {
 	r.Blank()
 
 	existing := existingJobIDs(ctx)
+	registeredCmds := registeredCommands(ctx)
 	registered := 0
 
 	for i, c := range keep {
@@ -121,7 +134,7 @@ func runImport(ctx *Context, args []string) error {
 			r.Blank()
 			continue
 		}
-		action := chooseAction(ctx, c, keep, *assumeYes)
+		action := chooseAction(ctx, c, keep, registeredCmds, *assumeYes)
 		r.Blank()
 		switch action {
 		case actionSkip:
@@ -141,7 +154,7 @@ func runImport(ctx *Context, args []string) error {
 	}
 	if registered > 0 {
 		r.Printf("%s registered %d job(s).  %s\n", r.Good(r.Sym().OK), registered,
-			r.Muted("check them with: wakeguard list"))
+			r.Muted("check them with: goguma list"))
 	}
 	return nil
 }
@@ -149,7 +162,7 @@ func runImport(ctx *Context, args []string) error {
 // printCoverage reports what was actually searched.
 //
 // Without this, `import` finding nothing is indistinguishable from `import`
-// not looking in the right place — and the person most likely to run it is
+// not looking in the right place, and the person most likely to run it is
 // precisely the one who does not know where their jobs are defined.
 func printCoverage(r *render.Renderer, cov []scan.Coverage, total int) {
 	r.Printf("Examined %s.\n", r.Bold(fmt.Sprintf("%d scheduled entries", total)))
@@ -169,7 +182,7 @@ func printCoverage(r *render.Renderer, cov []scan.Coverage, total int) {
 }
 
 // printHints reports files that look like schedule definitions but are not
-// registries WakeGuard can read.
+// registries goguma can read.
 //
 // These are shown as leads to investigate, never as jobs. A text search finds
 // schedule *syntax*, which is not the same as a schedule that runs: a README
@@ -182,7 +195,7 @@ func printHints(ctx *Context, r *render.Renderer, bg context.Context) {
 	if err != nil {
 		return
 	}
-	r.Line(r.Muted("Searching for schedulers WakeGuard does not know about…"))
+	r.Line(r.Muted("Searching for schedulers goguma does not know about…"))
 
 	hints := scan.FindSchedulerHints(bg, []string{home}, 5, 40)
 	hints = scan.VerifyAgainstInstalledCrontab(bg, hints)
@@ -213,7 +226,7 @@ func printHints(ctx *Context, r *render.Renderer, bg context.Context) {
 	r.Line(r.Muted("  These are not registered. Containing a schedule is not the same as"))
 	r.Line(r.Muted("  running one, a file can hold perfectly good cron syntax and be"))
 	r.Line(r.Muted("  dormant, commented out, or meant for a different machine."))
-	r.Line(r.Muted("  Register anything real with 'wakeguard add'."))
+	r.Line(r.Muted("  Register anything real with 'goguma add'."))
 	r.Blank()
 }
 
@@ -224,7 +237,7 @@ func shortenHomePath(p, home string) string {
 	return p
 }
 
-// printBlindSpots is shown when nothing was found, listing where WakeGuard
+// printBlindSpots is shown when nothing was found, listing where goguma
 // cannot see. Many tools run their own scheduler entirely inside their own
 // config, and those jobs never appear in crontab or launchd.
 func printBlindSpots(r *render.Renderer, cov []scan.Coverage) {
@@ -238,13 +251,13 @@ func printBlindSpots(r *render.Renderer, cov []scan.Coverage) {
 	if len(missing) > 0 {
 		r.Printf("    %s\n", r.Muted("nothing was found in: "+strings.Join(missing, ", ")))
 	}
-	r.Line(r.Muted("    WakeGuard reads crontab, launchd/systemd, and the app schedulers it"))
+	r.Line(r.Muted("    goguma reads crontab, launchd/systemd, and the app schedulers it"))
 	r.Line(r.Muted("    knows about. A tool that runs jobs from inside its own config is"))
 	r.Line(r.Muted("    invisible to this scan, check whatever runs your jobs for a"))
 	r.Line(r.Muted("    schedule list of its own."))
 	r.Blank()
 	r.Line(r.Muted("    You can register anything by hand regardless of what runs it:"))
-	r.Printf("    %s\n", r.Accent("wakeguard add --name <name> --cron '<schedule>'"))
+	r.Printf("    %s\n", r.Accent("goguma add --name <name> --cron '<schedule>'"))
 	r.Blank()
 }
 
@@ -295,7 +308,7 @@ func printCandidate(r *render.Renderer, n int, c scan.Candidate, existing map[st
 
 	// launchd calendar jobs are deferred to the next wake rather than lost,
 	// per launchd.plist(5). Saying so keeps the pitch honest: for these,
-	// WakeGuard buys punctuality, not survival.
+	// goguma buys punctuality, not survival.
 	if c.SelfHealing && c.Source == scan.SourceLaunchd {
 		r.Printf("      %s\n", r.Muted(
 			"launchd runs this on the next wake if it is missed, so it is late rather than skipped."))
@@ -368,7 +381,7 @@ const (
 // The wrapper is presented first and marked recommended, because it is the
 // only mechanism that yields an exact duration and a real exit code. Pattern
 // matching stays available for entries the user does not want to modify.
-func chooseAction(ctx *Context, c scan.Candidate, others []scan.Candidate, assumeYes bool) importAction {
+func chooseAction(ctx *Context, c scan.Candidate, others []scan.Candidate, registered []string, assumeYes bool) importAction {
 	r := ctx.Out
 
 	// A job the user cannot instrument gets a different, honest set of
@@ -386,7 +399,7 @@ func chooseAction(ctx *Context, c scan.Candidate, others []scan.Candidate, assum
 	// releases a hold when *a* match exits, so the fastest sibling closes
 	// everyone's window and every duration recorded is wrong. Presenting it as
 	// an option invited exactly that.
-	patternUsable := detect.Distinctive(pattern, siblingCommands(c, others))
+	patternUsable := detect.Distinctive(pattern, append(siblingCommands(c, others), registered...))
 
 	if assumeYes {
 		r.Printf("      %s registering with the wrapper\n", r.Good(r.Sym().OK))
@@ -432,7 +445,7 @@ func chooseAction(ctx *Context, c scan.Candidate, others []scan.Candidate, assum
 // chooseUnwrappableAction handles jobs run by an application's own scheduler.
 //
 // There is no command line to wrap, and usually no distinct process to match
-// either — the work happens inside the application's own process. So the
+// either, the work happens inside the application's own process. So the
 // realistic choice is to wake the machine for a bounded window and accept that
 // the job itself cannot be observed.
 func chooseUnwrappableAction(ctx *Context, c scan.Candidate, assumeYes bool) importAction {
@@ -474,7 +487,7 @@ func chooseUnwrappableAction(ctx *Context, c scan.Candidate, assumeYes bool) imp
 }
 
 func wrapCommand(c scan.Candidate) string {
-	return fmt.Sprintf("wakeguard-mark %s -- %s", model.Slug(c.Name), c.Command)
+	return fmt.Sprintf("goguma-mark %s -- %s", model.Slug(c.Name), c.Command)
 }
 
 func readLine() (string, error) {
@@ -525,8 +538,8 @@ func registerCandidate(ctx *Context, c scan.Candidate, action importAction) erro
 	if action == actionWrap {
 		// Deliberately not rewriting the crontab automatically. Editing a
 		// file the user owns, on their behalf, during a scan is a bigger
-		// promise than this command should make — and a mistake there breaks
-		// their automation rather than just WakeGuard's view of it.
+		// promise than this command should make, and a mistake there breaks
+		// their automation rather than just goguma's view of it.
 		r.Printf("      %s\n", r.Muted("now update the line yourself:"))
 		r.Printf("      %s\n", r.Accent(wrapCommand(c)))
 		if c.Source == scan.SourceCrontab {
@@ -534,6 +547,24 @@ func registerCandidate(ctx *Context, c scan.Candidate, action importAction) erro
 		}
 	}
 	return nil
+}
+
+// registeredCommands is every already-registered job's command line, so a
+// suggested pattern is checked against the whole machine and not just this
+// scan. Best-effort: with the daemon down it returns nothing, which degrades
+// to the old same-scan-only check.
+func registeredCommands(ctx *Context) []string {
+	var resp ipc.JobsListResp
+	if err := callDaemon(ctx, ipc.OpJobsList, nil, &resp); err != nil {
+		return nil
+	}
+	var out []string
+	for _, v := range resp.Jobs {
+		if v.Job.Command != "" {
+			out = append(out, v.Job.Command)
+		}
+	}
+	return out
 }
 
 func existingJobIDs(ctx *Context) map[string]bool {
@@ -548,8 +579,11 @@ func existingJobIDs(ctx *Context) map[string]bool {
 	return out
 }
 
-// siblingCommands is every other command a pattern could be confused with:
-// the jobs already registered plus the rest of this import run.
+// siblingCommands is every other command from this import run a pattern
+// could be confused with; the caller appends the already-registered jobs'
+// commands. Checking only the current scan let two sibling jobs registered
+// one at a time accept the same colliding pattern, and a shared pattern
+// releases everyone's hold when the fastest sibling exits.
 func siblingCommands(self scan.Candidate, others []scan.Candidate) []string {
 	out := make([]string, 0, len(others)+1)
 	out = append(out, self.Command)

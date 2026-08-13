@@ -1,6 +1,6 @@
 // Package helper is the privileged component. It runs as root and exposes
-// exactly two mutating operations — block/unblock sleep, and schedule/cancel
-// an OS wake — over a local socket guarded by peer-credential checks.
+// exactly two mutating operations (block/unblock sleep, and schedule/cancel
+// an OS wake) over a local socket guarded by peer-credential checks.
 //
 // It holds no policy whatsoever. It does not know what a job is, when
 // anything is scheduled, or why sleep is being blocked. Every decision lives
@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
+	"github.com/junnam586/goguma/internal/ipc"
 )
 
 // deadManTimeout is how long the helper waits, after the last daemon
@@ -31,11 +31,39 @@ import (
 // state well inside this window, so a healthy system never trips it.
 const deadManTimeout = 60 * time.Second
 
+// wakeEntry is one owner-tagged row of the OS wake schedule, as listed by
+// the platform. The kind and owner travel WITH the entry: pmset's cancel
+// matches on kind as well as time, and a remembered kind is forgotten on
+// helper restart, after which a stale wakeorpoweron entry kept powering the
+// machine on with nothing able to remove it.
+type wakeEntry struct {
+	at time.Time
+	// powerOn marks a wakeorpoweron entry, which also boots a powered-off
+	// machine.
+	powerOn bool
+	// owner is the tag the entry was registered under. Entries tagged with
+	// the binary's previous name are still ours to clean up; this machine's
+	// schedule can hold one across an upgrade.
+	owner string
+}
+
+const (
+	// wakeOwnerTag tags entries this build registers. pmset supports an
+	// owner string, and it matters: tagging lets us cancel precisely our
+	// own entry instead of using `cancelall`, which would delete the user's
+	// alarms and other apps' scheduled events.
+	wakeOwnerTag = "goguma"
+	// legacyWakeOwnerTag is the project's previous name; entries it
+	// registered would otherwise be orphaned by an upgrade and fire
+	// forever un-cancellable.
+	legacyWakeOwnerTag = "wakeguard"
+)
+
 // platformOps are the operations that genuinely require root.
 //
 // They are held as fields rather than called directly so the policy around
-// them — the dead-man switch, crash recovery, state reconciliation, the
-// shutdown ordering — can be tested without being root. Only these five
+// them (the dead-man switch, crash recovery, state reconciliation, the
+// shutdown ordering) can be tested without being root. Only these five
 // functions actually need privilege; everything that could plausibly harbour a
 // bug is the logic that decides *when* to call them, and that logic was
 // previously untestable purely because it was welded to a `pmset` invocation.
@@ -43,8 +71,8 @@ type platformOps struct {
 	setBlocked  func(bool) error
 	readBlocked func() (bool, error)
 	scheduleAt  func(time.Time, bool) error
-	cancelAt    func(time.Time, bool) error
-	listWakes   func() ([]time.Time, error)
+	cancelAt    func(wakeEntry) error
+	listWakes   func() ([]wakeEntry, error)
 }
 
 func realOps() platformOps {
@@ -130,6 +158,17 @@ func (s *Service) Handle(ctx context.Context, op ipc.Op, payload json.RawMessage
 		}
 		return nil, s.ScheduleWake(req.At, req.UseWakeOrPowerOn)
 
+	case ipc.OpHelperVerifyWake:
+		var req ipc.VerifyWakeReq
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("bad request: %w", err)
+		}
+		ok, err := s.VerifyWake(req.At)
+		if err != nil {
+			return nil, err
+		}
+		return ipc.VerifyWakeResp{Registered: ok}, nil
+
 	case ipc.OpHelperCancelWake:
 		return nil, s.CancelWake()
 
@@ -201,13 +240,13 @@ func (s *Service) SetBlocked(blocked bool, reason string) error {
 // anyone running `pmset -g sched`, and a tool that silently litters the
 // system's power schedule has no business asking to be trusted with it.
 func (s *Service) ScheduleWake(at time.Time, useWakeOrPowerOn bool) error {
-	s.mu.Lock()
-	prevKind := s.useWakeOrPwr
-	s.mu.Unlock()
-
-	// Drop every entry we own that is not the one being asked for. Only our
-	// own owner-tagged entries are listed, so another application's wake is
-	// never touched.
+	// Drop every entry we own that is not exactly the one being asked for:
+	// wrong time, wrong kind, or the binary's previous name. Each cancel is
+	// driven by the entry as LISTED, not by remembered state; a remembered
+	// kind was forgotten on helper restart, after which cancels silently
+	// missed and a stale wakeorpoweron entry kept powering the machine on
+	// with nothing able to remove it. Only owner-tagged entries are listed,
+	// so another application's wake is never touched.
 	matching := 0
 	readSchedule := true
 	existing, err := s.ops.listWakes()
@@ -217,12 +256,12 @@ func (s *Service) ScheduleWake(at time.Time, useWakeOrPowerOn bool) error {
 			"scheduling without reconciling", "err", err)
 	}
 	for _, e := range existing {
-		if e.Equal(at) {
+		if e.at.Equal(at) && e.powerOn == useWakeOrPowerOn && e.owner == wakeOwnerTag {
 			matching++
 			continue
 		}
-		if cerr := s.ops.cancelAt(e, prevKind); cerr != nil {
-			s.log.Warn("could not cancel a stale wake", "at", e, "err", cerr)
+		if cerr := s.ops.cancelAt(e); cerr != nil {
+			s.log.Warn("could not cancel a stale wake", "at", e.at, "err", cerr)
 		}
 	}
 
@@ -236,8 +275,9 @@ func (s *Service) ScheduleWake(at time.Time, useWakeOrPowerOn bool) error {
 	// over-cancelling here is safe.
 	if matching > 1 {
 		s.log.Info("collapsing duplicate wake entries", "at", at, "count", matching)
+		want := wakeEntry{at: at, powerOn: useWakeOrPowerOn, owner: wakeOwnerTag}
 		for range matching {
-			if cerr := s.ops.cancelAt(at, prevKind); cerr != nil {
+			if cerr := s.ops.cancelAt(want); cerr != nil {
 				s.log.Warn("could not cancel a duplicate wake", "at", at, "err", cerr)
 				break
 			}
@@ -262,29 +302,51 @@ func (s *Service) ScheduleWake(at time.Time, useWakeOrPowerOn bool) error {
 }
 
 // CancelWake removes our scheduled wake, if any.
+//
+// It reconciles against the OS instead of trusting memory, exactly as
+// ScheduleWake does: after a helper restart scheduledAt is nil while the
+// persisted entries survive, and trusting memory would report success with
+// the wake still registered. Only owner-tagged entries are listed, so
+// another application's wake is never touched.
 func (s *Service) CancelWake() error {
 	s.mu.Lock()
 	at, kind := s.scheduledAt, s.useWakeOrPwr
 	s.scheduledAt = nil
 	s.mu.Unlock()
 
-	if at == nil {
-		return nil
+	existing, err := s.ops.listWakes()
+	if err != nil {
+		s.log.Warn("could not read the wake schedule to cancel against", "err", err)
+		if at != nil {
+			return s.ops.cancelAt(wakeEntry{at: *at, powerOn: kind, owner: wakeOwnerTag})
+		}
+		// The caller keeps the cancel pending and retries; reporting success
+		// here would leave an unknown entry registered forever.
+		return err
 	}
-	return s.ops.cancelAt(*at, kind)
+	for _, e := range existing {
+		if cerr := s.ops.cancelAt(e); cerr != nil {
+			s.log.Warn("could not cancel a wake", "at", e.at, "err", cerr)
+			return cerr
+		}
+	}
+	return nil
 }
 
 // VerifyWake reports whether a wake at t is genuinely registered with the OS.
 // See scheduledWakes for why this check exists.
 func (s *Service) VerifyWake(t time.Time) (bool, error) {
-	times, err := s.ops.listWakes()
+	entries, err := s.ops.listWakes()
 	if err != nil {
 		return false, err
 	}
-	for _, got := range times {
+	for _, got := range entries {
+		if got.owner != wakeOwnerTag {
+			continue
+		}
 		// pmset stores second resolution; allow a small tolerance so a
 		// sub-second difference is not read as a missing entry.
-		if d := got.Sub(t); d < time.Second && d > -time.Second {
+		if d := got.at.Sub(t); d < time.Second && d > -time.Second {
 			return true, nil
 		}
 	}
@@ -358,7 +420,7 @@ func (s *Service) Shutdown() {
 	}
 	// A scheduled wake is deliberately left in place: the machine should
 	// still wake for the job even if the helper is being restarted, and a
-	// stale entry is harmless — it wakes the machine once and is consumed.
+	// stale entry is harmless; it wakes the machine once and is consumed.
 	_ = at
 	_ = kind
 }

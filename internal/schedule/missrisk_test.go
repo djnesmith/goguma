@@ -47,7 +47,7 @@ func TestMissRiskDetectsNeverMissedJob(t *testing.T) {
 	hist := asleepEveryNight(14)
 	now := time.Date(2026, 8, 15, 20, 0, 0, 0, time.UTC)
 
-	// A 14:00 job always fires while the machine is awake, so WakeGuard has
+	// A 14:00 job always fires while the machine is awake, so goguma has
 	// nothing to contribute and import should filter it out.
 	s := mustParse(t, "0 14 * * *")
 	risk := EstimateMissRisk(s, hist, now, 14*24*time.Hour)
@@ -107,7 +107,7 @@ func TestCoalesceShortGapsJoinsDarkWakes(t *testing.T) {
 
 	// macOS punctuates a long sleep with 2-5 second maintenance DarkWakes.
 	// Without coalescing, a 03:00 job landing in one of those gaps would be
-	// scored "not missed", which is exactly backwards — the machine is not
+	// scored "not missed", which is exactly backwards; the machine is not
 	// usefully awake during a DarkWake.
 	in := []SleepInterval{
 		{Sleep: base, Wake: base.Add(2 * time.Hour)},

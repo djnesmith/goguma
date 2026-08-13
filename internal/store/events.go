@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 // EventKind classifies entries in the append-only event log. These strings
@@ -30,7 +30,7 @@ const (
 	EventHelperState   EventKind = "helper_state"
 )
 
-// Event is one line of events.jsonl — the audit trail for every wake, hold,
+// Event is one line of events.jsonl, the audit trail for every wake, hold,
 // and release cycle that §8 of the PRD requires.
 type Event struct {
 	At      time.Time `json:"at"`
@@ -87,7 +87,7 @@ func (s *Store) LogEvent(e Event, maxBytes int64) error {
 // sleep log.
 //
 // This supplements the OS log rather than replacing it: `pmset -g log` gives
-// history back to before WakeGuard was installed (so miss-risk works on day
+// history back to before goguma was installed (so miss-risk works on day
 // one), while this file is portable to platforms with no equivalent system
 // log and survives the OS log being rotated away.
 func (s *Store) RecordSleepInterval(iv schedule.SleepInterval) error {

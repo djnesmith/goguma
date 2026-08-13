@@ -1,6 +1,6 @@
-# WakeGuard — Architecture
+# goguma architecture
 
-> How WakeGuard is built: the three privilege tiers, the wake and sleep-hold
+> How goguma is built: the three privilege tiers, the wake and sleep-hold
 > mechanisms, how jobs are detected, the hold lifecycle, and the safety
 > cutouts. For the user-facing pitch, see the [README](../README.md).
 
@@ -12,16 +12,16 @@ Four binaries across three privilege tiers, plus an optional GUI.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  wakeguard              (CLI, runs as the user, no privilege)        │
-│  WakeGuard.app          (menu bar app, macOS only — a view layer)    │
+│  goguma              (CLI, runs as the user, no privilege)           │
+│  goguma.app          (menu bar app, macOS only: a view layer)        │
 │  • add / list / status / history / import / doctor / install         │
 │  • never touches power management; everything goes via the daemon    │
 └────────────────────────────┬─────────────────────────────────────────┘
                              │ length-prefixed JSON over a unix socket
-                             │ ~/Library/Application Support/WakeGuard/daemon.sock
+                             │ ~/Library/Application Support/goguma/daemon.sock
                              ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  wakeguard-daemon       (LaunchAgent / systemd user unit)            │
+│  goguma-daemon       (LaunchAgent / systemd user unit)               │
 │  ALL POLICY LIVES HERE                                               │
 │  • schedule evaluation and wake-time computation                     │
 │  • hold lifecycle and reference counting                             │
@@ -31,18 +31,18 @@ Four binaries across three privilege tiers, plus an optional GUI.
 │  • sleep/wake observation, event log, webhooks                       │
 └────────────────────────────┬─────────────────────────────────────────┘
                              │ length-prefixed JSON over a unix socket
-                             │ /var/run/wakeguard-helper.sock  (root-owned)
+                             │ /var/run/goguma-helper.sock  (root-owned)
                              ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  wakeguard-helper       (LaunchDaemon / systemd system unit, root)   │
+│  goguma-helper       (LaunchDaemon / systemd system unit, root)      │
 │  THE ONLY PRIVILEGED CODE. Holds no policy at all.                   │
 │  • set_sleep_blocked(bool)                                           │
 │  • schedule_wake(time) / cancel_wake()                               │
 │  • status (read-only)                                                │
 └──────────────────────────────────────────────────────────────────────┘
 
-  wakeguard-mark   (wrapper, runs inside the user's cron line)
-  • wakeguard-mark <job> -- <command>
+  goguma-mark   (wrapper, runs inside the user's cron line)
+  • goguma-mark <job> -- <command>
   • reports the job's real start, exit time, and exit code to the daemon
 ```
 
@@ -60,17 +60,17 @@ always-on rather than tied to the GUI, because jobs must survive whether or
 not anyone has a window open.
 
 The CLI and the app are pure clients. Quitting the app deliberately does **not**
-pause the daemon — WakeGuard must keep waking the machine for cron jobs
+pause the daemon; goguma must keep waking the machine for cron jobs
 regardless of whether a UI is running.
 
 ---
 
 ## 2. Waking the machine
 
-**macOS** — `pmset schedule wake "MM/dd/yy HH:mm:ss" wakeguard`, run by the
+**macOS**: `pmset schedule wake "MM/dd/yy HH:mm:ss" goguma`, run by the
 helper.
 
-Entries are tagged with the owner string `wakeguard`. This matters more than
+Entries are tagged with the owner string `goguma`. This matters more than
 it looks: `pmset -g sched` on an ordinary Mac already shows several competing
 entries from Apple subsystems, and the owner tag lets us cancel precisely our
 own entry rather than using `cancelall`, which would delete the user's alarms
@@ -84,16 +84,16 @@ shut-down laptop is a surprise most users would not consent to.
 dropped or overwritten when other applications call `pmset schedule`. A wake
 that was accepted at request time may simply not be there later, and a job
 that never fires because its wake vanished is exactly the silent failure
-WakeGuard exists to prevent. So the daemon re-asserts the current wake every
+goguma exists to prevent. So the daemon re-asserts the current wake every
 60 seconds rather than setting it once, and the helper exposes
-`scheduledWakes()` so a requested wake can be read back and verified — "pmset
+`scheduledWakes()` so a requested wake can be read back and verified; "pmset
 returned success" is not treated as sufficient evidence.
 
 Only one wake is registered at a time: the nearest. Registering every job's
 wake up front would fill the system schedule with entries that go stale the
 moment a job is edited.
 
-**Linux** — `rtcwake -m no -t <epoch>` sets an RTC alarm without suspending.
+**Linux**: `rtcwake -m no -t <epoch>` sets an RTC alarm without suspending.
 Support is genuinely hardware- and firmware-dependent, so
 `WakeScheduleSupported()` probes for `rtcwake` on PATH plus a readable
 `/sys/class/rtc/rtc0/wakealarm` rather than assuming. See §7 for what remains
@@ -105,12 +105,12 @@ unverified.
 
 Two mechanisms compose, because they cover different things.
 
-**Idle sleep (lid open)** — an unprivileged `IOPMAssertion`
+**Idle sleep (lid open)**: an unprivileged `IOPMAssertion`
 (`kIOPMAssertPreventUserIdleSystemSleep`) taken directly by the daemon via
 cgo. The kernel releases it automatically if the daemon dies, so it can never
 be stranded.
 
-**Clamshell (lid-closed) sleep** — privileged, via the helper, using
+**Clamshell (lid-closed) sleep**: privileged, via the helper, using
 `pmset -a disablesleep 1`.
 
 `IOPMAssertionCreateWithName` with the public assertion types does **not**
@@ -119,18 +119,18 @@ for lid close." The Adrafinil project verified on-device (macOS 26.3) that
 three cleaner in-process alternatives also fail to keep a displayless
 lid-closed Mac awake:
 
-- private `RootDomainUserClient` selector 12 (`setClamShellSleepDisable`) —
+- private `RootDomainUserClient` selector 12 (`setClamShellSleepDisable`):
   returns success, the Mac still sleeps; it governs the external-display
   clamshell path, not no-display lid close;
-- `IORegistryEntrySetCFProperty(IOPMrootDomain, "SleepDisabled", …)` —
+- `IORegistryEntrySetCFProperty(IOPMrootDomain, "SleepDisabled", …)`:
   `kIOReturnNotPermitted` even as root;
-- `IOPMSetSystemPowerSetting("SleepDisabled", …)` — returns success but
+- `IOPMSetSystemPowerSetting("SleepDisabled", …)`: returns success but
   `pmset -g` still reports `SleepDisabled 0`; `pmset` coordinates
   `IOPMSetPMPreferences` and an activation step around that call which the
   bare call does not reproduce.
 
-`pmset -a disablesleep` is blunt — global, also suppresses idle sleep, and
-persists in the power-management preferences until cleared — but it is Apple's
+`pmset -a disablesleep` is blunt (global, also suppresses idle sleep, and
+persists in the power-management preferences until cleared) but it is Apple's
 own tested implementation and it is the path that works. It runs only on state
 flips, so the subprocess cost is negligible.
 
@@ -141,7 +141,7 @@ be reset by the kernel across a sleep/wake cycle. Five layers cover that:
 
 1. the helper clears it on release and on **SIGTERM** (logout, shutdown, unload);
 2. the helper clears it at **startup**, and its unit has `RunAtLoad` so this
-   runs at boot before any login — recovering from a crash or forced power-off;
+   runs at boot before any login, recovering from a crash or forced power-off;
 3. the helper has a **dead-man switch**: if the last daemon connection drops
    while blocked and none returns within 60 seconds (the daemon SIGKILLed at
    logout), it clears the block itself;
@@ -154,10 +154,10 @@ be reset by the kernel across a sleep/wake cycle. Five layers cover that:
 Every `pmset` invocation runs under a 10-second timeout so a wedged subprocess
 cannot deadlock the helper's policy lock.
 
-**Linux** — a `systemd-logind` inhibitor lock held by a child process. The
+**Linux**: a `systemd-logind` inhibitor lock held by a child process. The
 inhibitor is `--what=sleep:idle:handle-lid-switch`, not `sleep:idle`:
 `logind.conf` ships `LidSwitchIgnoreInhibited=yes`, which tells logind to
-suspend on lid close *even while sleep inhibitors are held* — a hole exactly
+suspend on lid close *even while sleep inhibitors are held*, a hole exactly
 where clamshell holds matter. The lock is an fd held by a child whose stdin is
 a pipe we own, so if the daemon dies by any means including SIGKILL the kernel
 closes the fd and logind drops the lock. That kernel-enforced cleanup is why
@@ -168,14 +168,14 @@ reboot and is precisely the stranding the dead-man switch exists to prevent.
 
 ## 4. Detecting jobs
 
-WakeGuard does not run jobs. The user's existing cron, launchd, or systemd
+goguma does not run jobs. The user's existing cron, launchd, or systemd
 entry does. So the daemon has to work out on its own whether a job is
 currently running, and there are two ways to know.
 
-### 4.1 Mark — exact
+### 4.1 Mark: exact
 
 ```
-wakeguard-mark <job-name> -- <original command>
+goguma-mark <job-name> -- <original command>
 ```
 
 The wrapper runs the command unchanged, and tells the daemon the moment it
@@ -190,17 +190,17 @@ status is still propagated faithfully. Signals are forwarded to the child, and
 a process killed by a signal reports `128 + signum` in the shell convention.
 
 A mark for a job with no open window opens an **ad-hoc window**. Something real
-is running and the machine should stay awake for it — a genuine advantage over
+is running and the machine should stay awake for it, a genuine advantage over
 pattern matching, which can only observe jobs inside an expected window.
 
-### 4.2 Wake-only — for jobs that cannot be observed
+### 4.2 Wake-only: for jobs that cannot be observed
 
 Detection mode `none`. The machine is woken and held for a fixed window, and
 no attempt is made to watch the job.
 
 This exists because a whole class of jobs is genuinely unobservable. An
-application that runs schedules inside its own process — Hermes, n8n, a
-self-hosted runner — offers no command line to wrap and no distinct process to
+application that runs schedules inside its own process (Hermes, n8n, a
+self-hosted runner) offers no command line to wrap and no distinct process to
 match. Forcing one of the other modes on such a job means every single run is
 recorded as `never_detected` and warned about, generating a permanent alarm
 about a configuration that is correct.
@@ -211,24 +211,24 @@ history. The cost is explicit: the hold cannot converge on real runtime, so it
 wastes more battery than the observable modes. That is the honest price of not
 being able to see the job, and it is stated in the UI rather than hidden.
 
-### 4.3 Pattern — best effort
+### 4.3 Pattern: best effort
 
 The daemon scans the process table for a regexp match. No changes to the
 user's setup, but it cannot see exit codes, cannot distinguish concurrent
 runs, and observes nothing at all if the pattern is wrong.
 
-Process listing is `ps -Awwo pid=,args=` on macOS — reading another process's
+Process listing is `ps -Awwo pid=,args=` on macOS: reading another process's
 full argv requires `KERN_PROCARGS2`, which is increasingly gated, and `ps` is
 `setgid procview` precisely to make this work. On Linux `/proc/<pid>/cmdline`
 is read directly, so no subprocess is involved. Scanning happens only while a
 window is actually open.
 
-**Self-match guard.** WakeGuard's own processes are excluded from matching.
-Without it, `wakeguard add --match backup` self-matches the moment the user
-runs `wakeguard list` in a terminal — the pattern is stored in `jobs.json` and
-appears in the daemon's own command line — and the daemon would conclude the
+**Self-match guard.** goguma's own processes are excluded from matching.
+Without it, `goguma add --match backup` self-matches the moment the user
+runs `goguma list` in a terminal (the pattern is stored in `jobs.json` and
+appears in the daemon's own command line) and the daemon would conclude the
 job is running and hold the machine awake indefinitely. The guard keys on the
-program name, so a user's own script that merely mentions "wakeguard" is still
+program name, so a user's own script that merely mentions "goguma" is still
 matchable.
 
 ### 4.4 Making failure loud
@@ -240,7 +240,7 @@ not cleverer matching, it is refusing to fail silently:
   `never_detected`, not as a successful run;
 - two consecutive such runs raise a warning in `status`, `doctor`, and the
   menu bar, carrying the exact command to fix it;
-- `wakeguard test-match` evaluates a pattern against the live process table so
+- `goguma test-match` evaluates a pattern against the live process table so
   a mistake surfaces at configuration time rather than at 3am;
 - history shows hold time alongside real runtime, so the battery wasted by bad
   detection is a number rather than a suspicion.
@@ -270,8 +270,8 @@ That is the entire battery argument: hold duration converges on real runtime
 plus wake overhead rather than on a padded guess.
 
 Ceilings are enforced on the fast poll as well as the main tick. Checking only
-on the tick lets a short ceiling overshoot by a full tick interval — a 5s
-ceiling fired at 10.2s in testing before this was fixed — which matters
+on the tick lets a short ceiling overshoot by a full tick interval (a 5s
+ceiling fired at 10.2s in testing before this was fixed), which matters
 because the ceiling exists to bound how long a hung job can pin the machine.
 
 Before detection the window is bounded by a **detection grace** of at least two
@@ -285,8 +285,8 @@ warning about a match pattern that is actually fine.
 
 The ceiling is a **safety valve, not a prediction**. Process-exit detection is
 what normally ends a hold. The ceiling only matters when that signal never
-arrives — a hung job, or detection that stopped working — and its job is to
-stop WakeGuard holding a machine awake indefinitely.
+arrives (a hung job, or detection that stopped working) and its job is to
+stop goguma holding a machine awake indefinitely.
 
 ```
 ceiling = clamp(p95(last 20 completed runs) × 1.2, min_ceiling, max_ceiling)
@@ -296,11 +296,11 @@ ceiling = clamp(p95(last 20 completed runs) × 1.2, min_ceiling, max_ceiling)
   default. One or two fast runs would otherwise produce a confidently wrong,
   very tight cap.
 - **Nearest-rank percentile**, so the result is always a duration that actually
-  occurred and the ceiling is explainable (`wakeguard list --explain`).
+  occurred and the ceiling is explainable (`goguma list --explain`).
 - **Truncated runs never train the estimator.** A run cut off at its ceiling is
   evidence of how long the cap was, not how long the job takes. Feeding it back
   creates a ratchet where one hung run pins the ceiling high forever. Cutouts
-  are excluded for the same reason. Failed runs *do* count — they produced a
+  are excluded for the same reason. Failed runs *do* count: they produced a
   real duration measurement.
 - **Only the recent window counts**, so a job that legitimately got slower
   converges on its new duration rather than being held to a stale baseline.
@@ -317,9 +317,9 @@ where holding sleep off is genuinely dangerous: the machine may be in a bag
 with no airflow and the user cannot see anything is wrong. With the lid open, a
 hot or draining machine is visible and the normal system protections apply.
 
-- **Thermal** — above 80°C (configurable 70–95) every hold is force-released.
+- **Thermal**: above 80°C (configurable 70-95) every hold is force-released.
   Temperature comes from the SMC over public IOKit, no entitlement needed.
-- **Low battery** — below 20% (configurable 5–50) while on battery. Because the
+- **Low battery**: below 20% (configurable 5-50) while on battery. Because the
   block is global, a lid-closed machine held awake on battery would otherwise
   drain to a hard shutdown rather than entering normal low-power sleep with
   charge to spare. Never fires on AC, where there is no drain to protect
@@ -329,10 +329,10 @@ hot or draining machine is visible and the normal system protections apply.
 
 The cutouts above are reactive: they release a hold once conditions have
 already gone bad. That is sufficient for a tool which only ever holds a machine
-that is *already awake* — the user was just using it, and it is probably open
+that is *already awake*: the user was just using it, and it is probably open
 or recently open.
 
-WakeGuard has a hazard that shape of tool does not. It wakes a machine the user
+goguma has a hazard that shape of tool does not. It wakes a machine the user
 deliberately put to sleep, possibly into a closed bag, possibly at 3am with
 nobody watching. **A cutout cannot un-wake a machine**: by the time it fires,
 the wake has happened and the energy is spent. On a nearly-flat battery the
@@ -340,7 +340,7 @@ sequence would be wake, immediately release, and end up closer to a hard
 shutdown with the job not run either.
 
 So the decision is made before the wake is ever registered. If the machine is
-on battery at or below the low-battery threshold, no wake is scheduled at all —
+on battery at or below the low-battery threshold, no wake is scheduled at all:
 it stays asleep, the charge is preserved, and the job is missed exactly as it
 would have been anyway. This is reported as `wake_suppressed` rather than
 `wake_error`, and shown by `doctor` as a skip rather than a warning: a
@@ -353,21 +353,21 @@ has passed. Charge only ever falls while asleep, which makes it the one signal
 that stays meaningful.
 
 **An unreadable sensor cannot fire a cutout**, and is never treated as safe
-either — the daemon raises a warning saying the valve is inoperative, so the
+either: the daemon raises a warning saying the valve is inoperative, so the
 user knows rather than assuming they are protected.
 
 **The latch.** A fired cutout latches. The job is usually still running, so
 without a latch the next tick re-opens the window into a live hazard and the
 system oscillates release → re-acquire many times a second. The latch clears
 when the hazard genuinely recedes by a hysteresis margin (5°C, or 5% / back on
-AC), or when the lid opens — which ends the hazard by definition.
+AC), or when the lid opens, which ends the hazard by definition.
 
 ### SMC temperature across Mac generations
 
 There is no single portable CPU-temperature key. Intel Macs expose `TC0P`;
 Apple silicon dropped it and publishes per-cluster die sensors instead. Rather
-than detecting the architecture — a proxy for the real question — a candidate
-list is probed in order and the winner cached, with readings outside 5–120°C
+than detecting the architecture (a proxy for the real question), a candidate
+list is probed in order and the winner cached, with readings outside 5-120°C
 rejected as implausible. On the Apple silicon machine used for development,
 `TCHP` is the key that answers.
 
@@ -375,15 +375,15 @@ rejected as implausible. On the Apple silicon machine used for development,
 
 ## 8. Miss-risk: deciding what is worth waking for
 
-`wakeguard import` has to solve a presentation problem before a technical one.
+`goguma import` has to solve a presentation problem before a technical one.
 A typical Mac has hundreds of loaded launchd services and, usually, an empty
 crontab. Showing all of it would be worse than showing nothing.
 
 ### 8.0 Discovery is pluggable, and reports its own coverage
 
 The OS schedulers are only part of the picture. Plenty of tools run schedules
-entirely inside their own config and process — Hermes, n8n, self-hosted
-runners — and those jobs appear in neither `crontab -l` nor `launchctl list`.
+entirely inside their own config and process (Hermes, n8n, self-hosted
+runners) and those jobs appear in neither `crontab -l` nor `launchctl list`.
 On a machine where such a tool is the user's main automation, an OS-only scan
 reports "nothing scheduled here" while every job they care about sits in a
 file it never opened.
@@ -393,8 +393,8 @@ a scheduler is one new file. Each provider reports three things: whether it
 exists on this machine, *where* it looked, and what it found.
 
 That coverage report is not decoration. The single most dangerous output this
-command can produce is a confident "nothing needs WakeGuard" when the truth is
-"your jobs live somewhere I did not check" — and the user most likely to run
+command can produce is a confident "nothing needs goguma" when the truth is
+"your jobs live somewhere I did not check", and the user most likely to run
 `import` is precisely the one who does not know where their jobs are defined.
 An unqualified all-clear would actively mislead them. When nothing is found,
 the command says which sources were empty and which were never available.
@@ -403,12 +403,12 @@ the command says which sources were empty and which were never available.
 
 Most schedulers keep no run history: cron records nothing, launchd exposes
 nothing useful. Application schedulers frequently do, and when a `last_run_at`
-is available it is far better evidence than anything WakeGuard can infer.
+is available it is far better evidence than anything goguma can infer.
 
 Comparing that timestamp against the schedule gives the delay as a *fact*:
 "scheduled 09:00, last ran 12:52, 3h52m late." No sleep-history
 reconstruction, no schedule replay, nothing to be wrong about. Such a job is
-surfaced even when it would otherwise be excluded as self-healing — a
+surfaced even when it would otherwise be excluded as self-healing: a
 scheduler that catches up is not a problem in principle, but if its own records
 show it running four hours behind, then in practice the job is not happening
 when the user expects, and catch-up logic does not change that.
@@ -419,7 +419,7 @@ free; "at 09:00" states that 09:00 is the point, and a morning briefing
 delivered at 13:00 has lost most of its value.
 
 Where the scheduler publishes its own next-run time, that value is used rather
-than recomputing from the expression — an interval schedule counts from its
+than recomputing from the expression: an interval schedule counts from its
 last run, not from now, and showing a time that disagrees with what will
 actually happen is worse than showing nothing.
 
@@ -440,7 +440,7 @@ against the machine's real sleep history and scored on how many of its past
 fire times landed while the machine was asleep. A heuristic ("3am is risky")
 would be wrong for anyone who works nights or leaves the lid open.
 
-Sleep history comes from `pmset -g log` on macOS, which reaches back weeks —
+Sleep history comes from `pmset -g log` on macOS, which reaches back weeks,
 so this works on the day of install rather than after a fortnight of
 self-observation. Each `Sleep` line carries the length of the sleep it is
 entering as a trailing `N secs` field, so one line yields a complete interval.
@@ -451,7 +451,7 @@ with no queryable system log and survives log rotation.
 DarkWakes lasting two to five seconds. The machine is not usefully awake during
 those, so gaps under 90 seconds are joined into one continuous interval.
 Without this an overnight sleep is recorded as dozens of separate intervals and
-a job that happened to fire in a gap is scored "not missed" — exactly backwards.
+a job that happened to fire in a gap is scored "not missed", exactly backwards.
 
 **Unknown risk is kept, not discarded.** Absence of evidence would hide exactly
 the jobs the user is looking for, so a schedule with too little history to
@@ -459,14 +459,14 @@ judge is surfaced as unknown rather than filtered as low-risk.
 
 ### cron loses jobs; launchd only delays them
 
-These are different problems and WakeGuard says so. From `launchd.plist(5)`:
+These are different problems and goguma says so. From `launchd.plist(5)`:
 
 > Unlike cron which skips job invocations when the computer is asleep, launchd
 > will start the job the next time the computer wakes up. If multiple intervals
 > transpire before the computer is woken, those events will be coalesced into
 > one event upon wake from sleep.
 
-So for a cron job WakeGuard buys **survival**; for a launchd calendar job it
+So for a cron job goguma buys **survival**; for a launchd calendar job it
 buys **punctuality**. Import labels the latter accordingly instead of implying
 those runs disappear.
 
@@ -493,7 +493,7 @@ this daemon speaks vM" rather than a misrendered screen.
 **Authorization comes from the kernel, never from the wire.** The helper reads
 the peer's effective uid via `LOCAL_PEERCRED` (macOS) or `SO_PEERCRED` (Linux)
 and accepts only the owning user and root. The peer pid is read too but is
-advisory — pids are recycled — and is used only for log context.
+advisory (pids are recycled) and is used only for log context.
 
 Socket paths are length-checked at bind. `sockaddr_un.sun_path` is a fixed
 104-byte buffer on macOS, and exceeding it fails with a bare `EINVAL` that says
@@ -503,8 +503,8 @@ nothing about the cause; it is reachable in practice through a long username.
 
 ## 10. Persistence
 
-`~/Library/Application Support/WakeGuard/` (macOS) or
-`$XDG_STATE_HOME/wakeguard/` (Linux):
+`~/Library/Application Support/goguma/` (macOS) or
+`$XDG_STATE_HOME/goguma/` (Linux):
 
 | File | Contents |
 |---|---|
@@ -518,7 +518,7 @@ nothing about the cause; it is reachable in practice through a long username.
 Everything is written atomically (temp file, fsync, rename), because the daemon
 can be killed at any moment and a half-written `jobs.json` would silently
 disable every registered job. A malformed individual job is skipped and
-reported rather than failing the whole load — one bad hand-edit should not take
+reported rather than failing the whole load: one bad hand-edit should not take
 every other job offline. Unparseable history lines are skipped for the same
 reason: a truncated final line from a hard kill must not reset a job to a
 cold-start ceiling.
@@ -536,8 +536,8 @@ Confirmed on macOS 26.5.1, Apple silicon:
 - SMC temperature reads via the candidate-key probe (`TCHP`, 38.6°C).
 - `pmset -g log` parsing reconstructed 32 real sleep intervals over 7 days;
   the machine was asleep 105 of 168 hours (63%).
-- `wakeguard-mark` end to end: 5 runs of a 2-second job measured at exactly 2s,
-  with **hold time equal to run time** — no wasted battery — and the ceiling
+- `goguma-mark` end to end: 5 runs of a 2-second job measured at exactly 2s,
+  with **hold time equal to run time** (no wasted battery) and the ceiling
   converging from the 5-minute cold-start default to 30s.
 - Exit codes propagate: a job exiting 3 is recorded as `failed` with code 3.
 - Ceiling valve: a job with a 5s ceiling that never finishes was force-released
@@ -547,10 +547,10 @@ Confirmed on macOS 26.5.1, Apple silicon:
 
 ### Not yet verified
 
-- **Waking from real sleep on a schedule** — needs an unattended overnight run.
+- **Waking from real sleep on a schedule**: needs an unattended overnight run.
   The `pmset` call succeeds and read-back works, but "the command succeeded" is
   explicitly not treated as proof.
-- **Lid-closed holds** — needs a physical lid-closed test.
+- **Lid-closed holds**: needs a physical lid-closed test.
 - **Everything Linux.** The implementation compiles for linux/amd64 and
   linux/arm64 and its pure logic is unit tested, but no part of it has run on
   Linux hardware. Specifically unproven: whether systemd inhibitors actually

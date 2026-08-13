@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam586/goguma/internal/model"
 )
 
 // Config is the daemon's tunables. Every field has a working default, so a
-// missing or partial config.json is valid — the daemon must never refuse to
+// missing or partial config.json is valid: the daemon must never refuse to
 // start because of a config gap.
 type Config struct {
 	// WakeBuffer is how early to wake the machine before a job's fire time.
@@ -27,7 +27,7 @@ type Config struct {
 
 	// WakeOnlyHold is how long to stay awake for a job that cannot be
 	// observed at all (detection mode "none"). It is a fixed window rather
-	// than a learned one because there is nothing to measure — the price of
+	// than a learned one because there is nothing to measure, the price of
 	// the machine not being able to see the job.
 	WakeOnlyHold model.Duration `json:"wake_only_hold"`
 
@@ -94,13 +94,13 @@ type Config struct {
 	// closed without the job ever being observed.
 	NotifyOnMissedJob bool `json:"notify_on_missed_job"`
 
-	// AutoAdopt lists scheduler sources WakeGuard watches continuously and
+	// AutoAdopt lists scheduler sources goguma watches continuously and
 	// registers new jobs from.
 	//
 	// Nil means "not configured", which the daemon expands to every adoptable
-	// source. Installing WakeGuard is itself the statement that jobs should
+	// source. Installing goguma is itself the statement that jobs should
 	// survive sleep, so requiring a second opt-in mostly produces installs
-	// that quietly do nothing — a new silent failure of exactly the kind this
+	// that quietly do nothing, a new silent failure of exactly the kind this
 	// tool exists to prevent.
 	//
 	// The safeguard is visibility, not a switch: what was adopted and what it

@@ -3,7 +3,7 @@ package model
 import "time"
 
 // Status is the full daemon snapshot. This is the exact shape emitted by
-// `wakeguard status --json` and consumed by the menu bar app, so it is a
+// `goguma status --json` and consumed by the menu bar app, so it is a
 // stable public contract: fields may be added, but not renamed or removed
 // without a version bump.
 type Status struct {
@@ -32,7 +32,7 @@ type Status struct {
 	NextFire *time.Time `json:"next_fire,omitempty"`
 
 	// WakeScheduled reports whether the platform accepted our wake request.
-	// False with a non-empty WakeError means jobs will be silently missed —
+	// False with a non-empty WakeError means jobs will be silently missed,
 	// the single most important failure to surface.
 	WakeScheduled bool   `json:"wake_scheduled"`
 	WakeError     string `json:"wake_error,omitempty"`
@@ -129,8 +129,8 @@ const (
 	WarnCeilingHits    WarningKind = "ceiling_hits"
 	WarnScheduleParse  WarningKind = "schedule_parse"
 	WarnCommandChanged WarningKind = "command_changed"
-	// WarnUncovered: scheduled jobs exist on this machine that WakeGuard is
-	// not waking for. Silence here is the worst failure it has — the user
+	// WarnUncovered: scheduled jobs exist on this machine that goguma is
+	// not waking for. Silence here is the worst failure it has: the user
 	// installed a tool to stop missing jobs and is still missing them.
 	WarnUncovered WarningKind = "uncovered"
 )

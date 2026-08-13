@@ -1,4 +1,4 @@
-// Package cli implements the wakeguard command line.
+// Package cli implements the goguma command line.
 //
 // Dispatch is hand-rolled rather than built on a framework: the command set
 // is small and stable, and a dependency-free CLI keeps the shipped binary a
@@ -7,13 +7,15 @@
 package cli
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 
-	"github.com/junnam/wakeguard/internal/paths"
-	"github.com/junnam/wakeguard/internal/render"
+	"github.com/junnam586/goguma/internal/paths"
+	"github.com/junnam586/goguma/internal/render"
 )
 
 // Version is set from main at build time.
@@ -23,7 +25,7 @@ var Version = "dev"
 type Command struct {
 	Name    string
 	Summary string
-	// Usage is the full help text, shown by `wakeguard help <name>`.
+	// Usage is the full help text, shown by `goguma help <name>`.
 	Usage string
 	Run   func(ctx *Context, args []string) error
 	// Hidden keeps a command out of the top-level listing.
@@ -101,17 +103,48 @@ func Main(args []string) int {
 	if !ok {
 		render.Errorf("unknown command %q", name)
 		if s := suggest(name); s != "" {
-			fmt.Fprintf(os.Stderr, "  did you mean %s?\n", ctx.Err.Accent("wakeguard "+s))
+			fmt.Fprintf(os.Stderr, "  did you mean %s?\n", ctx.Err.Accent("goguma "+s))
 		}
-		fmt.Fprintf(os.Stderr, "  run %s to see what is available\n", ctx.Err.Accent("wakeguard help"))
+		fmt.Fprintf(os.Stderr, "  run %s to see what is available\n", ctx.Err.Accent("goguma help"))
 		return 2
 	}
 
+	// Answered here rather than inside each command, because the commands that
+	// take no flags never look at their arguments at all: `goguma pause --help`
+	// asked what pause does and got a paused daemon and a success message. A
+	// request for help must never be a way to trigger the thing being asked
+	// about, so it is intercepted before Run is reached.
+	if wantsHelp(rest) {
+		ctx.Out.Line(cmd.Usage)
+		return 0
+	}
+
 	if err := cmd.Run(ctx, rest); err != nil {
+		// A command whose own flag set saw -h prints its usage and hands back
+		// this sentinel. It is a fulfilled request, not a failure, so it must
+		// not be reported as "goguma: flag: help requested" with a exit code of 1.
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		render.Errorf("%v", err)
 		return 1
 	}
 	return 0
+}
+
+// wantsHelp reports whether args ask what a command does rather than ask it to
+// run. Scanning stops at "--" so that a literal "--help" can still be passed as
+// a value, which matters for the commands that take a pattern or a job name.
+func wantsHelp(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if a == "-h" || a == "-help" || a == "--help" {
+			return true
+		}
+	}
+	return false
 }
 
 // suggest offers the closest command name for a typo.
@@ -163,9 +196,9 @@ func printHelp(ctx *Context, args []string) {
 		return
 	}
 
-	r.Line(r.Bold("wakeguard") + ", wake your machine for scheduled jobs, then let it sleep")
+	r.Line(r.Bold("goguma") + ", wake your machine for scheduled jobs, then let it sleep")
 	r.Blank()
-	r.Line(r.Muted("usage:") + " wakeguard <command> [options]")
+	r.Line(r.Muted("usage:") + " goguma <command> [options]")
 	r.Blank()
 
 	// Grouped rather than alphabetical, because the order a new user needs
@@ -191,7 +224,7 @@ func printHelp(ctx *Context, args []string) {
 		}
 		r.Blank()
 	}
-	r.Line(r.Muted("  run 'wakeguard help <command>' for details on any of these"))
+	r.Line(r.Muted("  run 'goguma help <command>' for details on any of these"))
 }
 
 // commandNames is used by help and completion.
@@ -209,10 +242,10 @@ func commandNames() []string {
 var cmdVersion = &Command{
 	Name:    "version",
 	Summary: "print the version",
-	Usage:   "wakeguard version\n\nPrints the CLI version, and the daemon and helper versions when reachable.",
+	Usage:   "goguma version\n\nPrints the CLI version, and the daemon and helper versions when reachable.",
 	Run: func(ctx *Context, args []string) error {
 		r := ctx.Out
-		r.Printf("wakeguard %s\n", Version)
+		r.Printf("goguma %s\n", Version)
 
 		st, err := fetchStatus(ctx)
 		if err != nil {

@@ -28,9 +28,9 @@ func TestMatcherFindsTargets(t *testing.T) {
 	}
 }
 
-func TestWakeGuardProcessesAreNeverMatched(t *testing.T) {
-	// Without this guard, `wakeguard add --match backup` self-matches the
-	// moment the user runs `wakeguard list` in a terminal: the registered
+func TestGogumaProcessesAreNeverMatched(t *testing.T) {
+	// Without this guard, `goguma add --match backup` self-matches the
+	// moment the user runs `goguma list` in a terminal: the registered
 	// pattern is stored in jobs.json and appears in the daemon's own command
 	// line. The daemon would conclude the backup job is running and hold the
 	// machine awake indefinitely.
@@ -39,27 +39,27 @@ func TestWakeGuardProcessesAreNeverMatched(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := m.Find(procs(
-		"/usr/local/bin/wakeguard-daemon --log /x/daemon.log",
-		"/usr/local/libexec/wakeguard-helper --owner-uid 501",
-		"wakeguard-mark backup -- restic backup /home",
-		"/Users/x/.local/bin/wakeguard list",
-		"wakeguard status",
+		"/usr/local/bin/goguma-daemon --log /x/daemon.log",
+		"/usr/local/libexec/goguma-helper --owner-uid 501",
+		"goguma-mark backup -- restic backup /home",
+		"/Users/x/.local/bin/goguma list",
+		"goguma status",
 	))
 	if len(got) != 0 {
-		t.Errorf("matched WakeGuard's own processes: %+v", got)
+		t.Errorf("matched goguma's own processes: %+v", got)
 	}
 }
 
 func TestTheRealJobUnderTheWrapperStillMatches(t *testing.T) {
 	// The wrapper itself is excluded, but the wrapped command runs as its own
-	// process and must remain visible — otherwise a job configured for
+	// process and must remain visible; otherwise a job configured for
 	// pattern detection would become undetectable simply by being wrapped.
 	m, err := Compile("restic backup")
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := m.Find(procs(
-		"wakeguard-mark nightly -- restic backup /home",
+		"goguma-mark nightly -- restic backup /home",
 		"restic backup /home",
 	))
 	if len(got) != 1 || got[0].Command != "restic backup /home" {
@@ -67,17 +67,17 @@ func TestTheRealJobUnderTheWrapperStillMatches(t *testing.T) {
 	}
 }
 
-func TestAJobNamedLikeWakeGuardIsNotExcluded(t *testing.T) {
+func TestAJobNamedLikeGogumaIsNotExcluded(t *testing.T) {
 	// The guard keys on the program name, not on the substring appearing
-	// anywhere. A user's own script that merely mentions wakeguard must still
+	// anywhere. A user's own script that merely mentions goguma must still
 	// be matchable.
-	m, err := Compile("sync-wakeguard-config")
+	m, err := Compile("sync-goguma-config")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := m.Find(procs("/opt/scripts/sync-wakeguard-config --dry-run"))
+	got := m.Find(procs("/opt/scripts/sync-goguma-config --dry-run"))
 	if len(got) != 1 {
-		t.Errorf("a user script mentioning wakeguard was wrongly excluded: %+v", got)
+		t.Errorf("a user script mentioning goguma was wrongly excluded: %+v", got)
 	}
 }
 
@@ -106,16 +106,28 @@ func TestSuggestPattern(t *testing.T) {
 		want    string
 	}{
 		// The program plus its distinctive arguments, not the whole command
-		// line — absolute paths and redirection differ between how cron
+		// line: absolute paths and redirection differ between how cron
 		// invokes a job and how it appears in the process table.
-		{"hermes cron run morning-briefing", `hermes.*cron.*run`},
+		{"hermes cron run morning-briefing", `hermes.*run.*morning-briefing`},
 		{"/usr/local/bin/backup.sh --full > /dev/null", `backup\.sh`},
-		{"/bin/sh -c '/opt/thing.sh --now'", `thing\.sh.*--now`},
+		{"/bin/sh -c '/opt/thing.sh --now'", `thing\.sh`},
+		// Quoted prose is dropped BEFORE segment splitting, so separators
+		// inside a prompt cannot smuggle prose words into the pattern.
+		{`claude -p "fetch news; summarize top stories"`, `claude`},
+		// The last segment of a shell chain is the one that does the work.
+		{"cd /backups && restic backup nightly", `restic.*backup.*nightly`},
 	}
 	for _, tc := range tests {
 		got := SuggestPattern(tc.command)
 		if got == "" {
 			t.Errorf("SuggestPattern(%q) returned nothing", tc.command)
+			continue
+		}
+		// Exact output is asserted deliberately: this table once recorded
+		// expectations that had silently drifted from real behavior because
+		// nothing read the want field.
+		if got != tc.want {
+			t.Errorf("SuggestPattern(%q) = %q, want %q", tc.command, got, tc.want)
 			continue
 		}
 		// The suggestion must actually match the command it was derived from,

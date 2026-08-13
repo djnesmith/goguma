@@ -5,24 +5,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/daemon"
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam586/goguma/internal/daemon"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
 )
 
 var cmdAwake = &Command{
 	Name:    "awake",
 	Summary: "keep this machine awake for a while",
-	Usage: `wakeguard awake <duration>
-wakeguard awake off
+	Usage: `goguma awake <duration>
+goguma awake off
 
-Holds sleep off for a fixed period whether or not a job is running — the
+Holds sleep off for a fixed period whether or not a job is running, the
 manual escape hatch, for when you are the reason the machine has to stay up.
 
-  wakeguard awake 30m
-  wakeguard awake 1h30m
-  wakeguard awake 2h
-  wakeguard awake off      release it early
+  goguma awake 30m
+  goguma awake 1h30m
+  goguma awake 2h
+  goguma awake off      release it early
 
 Asking again replaces the window rather than adding to it, so 'awake 10m'
 followed by 'awake 1h' leaves you awake for an hour from now, not seventy
@@ -34,10 +34,10 @@ forgotten if the daemon restarts, and it is never recorded as a job run.`,
 	Run: func(ctx *Context, args []string) error {
 		_, positional := hoistFlags(args)
 		if len(positional) == 0 {
-			return fmt.Errorf("how long? try 'wakeguard awake 30m', or 'wakeguard awake off' to release")
+			return fmt.Errorf("how long? try 'goguma awake 30m', or 'goguma awake off' to release")
 		}
 
-		// Joined rather than taking args[0], so `awake 1h 30m` works — that is
+		// Joined rather than taking args[0], so `awake 1h 30m` works; that is
 		// exactly how HumanDuration prints a duration back to the user, and a
 		// form the CLI prints is a form it should accept.
 		arg := strings.Join(positional, " ")
@@ -75,10 +75,10 @@ forgotten if the daemon restarts, and it is never recorded as a job run.`,
 			r.Bold(model.HumanDuration(time.Until(until).Round(time.Second))),
 			r.Muted("· until "+until.Format("15:04")))
 		if resp.Clamped {
-			r.Printf("  %s\n", r.Muted(fmt.Sprintf("adjusted to the %s–%s range",
+			r.Printf("  %s\n", r.Muted(fmt.Sprintf("adjusted to the %s-%s range",
 				model.HumanDuration(daemon.MinKeepAwake), model.HumanDuration(daemon.MaxKeepAwake))))
 		}
-		r.Printf("  %s\n", r.Muted("safety cutouts still apply · release early with: wakeguard awake off"))
+		r.Printf("  %s\n", r.Muted("safety cutouts still apply · release early with: goguma awake off"))
 		return nil
 	},
 }

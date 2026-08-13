@@ -10,8 +10,8 @@ package power
 // wg_assert_idle takes a PreventUserIdleSystemSleep assertion. This is the
 // unprivileged half of sleep blocking: it holds off idle sleep on a lid-open
 // machine, and the kernel releases it automatically if this process dies, so
-// it can never be stranded. It does NOT survive a lid close — Apple's own
-// header says "the system may still sleep for lid close" — which is why the
+// it can never be stranded. It does NOT survive a lid close (Apple's own
+// header says "the system may still sleep for lid close"), which is why the
 // privileged helper exists.
 int wg_assert_idle(const char *reason, unsigned int *outID) {
     CFStringRef r = CFStringCreateWithCString(kCFAllocatorDefault, reason, kCFStringEncodingUTF8);
@@ -67,9 +67,13 @@ type darwinPlatform struct {
 	// cadence than the main tick. It only gates the low-battery cutout, which
 	// cannot meaningfully change between 10-second samples, and a subprocess
 	// on every tick for the life of the daemon is real waste for no gain.
-	battAt   time.Time
-	battPct  int
-	battOnAC bool
+	battAt  time.Time
+	battPct int
+	// pmset -g therm, cached on the same cadence as battery for the same
+	// reason.
+	thermAt   time.Time
+	thermWarn bool
+	battOnAC  bool
 }
 
 // New returns the platform implementation for this OS.
@@ -77,7 +81,7 @@ func New() Platform { return &darwinPlatform{} }
 
 func (p *darwinPlatform) Name() string { return "darwin" }
 
-// SupportsClamshellHold is true, but only through the privileged helper —
+// SupportsClamshellHold is true, but only through the privileged helper;
 // this package cannot do it alone.
 func (p *darwinPlatform) SupportsClamshellHold() bool { return true }
 
@@ -131,7 +135,7 @@ func (p *darwinPlatform) ReadState() (State, error) {
 	default:
 		// No clamshell sensor: a desktop, or an external-display setup where
 		// the key is absent. Lid-closed is the risky state, so reporting
-		// "open" here is the safe default — it only means the lid-gated
+		// "open" here is the safe default; it only means the lid-gated
 		// cutouts stay armed rather than being skipped.
 		st.LidClosed = false
 	}
@@ -140,6 +144,7 @@ func (p *darwinPlatform) ReadState() (State, error) {
 		st.TempC = &t
 		st.TempSource = src
 	}
+	st.ThermalWarn = p.thermalWarning()
 
 	pct, onAC, ok := p.battery()
 	if ok {
@@ -216,3 +221,47 @@ func parseBatt(out string) (pct int, onAC bool, ok bool) {
 
 // Close releases cached OS handles.
 func Close() { closeSMC() }
+
+// thermalWarning reads the OS's own thermal verdict, cached for 30s.
+//
+// `pmset -g therm` prints "Note: No thermal warning level has been recorded"
+// on a cool machine; under thermal pressure it records a warning level and,
+// on throttling machines, a CPU_Speed_Limit under 100. Either is Apple
+// saying the machine is hot, independent of which SMC key goguma found.
+func (p *darwinPlatform) thermalWarning() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.thermAt.IsZero() && time.Since(p.thermAt) < 30*time.Second {
+		return p.thermWarn
+	}
+	p.thermAt, p.thermWarn = time.Now(), false
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "pmset", "-g", "therm").Output()
+	if err != nil {
+		return false
+	}
+	p.thermWarn = parseTherm(string(out))
+	return p.thermWarn
+}
+
+func parseTherm(out string) bool {
+	for line := range strings.SplitSeq(out, "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "Thermal Warning Level"); ok {
+			rest = strings.TrimLeft(rest, " =:")
+			if n, err := strconv.Atoi(strings.Fields(rest + " x")[0]); err == nil && n > 0 {
+				return true
+			}
+		}
+		if strings.HasPrefix(line, "CPU_Speed_Limit") {
+			if i := strings.LastIndexAny(line, "= "); i >= 0 {
+				if n, err := strconv.Atoi(strings.TrimSpace(line[i+1:])); err == nil && n < 100 {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}

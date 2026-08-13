@@ -1,6 +1,6 @@
 // Package model defines the core domain types shared by the CLI, daemon,
-// helper, and GUI. Everything here is plain data with stable JSON shapes —
-// `wakeguard status --json` and the menu bar app both decode these directly,
+// helper, and GUI. Everything here is plain data with stable JSON shapes:
+// `goguma status --json` and the menu bar app both decode these directly,
 // so field names are part of the public contract.
 package model
 
@@ -16,14 +16,14 @@ import (
 type DetectionMode string
 
 const (
-	// DetectMark is exact: the job is wrapped in `wakeguard-mark`, which
+	// DetectMark is exact: the job is wrapped in `goguma-mark`, which
 	// pings the daemon on start and exit. Gives a true duration from run one
 	// and a real exit code.
 	DetectMark DetectionMode = "mark"
 
 	// DetectPattern is best-effort: the daemon scans the process table for a
 	// regexp match. Requires no change to the user's crontab, but a wrong
-	// pattern means the job is never observed — the daemon reports that as
+	// pattern means the job is never observed; the daemon reports that as
 	// DetectionNeverMatched rather than failing silently.
 	DetectPattern DetectionMode = "pattern"
 
@@ -31,8 +31,8 @@ const (
 	// bounded window, release.
 	//
 	// This exists for jobs the user cannot instrument. An application that
-	// runs schedules inside its own process — Hermes, n8n, a self-hosted
-	// runner — gives no command line to wrap and no distinct process to match.
+	// runs schedules inside its own process (Hermes, n8n, a self-hosted
+	// runner) gives no command line to wrap and no distinct process to match.
 	// Forcing one of the other two modes on such a job would mean every run
 	// is recorded as never-detected and warned about, which is noise about a
 	// configuration that is in fact correct.
@@ -54,8 +54,8 @@ func (d DetectionMode) Observable() bool {
 	return d == DetectMark || d == DetectPattern
 }
 
-// Job is a registered schedule that WakeGuard holds a wake window for.
-// WakeGuard never executes a job — the user's existing cron/launchd/systemd
+// Job is a registered schedule that goguma holds a wake window for.
+// goguma never executes a job; the user's existing cron/launchd/systemd
 // entry does that. A Job only describes when to be awake and how to tell
 // whether the work is still running.
 type Job struct {
@@ -94,7 +94,7 @@ type Job struct {
 	Group string `json:"group,omitempty"`
 
 	// MaxRuntime optionally overrides the learned ceiling. Zero means "let
-	// the estimator decide" — the documented default. This exists as an
+	// the estimator decide", the documented default. This exists as an
 	// escape hatch, deliberately not as the primary mechanism (PRD §6).
 	MaxRuntime Duration `json:"max_runtime,omitempty"`
 
@@ -106,12 +106,12 @@ type Job struct {
 	// but never wake the machine.
 	Enabled bool `json:"enabled"`
 
-	// Managed marks a job WakeGuard adopted automatically from a scheduler it
+	// Managed marks a job goguma adopted automatically from a scheduler it
 	// watches, rather than one a human registered.
 	//
 	// The distinction matters for removal. A managed job is retired when it
 	// disappears from its source, because otherwise deleting a job in the app
-	// that owns it would leave WakeGuard waking the machine for something that
+	// that owns it would leave goguma waking the machine for something that
 	// no longer exists. A hand-registered job is never removed automatically,
 	// because a human's explicit intent should not be undone by a scan.
 	Managed bool `json:"managed,omitempty"`
@@ -196,19 +196,19 @@ func NormalizeGroup(s string) string {
 // for schedule.ParseAt.
 //
 // It exists so that the rule lives in exactly one place. An interval schedule
-// has a cadence and no phase, so the phase comes from here — and the daemon's
+// has a cadence and no phase, so the phase comes from here, and the daemon's
 // wake scheduler, the job list the GUI renders, and the CLI all have to pick
 // the same one. If two of them disagreed, the machine would wake at a time
 // that was never displayed, which is a worse failure than the sliding fire
 // time this replaced.
 //
 // CreatedAt is used because it is the only per-job time that never moves. An
-// anchor derived from history — the last observed run, say — re-phases the
+// anchor derived from history (the last observed run, say) re-phases the
 // schedule every time a run is recorded, and for pattern detection it carries
 // the detection lag with it, so the fire time would creep later on every
 // cycle: a slower version of the drift being fixed.
 //
-// For an adopted job, CreatedAt is when WakeGuard first saw it and not when
+// For an adopted job, CreatedAt is when goguma first saw it and not when
 // the source scheduler's interval clock started, so the phase is an estimate.
 // See schedule.ParseAt, which documents what that estimate does and does not
 // promise.
@@ -226,7 +226,7 @@ func (j *Job) Location() *time.Location {
 	return loc
 }
 
-// KeepAwakeJobID is the reserved id of the manual keep-awake window — the
+// KeepAwakeJobID is the reserved id of the manual keep-awake window, the
 // "keep this machine up for 30 minutes" hold a user asks for directly.
 //
 // It is not a job. Nothing with this id is ever written to jobs.json, listed,
@@ -245,13 +245,13 @@ const KeepAwakeJobID = "__keep_awake__"
 // Deliberately conservative, because the result becomes a filename under the
 // history directory. Path separators are already collapsed to dashes, and
 // leading or trailing dots are trimmed as well so the result can never be
-// "." or ".." — which would be a relative path component rather than a name,
+// "." or "..", which would be a relative path component rather than a name,
 // and would also produce a hidden file. A name that reduces to nothing is
 // rejected by the caller with a message naming the problem.
 //
 // Leading and trailing underscores are trimmed for a different reason: it
-// reserves the __name__ shape for WakeGuard's own internal ids, so a user
-// name can never collide with one — see KeepAwakeJobID.
+// reserves the __name__ shape for goguma's own internal ids, so a user
+// name can never collide with one; see KeepAwakeJobID.
 func Slug(name string) string {
 	var b strings.Builder
 	lastDash := true // suppress a leading dash

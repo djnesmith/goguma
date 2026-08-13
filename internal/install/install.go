@@ -1,8 +1,8 @@
-// Package install registers and removes WakeGuard's system services.
+// Package install registers and removes goguma's system services.
 //
 // A stated v1 requirement is that installation needs no manual plist or unit
 // editing, and that uninstall leaves nothing behind. Both halves live here so
-// they can be read against each other — every file this package creates is
+// they can be read against each other: every file this package creates is
 // listed in Artifacts, and uninstall removes exactly that list.
 package install
 
@@ -13,7 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/junnam/wakeguard/internal/paths"
+	"github.com/junnam586/goguma/internal/paths"
 )
 
 // Plan describes what an install will do, so it can be shown before anything
@@ -37,9 +37,9 @@ type Step struct {
 // Artifacts lists every path an install creates.
 func Artifacts(l paths.Layout) []string {
 	return append([]string{
-		filepath.Join(l.BinDir, "wakeguard"),
-		filepath.Join(l.BinDir, "wakeguard-mark"),
-		filepath.Join(l.BinDir, "wakeguard-daemon"),
+		filepath.Join(l.BinDir, "goguma"),
+		filepath.Join(l.BinDir, "goguma-mark"),
+		filepath.Join(l.BinDir, "goguma-daemon"),
 	}, platformArtifacts(l)...)
 }
 
@@ -89,7 +89,7 @@ func sudoRun(args ...string) error {
 
 // writeFileSudo writes content to a root-owned path via a temp file.
 func writeFileSudo(path string, content []byte, mode os.FileMode) error {
-	tmp, err := os.CreateTemp("", "wakeguard-*")
+	tmp, err := os.CreateTemp("", "goguma-*")
 	if err != nil {
 		return err
 	}
@@ -131,9 +131,9 @@ func ExecutableDir() (string, error) {
 // The extra directories matter for the helper. Install copies the CLI, daemon
 // and mark wrapper into BinDir, but the helper's destination is
 // /usr/local/libexec, so nothing ever put a copy of it next to the installed
-// CLI. Re-running `wakeguard install` from the installed location therefore
-// failed with "could not find wakeguard-helper", which reads as a broken
-// install when everything is fine — the binary was simply never staged where
+// CLI. Re-running `goguma install` from the installed location therefore
+// failed with "could not find goguma-helper", which reads as a broken
+// install when everything is fine: the binary was simply never staged where
 // the re-run would look. Install now stages it into BinDir as well, and this
 // searches there.
 func findBinary(name string, extraDirs ...string) (string, error) {
@@ -150,7 +150,7 @@ func findBinary(name string, extraDirs ...string) (string, error) {
 	if p, err := exec.LookPath(name); err == nil {
 		return p, nil
 	}
-	return "", fmt.Errorf("could not find %s next to the wakeguard binary or on PATH; "+
+	return "", fmt.Errorf("could not find %s next to the goguma binary or on PATH; "+
 		"build it first with: go build ./cmd/%s", name, name)
 }
 

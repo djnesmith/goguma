@@ -1,4 +1,4 @@
-// Package power wraps the OS primitives WakeGuard needs: scheduling a wake
+// Package power wraps the OS primitives goguma needs: scheduling a wake
 // from sleep, holding sleep off, and reading the machine state the safety
 // cutouts act on.
 //
@@ -9,11 +9,11 @@ package power
 import (
 	"time"
 
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 // IdleAssertion is a held block on idle system sleep. It does not survive a
-// lid close — that requires the privileged helper — but it is enough for a
+// lid close (that requires the privileged helper), but it is enough for a
 // lid-open machine and needs no privilege at all.
 type IdleAssertion interface {
 	Release() error
@@ -30,7 +30,7 @@ type Platform interface {
 
 	// ReadState samples lid, power source, battery, and temperature. Called
 	// on every daemon tick, so it must be cheap and must never block for
-	// long — a wedged sample would stall the cutout checks that keep a
+	// long; a wedged sample would stall the cutout checks that keep a
 	// lid-closed machine safe.
 	ReadState() (State, error)
 
@@ -61,6 +61,15 @@ type State struct {
 	// "cool", so this is deliberately a pointer and not a zero value.
 	TempC      *float64
 	TempSource string
+
+	// ThermalWarn is the OS's own thermal warning (pmset -g therm on macOS).
+	// It exists because the degree threshold is calibrated for die sensors,
+	// and on machines whose die keys are unreadable the probe falls back to
+	// a chassis-proximity sensor that reads tens of degrees cooler: the
+	// enclosure can be dangerously hot while the number stays under every
+	// permitted threshold. The OS's verdict does not depend on which sensor
+	// goguma happened to find.
+	ThermalWarn bool
 }
 
 // Sampled reports whether a temperature reading was actually obtained.

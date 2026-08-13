@@ -1,4 +1,4 @@
-module github.com/junnam/wakeguard
+module github.com/junnam586/goguma
 
 go 1.26.5
 

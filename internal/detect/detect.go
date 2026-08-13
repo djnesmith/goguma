@@ -2,7 +2,7 @@
 //
 // Two mechanisms, deliberately unequal:
 //
-//   - Mark (exact). The job is wrapped in `wakeguard-mark`, which tells the
+//   - Mark (exact). The job is wrapped in `goguma-mark`, which tells the
 //     daemon the moment it starts and the moment it exits, with a real exit
 //     code. Requires editing the crontab line, and is worth it.
 //
@@ -12,7 +12,7 @@
 //     nothing at all if the pattern is wrong.
 //
 // The PRD calls pattern detection out as the project's main reliability risk.
-// The mitigation here is not to make matching cleverer — it is to make its
+// The mitigation here is not to make matching cleverer; it is to make its
 // failures loud: a window that closes having never matched is recorded as
 // OutcomeNeverDetected and surfaced as a warning with the exact command to
 // fix it.
@@ -59,12 +59,12 @@ func (m *Matcher) Find(procs []Process) []Process {
 	for _, p := range procs {
 		// Never match the daemon itself. The registered pattern is stored in
 		// jobs.json and frequently appears in the daemon's own command line
-		// or in a `wakeguard` CLI invocation, which would otherwise look like
+		// or in a `goguma` CLI invocation, which would otherwise look like
 		// the job running and hold the machine awake indefinitely.
 		if p.PID == self {
 			continue
 		}
-		if isWakeGuardProcess(p.Command) {
+		if isGogumaProcess(p.Command) {
 			continue
 		}
 		if m.re.MatchString(p.Command) {
@@ -74,21 +74,21 @@ func (m *Matcher) Find(procs []Process) []Process {
 	return out
 }
 
-// isWakeGuardProcess filters WakeGuard's own processes out of match results.
+// isGogumaProcess filters goguma's own processes out of match results.
 //
-// Without this, `wakeguard add --match "backup"` self-matches the moment the
-// user runs `wakeguard list` in a terminal, and the daemon concludes the
-// backup job is running. `wakeguard-mark` is excluded too: it is the wrapper,
+// Without this, `goguma add --match "backup"` self-matches the moment the
+// user runs `goguma list` in a terminal, and the daemon concludes the
+// backup job is running. `goguma-mark` is excluded too: it is the wrapper,
 // not the job, and its own command line contains the wrapped command verbatim.
-func isWakeGuardProcess(cmd string) bool {
+func isGogumaProcess(cmd string) bool {
 	for _, name := range []string{
-		"wakeguard-daemon", "wakeguard-helper", "wakeguard-mark",
+		"goguma-daemon", "goguma-helper", "goguma-mark",
 	} {
 		if strings.Contains(cmd, name) {
 			return true
 		}
 	}
-	// A bare `wakeguard <subcommand>` invocation, but not a job whose command
+	// A bare `goguma <subcommand>` invocation, but not a job whose command
 	// merely mentions the word.
 	fields := strings.Fields(cmd)
 	if len(fields) > 0 {
@@ -96,7 +96,7 @@ func isWakeGuardProcess(cmd string) bool {
 		if i := strings.LastIndexByte(base, '/'); i >= 0 {
 			base = base[i+1:]
 		}
-		if base == "wakeguard" {
+		if base == "goguma" {
 			return true
 		}
 	}
@@ -108,8 +108,8 @@ func isWakeGuardProcess(cmd string) bool {
 // Anchored on the program and the *last* identifier-looking argument, because
 // that is where task runners put the thing that distinguishes one job from
 // another: `hermes cron run <job>`, `npm run <script>`, `make <target>`,
-// `just <recipe>`, `rake <task>`. Taking the first arguments instead — which
-// this did — produced the same pattern for every job of a given runner:
+// `just <recipe>`, `rake <task>`. Taking the first arguments instead (which
+// this did) produced the same pattern for every job of a given runner:
 // `hermes cron run a` and `hermes cron run b` both became "hermes.*cron.*run",
 // so each job's pattern matched all of its siblings, and the first to exit
 // released everyone's hold.
@@ -121,7 +121,12 @@ func isWakeGuardProcess(cmd string) bool {
 // An empty result means "no usable pattern" and must be treated as a refusal,
 // not as a pattern that happens to match everything.
 func SuggestPattern(command string) string {
-	cmd := stripQuoted(lastShellSegment(stripShellWrapping(command)))
+	// Order matters: unwrap `sh -c "..."` first (its payload lives inside the
+	// quotes), THEN drop quoted prose, THEN split off the last shell segment.
+	// Splitting before quote-stripping let separators inside quoted prose
+	// win: `claude -p "fetch news; summarize stories"` anchored the pattern
+	// on words scraped from the prompt, which the contract above forbids.
+	cmd := lastShellSegment(stripQuoted(stripShellWrapping(command)))
 	fields := strings.Fields(cmd)
 	if len(fields) == 0 {
 		return ""
@@ -135,7 +140,7 @@ func SuggestPattern(command string) string {
 
 	// Positional arguments only.
 	//
-	// A runner names the job positionally — `hermes cron run <job>`,
+	// A runner names the job positionally: `hermes cron run <job>`,
 	// `npm run <script>`, `make <target>`. Flags configure the runner, and
 	// their *values* are especially dangerous: `--output-format json` yielded
 	// "claude.*json", which matches an interactive Claude session (its command
@@ -143,8 +148,8 @@ func SuggestPattern(command string) string {
 	// the user's editor session exits is exactly the failure a pattern is
 	// supposed to prevent.
 	//
-	// Dropping them costs the odd usable case — `--agent inbox-triage` becomes
-	// a bare program name — but a bare name is refused by Distinctive and falls
+	// Dropping them costs the odd usable case (`--agent inbox-triage` becomes
+	// a bare program name), but a bare name is refused by Distinctive and falls
 	// back to wrapping, which is the safe direction to be wrong in.
 	var ids []string
 	prevWasFlag := false
@@ -162,7 +167,7 @@ func SuggestPattern(command string) string {
 	// and what the process table shows).
 	switch len(ids) {
 	case 0:
-		// Program alone. Legal, but rarely unique — `Distinctive` is what
+		// Program alone. Legal, but rarely unique; `Distinctive` is what
 		// decides whether it may actually be used.
 	case 1:
 		parts = append(parts, regexp.QuoteMeta(ids[0]))

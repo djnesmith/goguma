@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/scan"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/scan"
 )
 
 // fakeObserver stands in for a scheduler that keeps its own run records.
@@ -101,7 +102,7 @@ func TestSchedulerReportedFinishReleasesWithARealDuration(t *testing.T) {
 	}
 	r := runs[len(runs)-1]
 	if got := r.Duration.D(); got != 20*time.Second {
-		t.Errorf("recorded duration %s, want 20s — the scheduler's own start and end, "+
+		t.Errorf("recorded duration %s, want 20s; the scheduler's own start and end, "+
 			"not the moment the daemon happened to look", got)
 	}
 	if r.Outcome != model.OutcomeOK {
@@ -169,7 +170,7 @@ func TestSchedulerReportedFailureIsRecordedAsAFailure(t *testing.T) {
 // The observer map is keyed on Provider.Name(); a hold looks itself up by
 // job.Source, which adoption sets from Candidate.Source. If those two strings
 // ever drift apart the lookup silently misses, every scheduler-reported job
-// falls back to a fixed window, and nothing anywhere reports a problem — the
+// falls back to a fixed window, and nothing anywhere reports a problem; the
 // feature would simply never fire. Unit tests using a fake observer cannot
 // catch that, because they choose both sides of the key themselves.
 func TestObserverKeyMatchesTheSourceAdoptionStores(t *testing.T) {
@@ -208,7 +209,7 @@ func TestResolveObserversIsKeyedByName(t *testing.T) {
 // over-measurement found in live testing, not in a unit test.
 //
 // Hermes stamps `fire_claim` only for externally-dispatched runs, so a job
-// fired by its own in-process ticker is never seen running — it goes from idle
+// fired by its own in-process ticker is never seen running; it goes from idle
 // to complete between two polls, and the start has to be inferred. Inferring
 // it as the window opening charges every run the full wake buffer: a real
 // 17-second job was recorded as 2m25s, and three of those would have taught
@@ -239,7 +240,136 @@ func TestAnInferredStartMeasuresFromTheFireTimeNotTheWindow(t *testing.T) {
 	}
 	got := runs[len(runs)-1].Duration.D()
 	if got != 17*time.Second {
-		t.Errorf("recorded %s, want 17s — measuring from the fire time, not the window "+
+		t.Errorf("recorded %s, want 17s; measuring from the fire time, not the window "+
 			"opening (which would add the whole %s wake buffer)", got, fire.Sub(opened))
+	}
+}
+
+// A fire that was already held for and completed must not be re-opened while
+// `now` is still inside its buffer window. Re-opening held the machine awake
+// for a job that just finished and recorded a phantom never_detected run for
+// every real run.
+func TestAServedFireIsNotReopenedInsideItsBuffer(t *testing.T) {
+	d := testDaemon(t)
+	d.plat = &fakePlatform{}
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	fire := time.Date(2026, 8, 7, 3, 0, 0, 0, time.UTC)
+	job := &model.Job{
+		ID: "backup", Name: "backup", Schedule: "0 3 * * *",
+		Enabled: true, Detection: model.DetectPattern, Match: "rsync",
+	}
+	if err := d.store.Add(job); err != nil {
+		t.Fatal(err)
+	}
+
+	// The window for the 03:00 fire opened, served the job, and closed.
+	h := &hold{job: job, fireAt: fire, openedAt: fire.Add(-90 * time.Second), ceiling: time.Minute}
+	d.mu.Lock()
+	d.holds[job.ID] = h
+	d.finishHoldLocked(h, fire.Add(50*time.Second), model.OutcomeOK)
+	d.mu.Unlock()
+	d.bg.Wait() // the run record is persisted off the hot path
+
+	// 55 seconds after the fire, still inside the buffer look-back.
+	d.openDueWindows(context.Background(), fire.Add(55*time.Second), config.Default())
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if _, reopened := d.holds[job.ID]; reopened {
+		t.Fatal("a completed fire was re-opened inside its buffer; every real run " +
+			"would gain a phantom never_detected companion")
+	}
+}
+
+// An explicit --max-runtime must actually release a detected job. The
+// still-running extension exists for learned estimates; ignoring a cap the
+// user typed made the ceiling-hit warning's own suggested fix a no-op.
+func TestAnExplicitMaxRuntimeIsEnforcedOnADetectedJob(t *testing.T) {
+	d := testDaemon(t)
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 8, 6, 3, 0, 0, 0, time.UTC)
+	h := &hold{
+		job: &model.Job{
+			ID: "idx", Name: "idx", Detection: model.DetectPattern, Match: "rebuild",
+			MaxRuntime: model.Duration(20 * time.Minute),
+		},
+		fireAt: start, openedAt: start,
+		ceiling: 20 * time.Minute, detected: true, startedAt: start,
+	}
+	d.mu.Lock()
+	d.holds["idx"] = h
+	d.mu.Unlock()
+
+	d.enforceCeilings(start.Add(21*time.Minute), config.Default())
+
+	d.mu.RLock()
+	_, held := d.holds["idx"]
+	d.mu.RUnlock()
+	if held {
+		t.Fatal("a job 1m past its explicit --max-runtime is still holding the machine awake")
+	}
+	d.bg.Wait()
+	runs, _ := d.store.Runs("idx")
+	if len(runs) == 0 || runs[len(runs)-1].Outcome != model.OutcomeCeiling {
+		t.Error("the explicit cut-off was not recorded as a ceiling hit")
+	}
+}
+
+// A wake-only run that outgrows its window finishes after the release. The
+// scheduler's completion record is the only evidence the ceiling is too
+// small; without learning from it the estimator is stuck and the machine
+// sleeps out from under the job identically forever.
+func TestALateCompletionTeachesTheEstimator(t *testing.T) {
+	d := testDaemon(t)
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	opened := time.Date(2026, 8, 6, 2, 58, 30, 0, time.UTC)
+	fired := opened.Add(90 * time.Second)
+	job := &model.Job{
+		ID: "gmail-sync", Name: "gmail-sync", Source: "fake",
+		Schedule: "0 3 * * *", Enabled: true, Detection: model.DetectNone,
+	}
+	if err := d.store.Add(job); err != nil {
+		t.Fatal(err)
+	}
+	// Stale observer state: last completion long before this window.
+	d.observers = map[string]scan.RunObserver{"fake": &fakeObserver{rec: RunFixture{
+		ok: true, rec: scan.RunRecord{CompletedAt: fired.Add(-time.Hour)},
+	}}}
+	d.mu.Lock()
+	d.holds[job.ID] = &hold{job: job, fireAt: fired, openedAt: opened, ceiling: 30 * time.Second}
+	d.mu.Unlock()
+
+	// The window expires with the job unseen and closes as ok.
+	d.enforceCeilings(fired.Add(31*time.Second), config.Default())
+	d.mu.RLock()
+	_, held := d.holds[job.ID]
+	d.mu.RUnlock()
+	if held {
+		t.Fatal("the wake-only window did not close at its ceiling")
+	}
+
+	// Four minutes after the fire, the scheduler records the real completion.
+	done := fired.Add(4 * time.Minute)
+	d.observers["fake"] = &fakeObserver{rec: RunFixture{
+		ok: true, rec: scan.RunRecord{StartedAt: fired, CompletedAt: done, Status: "ok"},
+	}}
+	d.pollSchedulerState(context.Background(), done.Add(2*time.Second))
+	d.bg.Wait()
+
+	runs, _ := d.store.Runs(job.ID)
+	var learned time.Duration
+	for _, r := range runs {
+		if r.Duration.D() > learned {
+			learned = r.Duration.D()
+		}
+	}
+	if learned != 4*time.Minute {
+		t.Errorf("learned %s, want the real 4m; the estimator has no path back up", learned)
 	}
 }

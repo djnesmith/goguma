@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/paths"
+	"github.com/junnam586/goguma/internal/paths"
 )
 
 func platformArtifacts(l paths.Layout) []string {
@@ -18,7 +18,7 @@ func platformArtifacts(l paths.Layout) []string {
 		paths.HelperBinary,
 		// The unprivileged staging copy. Listed so uninstall's promise that
 		// every file it wrote is removed stays literally true.
-		filepath.Join(l.BinDir, "wakeguard-helper"),
+		filepath.Join(l.BinDir, "goguma-helper"),
 	}
 }
 
@@ -82,7 +82,7 @@ func helperPlist(binary string, ownerUID int) string {
     <key>ProcessType</key>
     <string>Background</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/wakeguard-helper.log</string>
+    <string>/var/log/goguma-helper.log</string>
 </dict>
 </plist>
 `, paths.HelperLabel, binary, ownerUID)
@@ -90,15 +90,15 @@ func helperPlist(binary string, ownerUID int) string {
 
 // BuildPlan assembles the install steps for macOS.
 func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
-	cliSrc, err := findBinary("wakeguard")
+	cliSrc, err := findBinary("goguma")
 	if err != nil {
 		return nil, err
 	}
-	daemonSrc, err := findBinary("wakeguard-daemon")
+	daemonSrc, err := findBinary("goguma-daemon")
 	if err != nil {
 		return nil, err
 	}
-	markSrc, err := findBinary("wakeguard-mark")
+	markSrc, err := findBinary("goguma-mark")
 	if err != nil {
 		return nil, err
 	}
@@ -107,28 +107,28 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 	// nothing yet written, rather than half way through an install.
 	var helperSrc string
 	if withHelper {
-		helperSrc, err = findBinary("wakeguard-helper", l.BinDir)
+		helperSrc, err = findBinary("goguma-helper", l.BinDir)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	p := &Plan{}
-	binCLI := filepath.Join(l.BinDir, "wakeguard")
-	binDaemon := filepath.Join(l.BinDir, "wakeguard-daemon")
-	binMark := filepath.Join(l.BinDir, "wakeguard-mark")
+	binCLI := filepath.Join(l.BinDir, "goguma")
+	binDaemon := filepath.Join(l.BinDir, "goguma-daemon")
+	binMark := filepath.Join(l.BinDir, "goguma-mark")
 
 	copies := []struct{ src, dst, label string }{
-		{cliSrc, binCLI, "wakeguard"},
-		{daemonSrc, binDaemon, "wakeguard-daemon"},
-		{markSrc, binMark, "wakeguard-mark"},
+		{cliSrc, binCLI, "goguma"},
+		{daemonSrc, binDaemon, "goguma-daemon"},
+		{markSrc, binMark, "goguma-mark"},
 	}
 	if withHelper {
 		// Staged unprivileged alongside the others so a later re-run finds it.
-		// This copy is never executed — the LaunchDaemon runs the root-owned
-		// one in /usr/local/libexec — so it grants no privilege of its own.
+		// This copy is never executed (the LaunchDaemon runs the root-owned
+		// one in /usr/local/libexec), so it grants no privilege of its own.
 		copies = append(copies, struct{ src, dst, label string }{
-			helperSrc, filepath.Join(l.BinDir, "wakeguard-helper"), "wakeguard-helper",
+			helperSrc, filepath.Join(l.BinDir, "goguma-helper"), "goguma-helper",
 		})
 	}
 
@@ -141,7 +141,7 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 	}
 
 	p.Steps = append(p.Steps, Step{
-		Description: "write the LaunchAgent that starts WakeGuard at login",
+		Description: "write the LaunchAgent that starts goguma at login",
 		Path:        l.DaemonPlist(),
 		Run: func() error {
 			if err := os.MkdirAll(filepath.Dir(l.DaemonPlist()), 0o755); err != nil {
@@ -192,7 +192,7 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 //
 // `launchctl bootout` returns as soon as the request is accepted, not once the
 // service is gone. Bootstrapping into that window fails with "Bootstrap failed:
-// 5: Input/output error" — an error that names no service, suggests no cause,
+// 5: Input/output error", an error that names no service, suggests no cause,
 // and on a re-install leaves the daemon booted out and not replaced, so the
 // tool ends up worse off than before it was run. Waiting for the unload to
 // settle is the difference between a reliable re-install and a coin flip.
@@ -263,10 +263,10 @@ func Uninstall(l paths.Layout, keepState bool) []error {
 
 	for _, path := range []string{
 		l.DaemonPlist(),
-		filepath.Join(l.BinDir, "wakeguard-daemon"),
-		filepath.Join(l.BinDir, "wakeguard-mark"),
-		filepath.Join(l.BinDir, "wakeguard-helper"),
-		filepath.Join(l.BinDir, "wakeguard"),
+		filepath.Join(l.BinDir, "goguma-daemon"),
+		filepath.Join(l.BinDir, "goguma-mark"),
+		filepath.Join(l.BinDir, "goguma-helper"),
+		filepath.Join(l.BinDir, "goguma"),
 	} {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, fmt.Errorf("removing %s: %w", path, err))
@@ -282,8 +282,12 @@ func Uninstall(l paths.Layout, keepState bool) []error {
 		}
 	}
 
-	// State is kept unless explicitly asked for: a reinstall should not lose
-	// the duration history that took weeks to accumulate.
+	// Callers pass keepState=true unless the user asked to purge. The CLI
+	// default is to keep, because a reinstall should not lose duration history
+	// that took weeks of real runs to accumulate and cannot be reconstructed.
+	// This comment used to claim that was the behaviour while the flag it
+	// described defaulted the other way, so a plain uninstall deleted
+	// everything.
 	if !keepState {
 		if err := os.RemoveAll(l.StateDir); err != nil {
 			errs = append(errs, fmt.Errorf("removing %s: %w", l.StateDir, err))

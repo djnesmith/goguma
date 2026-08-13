@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
+	"github.com/junnam586/goguma/internal/ipc"
 )
 
 // callDaemon sends a request and translates transport errors into advice.
@@ -22,7 +22,7 @@ func callDaemon(ctx *Context, op ipc.Op, payload, out any) error {
 //
 // Most commands are a state read and answer instantly. `sync` re-reads every
 // watched scheduler and, on a cold cache, reconstructs two weeks of sleep
-// history from the system log — around four seconds on macOS, which lands
+// history from the system log, around four seconds on macOS, which lands
 // right on the default limit. Giving the one slow command room is better than
 // loosening the bound for reads that should never take that long.
 func timeoutFor(op ipc.Op) time.Duration {

@@ -8,7 +8,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam586/goguma/internal/model"
 )
 
 // maxHistoryLines bounds a job's retained history. The estimator only ever
@@ -112,7 +112,7 @@ func (s *Store) trimHistoryLocked(path string) error {
 }
 
 // DeleteHistory removes a job's recorded runs. Only reachable through an
-// explicit `wakeguard history --reset`, never as a side effect of removing a
+// explicit `goguma history --reset`, never as a side effect of removing a
 // job, so a re-added job keeps its learned ceiling.
 func (s *Store) DeleteHistory(jobID string) error {
 	s.mu.Lock()

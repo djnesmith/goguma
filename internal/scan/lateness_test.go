@@ -4,14 +4,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 // TestObservedLatenessBeatsInference is the case that motivated this whole
 // mechanism.
 //
 // A user's morning briefing is scheduled for 09:00. Its own scheduler records
-// that it last ran at 12:52 — nearly four hours late, because the machine was
+// that it last ran at 12:52, nearly four hours late, because the machine was
 // asleep at 09:00 and the job only ran once the lid opened. That is directly
 // observed evidence, and it must surface even though the scheduler technically
 // "caught up" and would otherwise be filtered as self-healing.
@@ -47,7 +47,7 @@ func TestObservedLatenessBeatsInference(t *testing.T) {
 func TestPunctualJobIsNotFlaggedAsLate(t *testing.T) {
 	now := time.Date(2026, 8, 4, 20, 0, 0, 0, time.Local)
 
-	// Ran at 09:00:12 for a 09:00 schedule — twelve seconds of scheduler
+	// Ran at 09:00:12 for a 09:00 schedule, twelve seconds of scheduler
 	// jitter, not a problem.
 	entry := Entry{
 		Name: "punctual", Source: SourceHermes, Schedule: "0 9 * * *",

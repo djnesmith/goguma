@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/paths"
-	"github.com/junnam/wakeguard/internal/store"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/paths"
+	"github.com/junnam586/goguma/internal/store"
 )
 
 func testDaemon(t *testing.T) *Daemon {
@@ -21,6 +21,11 @@ func testDaemon(t *testing.T) *Daemon {
 	}
 	d := New("test", slog.New(slog.NewTextHandler(io.Discard, nil)), store.New(layout), nil)
 	d.cfg = config.Default()
+	// Run records and event lines are persisted off the control path; wait
+	// for them before the TempDir cleanup, or a straggling writer races the
+	// removal and the test flakes with "directory not empty". Registered
+	// after t.TempDir so LIFO cleanup ordering drains writers first.
+	t.Cleanup(d.bg.Wait)
 	return d
 }
 
@@ -29,7 +34,7 @@ func testDaemon(t *testing.T) *Daemon {
 //
 // finishHoldLocked runs with d.mu held for writing. It used to reach the
 // webhook dispatch through an accessor that takes a read lock, and Go's
-// RWMutex is not reentrant — so the ceiling and never-detected paths, the two
+// RWMutex is not reentrant, so the ceiling and never-detected paths, the two
 // that exist to stop a hung job pinning the machine awake, deadlocked the
 // process the first time they fired.
 //
@@ -156,7 +161,7 @@ func TestFinishRecordsHoldAndRuntimeSeparately(t *testing.T) {
 		t.Errorf("hold duration = %s, want 132s (90s wake buffer + 42s runtime)", run.HoldDuration)
 	}
 	if !run.WokeMachine {
-		t.Error("WokeMachine should be preserved — it is the tool's value metric")
+		t.Error("WokeMachine should be preserved; it is the tool's value metric")
 	}
 }
 

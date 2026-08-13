@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "WakeGuardUI",
+    name: "GogumaUI",
     platforms: [.macOS(.v26)],
     targets: [
         .executableTarget(
-            name: "WakeGuardUI",
-            path: "Sources/WakeGuardUI",
+            name: "GogumaUI",
+            path: "Sources/GogumaUI",
             // The vendored package's licence travels with its source, as MIT
             // requires, but it is not code and not a resource.
             exclude: ["Vendor/FluidMenuBarExtra/LICENSE"],

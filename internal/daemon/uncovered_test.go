@@ -4,18 +4,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/power"
-	"github.com/junnam/wakeguard/internal/scan"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
+	"github.com/junnam586/goguma/internal/scan"
 )
 
-// TestUncoveredJobsAreReported guards the quietest failure WakeGuard had.
+// TestUncoveredJobsAreReported guards the quietest failure goguma had.
 //
-// Adoption declines wrappable candidates — crontab and launchd entries — on
+// Adoption declines wrappable candidates (crontab and launchd entries) on
 // the grounds that adopting one blind would warn forever about a config nobody
 // chose. Fair, but it said nothing at all, so a user whose jobs were *all*
-// crontab saw a healthy WakeGuard and a Mac that still slept through every
+// crontab saw a healthy goguma and a Mac that still slept through every
 // one of them. A missing job is the failure this product exists to prevent;
 // it must never be the silent case.
 func TestUncoveredJobsAreReported(t *testing.T) {
@@ -46,7 +46,7 @@ func TestUncoveredJobsAreReported(t *testing.T) {
 	}
 }
 
-// Nothing uncovered must produce no warning at all — an empty state that
+// Nothing uncovered must produce no warning at all, an empty state that
 // nags is how people learn to ignore warnings.
 func TestNothingUncoveredIsSilent(t *testing.T) {
 	d := testDaemon(t)

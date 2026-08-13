@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/power"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
 )
 
 func tempOf(c float64) *float64 { return &c }
@@ -15,7 +15,7 @@ func TestCutoutOnlyFiresWhileHoldingWithLidClosed(t *testing.T) {
 	cfg := config.Default()
 	hot := power.State{LidClosed: true, TempC: tempOf(95), BatteryPct: 90, OnAC: true}
 
-	// Not holding: WakeGuard is not the reason the machine is awake, so it has
+	// Not holding: goguma is not the reason the machine is awake, so it has
 	// nothing to release and no business intervening.
 	if d := EvaluateCutout(hot, cfg, false); d.Fire {
 		t.Error("cutout fired while not holding")
@@ -116,7 +116,7 @@ func TestLatchPreventsOscillation(t *testing.T) {
 		t.Error("latch cleared while still hot")
 	}
 
-	// Barely under the threshold is not enough — that is exactly the
+	// Barely under the threshold is not enough; that is exactly the
 	// oscillation case hysteresis exists to prevent.
 	marginal := hot
 	marginal.TempC = tempOf(cfg.ThermalCutoutC - 0.5)
@@ -179,13 +179,13 @@ func TestThermalTakesPrecedenceOverBattery(t *testing.T) {
 	}
 }
 
-// TestWakeIsRefusedOnALowBattery guards the one hazard WakeGuard has that a
+// TestWakeIsRefusedOnALowBattery guards the one hazard goguma has that a
 // hold-only tool does not.
 //
 // Adrafinil never wakes anything, so a reactive cutout is enough for it: the
-// machine was already awake and the user was just using it. WakeGuard wakes a
+// machine was already awake and the user was just using it. goguma wakes a
 // machine that was deliberately put to sleep, possibly into a bag. A cutout
-// cannot un-wake a machine — by the time it fires the energy is spent — so on
+// cannot un-wake a machine (by the time it fires the energy is spent), so on
 // a nearly-flat battery the decision has to be made before the wake.
 func TestWakeIsRefusedOnALowBattery(t *testing.T) {
 	cfg := config.Default() // 20%
@@ -199,7 +199,7 @@ func TestWakeIsRefusedOnALowBattery(t *testing.T) {
 		{"at the release threshold", power.State{OnAC: false, BatteryPct: 20}, false},
 		// Just above the release threshold is still refused. Waking costs
 		// charge, so arriving at 21% means landing at or under the 20% limit
-		// and being cut off before the job finishes — energy spent for a run
+		// and being cut off before the job finishes, energy spent for a run
 		// that did not happen.
 		{"just above the release threshold", power.State{OnAC: false, BatteryPct: 21}, false},
 		{"at the wake floor", power.State{OnAC: false, BatteryPct: 25}, false},
@@ -242,7 +242,7 @@ func TestTemperatureDoesNotBlockScheduling(t *testing.T) {
 //
 // If they were equal, a wake scheduled at one point above the cutout would
 // spend charge getting the machine up, arrive at or under the limit, and be
-// released immediately — burning battery for a job that never completed.
+// released immediately, burning battery for a job that never completed.
 func TestWakeFloorSitsAboveTheReleaseThreshold(t *testing.T) {
 	cfg := config.Default()
 

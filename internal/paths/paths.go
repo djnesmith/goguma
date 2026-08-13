@@ -1,6 +1,6 @@
-// Package paths resolves every on-disk and socket location WakeGuard uses.
+// Package paths resolves every on-disk and socket location goguma uses.
 // Centralised so that `uninstall` can enumerate exactly what to remove and
-// leave nothing behind — a stated v1 requirement.
+// leave nothing behind, a stated v1 requirement.
 package paths
 
 import (
@@ -55,7 +55,7 @@ func (l Layout) EnsureDirs() error {
 }
 
 // Resolve returns the layout for the current user, honouring
-// WAKEGUARD_STATE_DIR so tests and parallel dev instances can be fully
+// GOGUMA_STATE_DIR so tests and parallel dev instances can be fully
 // isolated from a real installation.
 func Resolve() (Layout, error) {
 	home, err := os.UserHomeDir()
@@ -63,7 +63,7 @@ func Resolve() (Layout, error) {
 		return Layout{}, err
 	}
 	l := platformLayout(home)
-	if override := os.Getenv("WAKEGUARD_STATE_DIR"); override != "" {
+	if override := os.Getenv("GOGUMA_STATE_DIR"); override != "" {
 		abs, err := filepath.Abs(override)
 		if err != nil {
 			return Layout{}, err
@@ -79,7 +79,7 @@ func Resolve() (Layout, error) {
 func MustResolve() Layout {
 	l, err := Resolve()
 	if err != nil {
-		panic("wakeguard: cannot resolve state directory: " + err.Error())
+		panic("goguma: cannot resolve state directory: " + err.Error())
 	}
 	return l
 }

@@ -90,7 +90,7 @@ func TestHintsIgnoreFilesOutsideScheduleDirectories(t *testing.T) {
 
 func TestHintsIgnoreFiveNumbersThatAreNotCron(t *testing.T) {
 	root := t.TempDir()
-	// Five numeric fields alone are not enough — the remainder must look like
+	// Five numeric fields alone are not enough; the remainder must look like
 	// a command, or ordinary tabular data matches.
 	writeFile(t, root, "cron/data.txt", "1 2 3 4 5\n10 20 30 40 50\n")
 
@@ -114,7 +114,7 @@ func TestDormantCrontabIsReportedAsNotInstalled(t *testing.T) {
 		t.Fatalf("got %d hints, want the dormant crontab surfaced", len(hints))
 	}
 	if hints[0].Live != LiveNo {
-		t.Errorf("Live = %q, want %q — an uninstalled file must not read as active",
+		t.Errorf("Live = %q, want %q; an uninstalled file must not read as active",
 			hints[0].Live, LiveNo)
 	}
 }

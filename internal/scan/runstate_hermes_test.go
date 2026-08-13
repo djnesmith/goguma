@@ -70,7 +70,7 @@ func TestObserveRunSeesACompletedRun(t *testing.T) {
 	}
 }
 
-// Matching must work whichever name WakeGuard adopted the job under.
+// Matching must work whichever name goguma adopted the job under.
 func TestObserveRunMatchesByIDOrSluggedName(t *testing.T) {
 	h := hermesAt(t, hermesIdle)
 	for _, key := range []string{"gmail-sync", "gmail-meeting-calendar-sync"} {

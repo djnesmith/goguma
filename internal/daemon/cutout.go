@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/power"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
 )
 
 // CutoutDecision is the outcome of evaluating the safety valves.
@@ -32,7 +32,7 @@ func EvaluateCutout(st power.State, cfg config.Config, holding bool) CutoutDecis
 	}
 
 	// Thermal. An unavailable sensor is deliberately NOT treated as safe, but
-	// it also cannot fire a cutout — there is nothing to compare. The daemon
+	// it also cannot fire a cutout; there is nothing to compare. The daemon
 	// surfaces the missing sensor as a warning instead, so the user knows the
 	// valve is inoperative rather than believing it is protecting them.
 	if st.TempC != nil && *st.TempC >= cfg.ThermalCutoutC {
@@ -41,6 +41,18 @@ func EvaluateCutout(st power.State, cfg config.Config, holding bool) CutoutDecis
 			Kind: model.CutoutThermal,
 			Detail: fmt.Sprintf("CPU reached %.1f°C with the lid closed (limit %.0f°C)",
 				*st.TempC, cfg.ThermalCutoutC),
+		}
+	}
+	// The OS's own thermal warning fires the valve regardless of the degree
+	// reading. The threshold above is calibrated for die sensors; a machine
+	// whose die keys are unreadable falls back to a chassis-proximity sensor
+	// that reads tens of degrees cooler, so a bagged lid-closed laptop could
+	// peg its silicon while the number stayed under every permitted limit.
+	if st.ThermalWarn {
+		return CutoutDecision{
+			Fire:   true,
+			Kind:   model.CutoutThermal,
+			Detail: "the OS reported a thermal warning with the lid closed",
 		}
 	}
 
@@ -63,7 +75,7 @@ func EvaluateCutout(st power.State, cfg config.Config, holding bool) CutoutDecis
 //
 // The cutouts are reactive: they release a hold once conditions have already
 // gone bad. That is sufficient for a tool that only holds a machine which is
-// already awake, but WakeGuard does something more dangerous — it wakes a
+// already awake, but goguma does something more dangerous; it wakes a
 // machine the user deliberately put to sleep, possibly into a closed bag,
 // possibly at 3am with nobody watching.
 //
@@ -71,7 +83,7 @@ func EvaluateCutout(st power.State, cfg config.Config, holding bool) CutoutDecis
 // happened and the energy is already spent, so on a nearly-flat battery the
 // sequence is: wake, immediately release, and end up closer to a hard shutdown
 // with the job not run either. Refusing the wake in the first place is
-// strictly better — the machine stays asleep, the charge is preserved, and the
+// strictly better: the machine stays asleep, the charge is preserved, and the
 // job is missed exactly as it would have been anyway.
 //
 // Only battery is checked, not temperature. A machine cools while it sleeps,
@@ -82,7 +94,7 @@ func EvaluateCutout(st power.State, cfg config.Config, holding bool) CutoutDecis
 // it. Waking at exactly the cutout level is self-defeating: the wake itself
 // costs charge, so the machine arrives already at or under the limit, the
 // cutout fires immediately, and the hold is released before the job can
-// finish. The result is energy spent for a run that did not happen — precisely
+// finish. The result is energy spent for a run that did not happen, precisely
 // the waste this check exists to avoid.
 //
 // The rearm margin is reused because it already expresses the same idea: how
@@ -109,7 +121,7 @@ func ShouldScheduleWake(st power.State, cfg config.Config) (bool, string) {
 //
 // Without it the system oscillates: the cutout releases the hold, the job is
 // still inside its window so the next tick re-opens it, the hazard is still
-// present, and it fires again — several times a second in the worst case.
+// present, and it fires again, several times a second in the worst case.
 // The latch holds until the hazard genuinely recedes by a margin (simple
 // hysteresis) or the lid opens, at which point the danger is over by
 // definition.
@@ -148,7 +160,11 @@ func (l *CutoutLatch) Update(st power.State, cfg config.Config) bool {
 
 	switch l.active.Kind {
 	case model.CutoutThermal:
-		if st.TempC != nil && *st.TempC <= cfg.ThermalCutoutC-cfg.CutoutRearmMarginC {
+		// A warning-fired cutout may exist on a machine with no readable die
+		// sensor at all, so a missing reading cannot be required for release
+		// there; when a reading exists it must be genuinely cool, as before.
+		cooled := st.TempC == nil || *st.TempC <= cfg.ThermalCutoutC-cfg.CutoutRearmMarginC
+		if !st.ThermalWarn && cooled {
 			l.active = nil
 			return true
 		}

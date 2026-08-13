@@ -31,7 +31,7 @@ func TestOnDeviceProbe(t *testing.T) {
 			t.Errorf("temperature %.1f°C is outside the plausible range", *st.TempC)
 		}
 	} else {
-		t.Logf("temperature: unavailable — thermal cutout will report unverifiable")
+		t.Logf("temperature: unavailable; thermal cutout will report unverifiable")
 	}
 
 	h, err := p.SleepHistory(14 * 24 * time.Hour)
@@ -56,7 +56,7 @@ func TestOnDeviceProbe(t *testing.T) {
 		len(h.Intervals), coverage.Round(time.Hour), asleep.Round(time.Minute), pct)
 
 	if asleep > coverage && coverage > 0 {
-		t.Errorf("recorded sleep %s exceeds the %s window — intervals overlap",
+		t.Errorf("recorded sleep %s exceeds the %s window; intervals overlap",
 			asleep.Round(time.Minute), coverage.Round(time.Hour))
 	}
 }

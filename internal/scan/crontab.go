@@ -9,7 +9,7 @@ import (
 
 // Crontab discovers entries in the user's crontab.
 //
-// Returns no error when there is simply no crontab — that is the normal case
+// Returns no error when there is simply no crontab; that is the normal case
 // on macOS, where `crontab -l` exits non-zero with "no crontab for <user>".
 // Treating it as a failure would make `import` look broken on a machine whose
 // automation all lives in launchd.
@@ -86,7 +86,7 @@ func splitCrontabLine(line string) (sched, cmd string, ok bool) {
 	// with leading seconds. Splitting such a line at five fields produces a
 	// schedule that is *silently wrong but still valid*: "0 0 9 * * * cmd"
 	// becomes "0 0 9 * *", which parses fine and means 00:00 on the 9th of
-	// each month rather than 09:00:00 daily. WakeGuard would then wake the
+	// each month rather than 09:00:00 daily. goguma would then wake the
 	// machine at confidently incorrect times.
 	//
 	// A real command essentially never consists only of digits and cron

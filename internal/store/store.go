@@ -1,7 +1,7 @@
 // Package store persists jobs, run history, and the event log.
 //
 // All writes are atomic (write-temp-then-rename) because the daemon can be
-// killed at any moment — logout, shutdown, a launchd bootout — and a
+// killed at any moment (logout, shutdown, a launchd bootout) and a
 // half-written jobs.json that fails to parse would silently disable every
 // registered job.
 package store
@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/paths"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/paths"
 )
 
 // Store owns the on-disk state. Safe for concurrent use: the daemon's loop
@@ -37,6 +37,16 @@ type Store struct {
 	// the daemon runs, reports the problem loudly, and changes nothing on disk
 	// until the file is fixed.
 	loadErr error
+
+	// invalid holds entries that parsed but failed Validate, verbatim.
+	//
+	// They are written back on every persist for the same reason loadErr
+	// blocks writes: a skipped entry is someone's job with a typo, and
+	// silently dropping it from the next unrelated write would destroy the
+	// schedule, pattern, and timezone they need in order to fix it. The entry
+	// stays in the file, and InvalidJobs keeps reporting it, until a human
+	// repairs or removes it.
+	invalid []*model.Job
 }
 
 func New(layout paths.Layout) *Store {
@@ -55,7 +65,7 @@ type jobsFile struct {
 
 const jobsFileVersion = 1
 
-// Load reads jobs.json into memory. A missing file is not an error — a fresh
+// Load reads jobs.json into memory. A missing file is not an error: a fresh
 // install legitimately has no jobs.
 func (s *Store) Load() error {
 	s.mu.Lock()
@@ -81,11 +91,12 @@ func (s *Store) Load() error {
 		return nil
 	}
 	if f.Version > jobsFileVersion {
-		return fmt.Errorf("%s was written by a newer WakeGuard (format v%d, this build understands v%d)",
+		return fmt.Errorf("%s was written by a newer goguma (format v%d, this build understands v%d)",
 			s.layout.JobsFile(), f.Version, jobsFileVersion)
 	}
 
 	jobs := make(map[string]*model.Job, len(f.Jobs))
+	var invalid []*model.Job
 	for _, j := range f.Jobs {
 		if j == nil {
 			continue
@@ -95,13 +106,15 @@ func (s *Store) Load() error {
 		}
 		// A malformed entry is skipped rather than failing the whole load:
 		// one bad hand-edit should not take every other job offline. The
-		// daemon surfaces these as warnings.
+		// daemon surfaces these as warnings, and persist writes them back
+		// untouched so the broken entry survives to be fixed.
 		if err := j.Validate(); err != nil {
+			invalid = append(invalid, j)
 			continue
 		}
 		jobs[j.ID] = j
 	}
-	s.jobs, s.loaded = jobs, true
+	s.jobs, s.invalid, s.loaded = jobs, invalid, true
 	return nil
 }
 
@@ -167,7 +180,7 @@ func (s *Store) Groups() []string {
 	return out
 }
 
-// Job looks a job up by id, or by name if no id matches — the CLI takes
+// Job looks a job up by id, or by name if no id matches; the CLI takes
 // whichever the user typed.
 func (s *Store) Job(ref string) (*model.Job, bool) {
 	s.mu.RLock()
@@ -290,9 +303,16 @@ func (s *Store) persistLocked() error {
 			"refusing to write jobs.json because it could not be read: %w\n"+
 				"fix or remove the file, then restart the daemon", s.loadErr)
 	}
-	list := make([]*model.Job, 0, len(s.jobs))
+	list := make([]*model.Job, 0, len(s.jobs)+len(s.invalid))
 	for _, j := range s.jobs {
 		list = append(list, j)
+	}
+	// Invalid entries ride along verbatim; see the field comment. One whose
+	// id has since been re-registered as a valid job is superseded and drops.
+	for _, j := range s.invalid {
+		if _, taken := s.jobs[j.ID]; !taken {
+			list = append(list, j)
+		}
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 

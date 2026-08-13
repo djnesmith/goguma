@@ -7,42 +7,42 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
-const addUsage = `wakeguard add --name <name> --cron <schedule> [options]
+const addUsage = `goguma add --name <name> --cron <schedule> [options]
 
-Registers a schedule that WakeGuard will wake the machine for. WakeGuard does
-not run the job — your existing cron or launchd entry still does that.
+Registers a schedule that goguma will wake the machine for. goguma does
+not run the job; your existing cron or launchd entry still does that.
 
-Detection — how WakeGuard knows the job is running:
+Detection (how goguma knows the job is running):
 
   --detection mark      (default, exact)
         Wrap the job so it reports its own start and exit. Change your
         crontab line to:
-            wakeguard-mark <name> -- <your original command>
+            goguma-mark <name> -- <your original command>
         This gives an exact duration from the first run and a real exit code.
 
   --detection pattern   (no changes to your setup)
-        WakeGuard watches the process table for --match. Requires no edits,
+        goguma watches the process table for --match. Requires no edits,
         but cannot see exit codes and silently observes nothing if the
-        pattern is wrong. Test it first with 'wakeguard test-match'.
+        pattern is wrong. Test it first with 'goguma test-match'.
 
 options:
   --name <name>          required, the job's name
   --cron <expr>          required. Cron syntax ("0 9 * * *", "@daily") or
                          plain English ("every day at 9am", "weekdays at 6pm",
-                         "every 30 minutes"). Run 'wakeguard add' with no flags
+                         "every 30 minutes"). Run 'goguma add' with no flags
                          to be asked instead.
   --tz <zone>            IANA timezone the schedule is evaluated in
   --detection <mode>     mark (default) or pattern
   --match <regexp>       process pattern, required with --detection pattern
   --command <cmd>        the command this job runs, recorded for reference
-  --group <name>         file the job under a heading in 'wakeguard list'.
+  --group <name>         file the job under a heading in 'goguma list'.
                          Organisation only; it changes nothing about when the
-                         job runs. Move it later with 'wakeguard group'.
+                         job runs. Move it later with 'goguma group'.
   --max-runtime <dur>    override the learned ceiling, e.g. 90s, 5m
   --wake-buffer <dur>    how early to wake before the job fires
   --disabled             register without enabling`
@@ -96,7 +96,7 @@ func runAdd(ctx *Context, args []string) error {
 		Command:   *command,
 		Group:     *group,
 		// Naming the owning scheduler is what lets the daemon read that
-		// scheduler's own run records for this job — the difference between a
+		// scheduler's own run records for this job, the difference between a
 		// measured run and a fixed guess. It defaults to "manual" for a job
 		// nothing else owns.
 		Source:    *source,
@@ -122,7 +122,7 @@ func runAdd(ctx *Context, args []string) error {
 	}
 
 	// Warn before saving if a pattern matches nothing right now. Not an
-	// error — a job that only runs at 3am legitimately has no live process
+	// error: a job that only runs at 3am legitimately has no live process
 	// at configuration time.
 	if job.Detection == model.DetectPattern {
 		reportMatchPreview(ctx, job.Match)
@@ -156,7 +156,7 @@ func runAdd(ctx *Context, args []string) error {
 		if original == "" {
 			original = "<your original command>"
 		}
-		r.Printf("    %s\n", r.Accent(fmt.Sprintf("wakeguard-mark %s -- %s", saved.ID, original)))
+		r.Printf("    %s\n", r.Accent(fmt.Sprintf("goguma-mark %s -- %s", saved.ID, original)))
 	}
 	return nil
 }
@@ -201,13 +201,13 @@ func reportMatchPreview(ctx *Context, pattern string) {
 var cmdRemove = &Command{
 	Name:    "remove",
 	Summary: "unregister a job",
-	Usage: `wakeguard remove <job>
+	Usage: `goguma remove <job>
 
 Unregisters a job. Its run history is kept, so re-adding it later starts from
 the ceiling it had already learned rather than from a cold start.`,
 	Run: func(ctx *Context, args []string) error {
 		if len(args) == 0 {
-			return fmt.Errorf("which job? usage: wakeguard remove <job>")
+			return fmt.Errorf("which job? usage: goguma remove <job>")
 		}
 		var job model.Job
 		if err := callDaemon(ctx, ipc.OpJobsRemove, ipc.JobRef{Ref: args[0]}, &job); err != nil {
@@ -220,7 +220,7 @@ the ceiling it had already learned rather than from a cold start.`,
 	},
 }
 
-const editUsage = `wakeguard edit <job> [options]
+const editUsage = `goguma edit <job> [options]
 
 Changes one or more fields of an existing job. Only the flags you pass are
 modified; everything else is left alone.
@@ -236,7 +236,7 @@ var cmdEdit = &Command{
 	Run: func(ctx *Context, args []string) error {
 		ref, rest := splitRef(args)
 		if ref == "" {
-			return fmt.Errorf("which job? usage: wakeguard edit <job> [options]")
+			return fmt.Errorf("which job? usage: goguma edit <job> [options]")
 		}
 
 		fs := flag.NewFlagSet("edit", flag.ContinueOnError)
@@ -337,11 +337,11 @@ func sortedKeys(m map[string]bool) []string {
 	return out
 }
 
-const groupUsage = `wakeguard group <job> <group-name>
-wakeguard group <job> --clear
+const groupUsage = `goguma group <job> <group-name>
+goguma group <job> --clear
 
-Files a job under a heading in 'wakeguard list', or removes it from one. A job
-belongs to at most one group, and groups do not nest — they exist so a machine
+Files a job under a heading in 'goguma list', or removes it from one. A job
+belongs to at most one group, and groups do not nest; they exist so a machine
 with twenty adopted jobs reads as a handful of headings rather than one wall.
 
 Grouping is organisation only. It changes nothing about when a job runs, what
@@ -363,7 +363,7 @@ var cmdGroup = &Command{
 			return err
 		}
 		if ref == "" {
-			return fmt.Errorf("which job? usage: wakeguard group <job> <group-name>")
+			return fmt.Errorf("which job? usage: goguma group <job> <group-name>")
 		}
 
 		// Join the remaining words rather than taking one argument, so an
@@ -374,7 +374,7 @@ var cmdGroup = &Command{
 		case *clear && name != "":
 			return fmt.Errorf("--clear removes the job from its group, so it takes no group name")
 		case !*clear && name == "":
-			return fmt.Errorf("which group? usage: wakeguard group <job> <group-name>\n\n%s", groupUsage)
+			return fmt.Errorf("which group? usage: goguma group <job> <group-name>\n\n%s", groupUsage)
 		}
 
 		var resp ipc.JobsListResp
@@ -418,17 +418,17 @@ var cmdGroup = &Command{
 var cmdEnable = &Command{
 	Name:    "enable",
 	Summary: "re-enable a disabled job",
-	Usage:   "wakeguard enable <job>",
+	Usage:   "goguma enable <job>",
 	Run:     setEnabled(true),
 }
 
 var cmdDisable = &Command{
 	Name:    "disable",
 	Summary: "stop waking for a job without removing it",
-	Usage: `wakeguard disable <job>
+	Usage: `goguma disable <job>
 
 Stops scheduling wakes for this job and releases it if a window is open. The
-job and its history are kept, so 'wakeguard enable' restores it exactly.`,
+job and its history are kept, so 'goguma enable' restores it exactly.`,
 	Run: setEnabled(false),
 }
 
@@ -439,7 +439,7 @@ func setEnabled(enabled bool) func(*Context, []string) error {
 			if !enabled {
 				verb = "disable"
 			}
-			return fmt.Errorf("which job? usage: wakeguard %s <job>", verb)
+			return fmt.Errorf("which job? usage: goguma %s <job>", verb)
 		}
 		var job model.Job
 		if err := callDaemon(ctx, ipc.OpJobsEnable,
@@ -459,14 +459,14 @@ func setEnabled(enabled bool) func(*Context, []string) error {
 var cmdTestMatch = &Command{
 	Name:    "test-match",
 	Summary: "check what a process pattern currently matches",
-	Usage: `wakeguard test-match <pattern>
+	Usage: `goguma test-match <pattern>
 
 Evaluates a match pattern against the running process table and prints what it
 finds. Use this before registering a job with --detection pattern, so a
 mistake surfaces now rather than as a job that silently never runs.`,
 	Run: func(ctx *Context, args []string) error {
 		if len(args) == 0 {
-			return fmt.Errorf("usage: wakeguard test-match <pattern>")
+			return fmt.Errorf("usage: goguma test-match <pattern>")
 		}
 		pattern := strings.Join(args, " ")
 
@@ -495,7 +495,7 @@ mistake surfaces now rather than as a job that silently never runs.`,
 		}
 		if len(resp.Matches) > 1 {
 			r.Blank()
-			r.Line(r.Muted("  More than one match: WakeGuard will follow the first, and the hold"))
+			r.Line(r.Muted("  More than one match: goguma will follow the first, and the hold"))
 			r.Line(r.Muted("  ends when it exits. Narrow the pattern if that is not what you want."))
 		}
 		return nil

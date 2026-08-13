@@ -10,8 +10,8 @@ import (
 // SystemdTimers lists user and system timers.
 //
 // `systemctl list-timers` is used rather than parsing unit files because it
-// resolves the full timer graph — including drop-ins, templated units, and
-// the timer-to-service mapping — which reimplementing would get subtly wrong.
+// resolves the full timer graph (including drop-ins, templated units, and
+// the timer-to-service mapping), which reimplementing would get subtly wrong.
 func SystemdTimers(ctx context.Context) ([]Entry, error) {
 	var out []Entry
 	for _, scope := range []string{"--user", "--system"} {
@@ -34,7 +34,19 @@ func listTimers(ctx context.Context, scope string) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseTimers(string(raw), scope == "--system"), nil
+	entries := parseTimers(string(raw), scope == "--system")
+	// The listing has no recurrence, only the next occurrence, so without
+	// this read-back every timer carried an empty schedule and Evaluate
+	// filtered all of them as "no scheduled time to wake for": the systemd
+	// provider found everything and kept nothing.
+	for i := range entries {
+		expr, serr := SystemdSchedule(ctx, entries[i].Label, scope == "--user")
+		if serr != nil || expr == "" {
+			continue
+		}
+		entries[i].Schedule = CronFromOnCalendar(expr)
+	}
+	return entries, nil
 }
 
 // parseTimers reads `systemctl list-timers --output=json`.

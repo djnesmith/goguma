@@ -72,14 +72,14 @@ var unitSizes = []struct {
 	{"s", time.Second},
 }
 
-// ParseDuration parses the duration forms WakeGuard writes and accepts.
+// ParseDuration parses the duration forms goguma writes and accepts.
 //
 // It must be the exact inverse of HumanDuration, which is why this is
 // hand-rolled rather than delegating to time.ParseDuration. Two of
 // HumanDuration's outputs are unparseable by the standard library:
 //
-//   - spaces between units — "1h 30m", "1d 12h"
-//   - day and week units — "2d", "1w"
+//   - spaces between units: "1h 30m", "1d 12h"
+//   - day and week units: "2d", "1w"
 //
 // Those are not hypothetical. Any config value that renders with two units
 // would be written to config.json successfully and then fail to load on the
@@ -152,7 +152,7 @@ func HumanDuration(d time.Duration) string {
 		//
 		// That is reachable, not theoretical: `time.Time{}.Sub(now)` saturates
 		// to exactly this value, and a zero time arrives whenever a cron
-		// expression has no future occurrence — "0 0 31 4 *" is April 31st,
+		// expression has no future occurrence: "0 0 31 4 *" is April 31st,
 		// which parses cleanly and never fires. Rendering a job list would
 		// then crash the CLI.
 		if d == math.MinInt64 {
@@ -201,8 +201,8 @@ func HumanDuration(d time.Duration) string {
 // HumanCountdown renders a gap that is on screen while it counts down.
 //
 // Whole minutes until the last one, then seconds: 54m, 3m, 1m, 59s, 8s.
-// HumanDuration gives "54m 34s", which is right for a duration read once — a
-// ceiling, a schedule, a run time — and wrong for one that ticks: the seconds
+// HumanDuration gives "54m 34s", which is right for a duration read once (a
+// ceiling, a schedule, a run time) and wrong for one that ticks: the seconds
 // column changes every second for an hour, drawing the eye to a figure nobody
 // is watching until the end. This is the CLI counterpart of the app's
 // `WGDuration.countdownString`, and the two must agree; a Mac showing "in 22m"
@@ -233,7 +233,7 @@ func HumanCountdown(d time.Duration) string {
 }
 
 func HumanUntil(t time.Time, now time.Time) string {
-	// A zero time means the caller had no answer — most often a schedule with
+	// A zero time means the caller had no answer, most often a schedule with
 	// no future occurrence. Saying so is more useful than rendering the two
 	// thousand years between year one and now.
 	if t.IsZero() {

@@ -15,7 +15,7 @@ import (
 //
 // Hints are deliberately NOT jobs. They are never registered automatically and
 // never counted as discovered work. They answer one question a registry-based
-// scan cannot: "is there a scheduler here that WakeGuard does not know about?"
+// scan cannot: "is there a scheduler here that goguma does not know about?"
 //
 // The distinction matters because finding schedules by searching is unreliable
 // in both directions. Mentioning cron is not the same as running cron: a
@@ -28,7 +28,7 @@ type Hint struct {
 	// Why describes the structural evidence, not a keyword match.
 	Why string
 	// Live reports whether this file is known to be in effect. Most hints
-	// cannot be verified either way, and saying so is the point — an
+	// cannot be verified either way, and saying so is the point: an
 	// unverified hint must never be presented as a found job.
 	Live Liveness
 	// Sample is one matching line so the user can judge it themselves.
@@ -47,7 +47,7 @@ const (
 // cronLine matches a five-field schedule followed by something command-shaped.
 //
 // The trailing group is what makes this usable. Requiring only five numeric
-// fields matches far too much — "1 2 3 4 5 foo" is syntactically valid cron —
+// fields matches far too much ("1 2 3 4 5 foo" is syntactically valid cron)
 // so the command must additionally look like a command: an absolute path, a
 // relative path, or a bare program name possibly with arguments.
 var cronLine = regexp.MustCompile(
@@ -74,7 +74,7 @@ var scheduleDirNames = map[string]bool{
 //
 // Dependency trees, caches, and language runtimes contain enormous numbers of
 // cron libraries, fixtures, and vendored examples. Including them buries any
-// real finding — an unfiltered search returns hundreds of files on an ordinary
+// real finding; an unfiltered search returns hundreds of files on an ordinary
 // machine, essentially none of which schedule anything.
 var skipDirs = map[string]bool{
 	"node_modules": true, ".git": true, "Caches": true, ".cache": true,

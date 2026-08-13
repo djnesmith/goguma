@@ -103,7 +103,7 @@ func TestStaleSocketIsReplacedButALiveOneIsNot(t *testing.T) {
 	handler := func(context.Context, Op, json.RawMessage) (any, error) { return nil, nil }
 
 	// A daemon killed with SIGKILL leaves the socket file behind. Refusing to
-	// start because of it would mean one crash disables WakeGuard until
+	// start because of it would mean one crash disables goguma until
 	// someone cleans up by hand.
 	srv, err := Listen(path, 0o600, handler)
 	if err != nil {
@@ -293,7 +293,7 @@ func TestConcurrentCallsAreServed(t *testing.T) {
 // shortTempDir returns a directory short enough for a unix socket path.
 //
 // t.TempDir() on macOS yields something like
-// /var/folders/g3/.../T/TestName123456789/001 — over 100 bytes before the
+// /var/folders/g3/.../T/TestName123456789/001, over 100 bytes before the
 // socket name is appended, which the length guard correctly refuses.
 func shortTempDir(t *testing.T) string {
 	t.Helper()
@@ -318,4 +318,77 @@ func serveTest(t *testing.T, h Handler) (*Server, string) {
 	go srv.Serve(ctx)
 	time.Sleep(50 * time.Millisecond)
 	return srv, path
+}
+
+// A panic must reach the client as the crafted diagnostic, not a blank
+// "request failed": with an unnamed result the recovery wrote to a local
+// that was never returned.
+func TestPanicDiagnosticReachesTheClient(t *testing.T) {
+	srv, path := serveTest(t, func(_ context.Context, op Op, _ json.RawMessage) (any, error) {
+		panic("handler exploded")
+	})
+	defer srv.Close()
+
+	err := Do(path, OpStatus, nil, nil)
+	if err == nil {
+		t.Fatal("a panicking handler reported success")
+	}
+	if !strings.Contains(err.Error(), "internal error handling") {
+		t.Errorf("client saw %q, want the crafted internal-error message", err)
+	}
+}
+
+// An app-level rejection must be typed: link-health tracking distinguishes
+// "the far side refused this request" from "the far side is gone", and
+// conflating them made an older helper look uninstalled on every new op.
+func TestAppLevelRejectionIsTyped(t *testing.T) {
+	srv, path := serveTest(t, func(_ context.Context, op Op, _ json.RawMessage) (any, error) {
+		return nil, errors.New("no such op here")
+	})
+	defer srv.Close()
+
+	err := Do(path, OpStatus, nil, nil)
+	var app *AppError
+	if !errors.As(err, &app) {
+		t.Fatalf("rejection came back as %T, want *AppError", err)
+	}
+	if app.Op != OpStatus || app.Msg == "" {
+		t.Errorf("AppError = %+v, want op and message preserved", app)
+	}
+}
+
+// Close must sever a keep-alive client, or shutdown blocks at wg.Wait until
+// the service manager kills the process.
+func TestCloseSeversAKeepAliveClient(t *testing.T) {
+	path := filepath.Join(shortTempDir(t), "s.sock")
+	srv, err := Listen(path, 0o600, func(_ context.Context, op Op, _ json.RawMessage) (any, error) {
+		return map[string]string{"ok": "yes"}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := make(chan struct{})
+	go func() {
+		_ = srv.Serve(context.Background())
+		close(served)
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	c, err := Dial(path, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.Call(OpPing, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	// The client now idles with the connection open, like the GUI does.
+
+	srv.Close()
+	select {
+	case <-served:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not sever an idle keep-alive connection; " +
+			"shutdown would hang until the service manager kills the daemon")
+	}
 }

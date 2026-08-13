@@ -4,7 +4,7 @@ macos/.build/
 macos/build/
 
 # A separate Xcode project that happens to live in this folder. It is not
-# WakeGuard source and should have its own repo.
+# Goguma source and should have its own repo.
 adrafinil-main/
 adrafinil-main*.zip
 
@@ -15,3 +15,7 @@ adrafinil-main*.zip
 .cursor/
 .gemini/
 .codex/
+.codegraph/
+
+# Design reference drop — screenshots only, not part of the build.
+refs/

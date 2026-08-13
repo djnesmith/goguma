@@ -142,14 +142,14 @@ func TestEveryTokenMustBeAccountedFor(t *testing.T) {
 	}
 	for in, why := range wrong {
 		if got, ok := FromHuman(in); ok {
-			t.Errorf("FromHuman(%q) = %q, accepted — previously %s", in, got, why)
+			t.Errorf("FromHuman(%q) = %q, accepted; previously %s", in, got, why)
 		}
 	}
 }
 
 func TestDayRangesAreUnderstood(t *testing.T) {
 	// "monday to friday" is the natural spelling of the documented
-	// "weekdays at 6pm" example. It used to yield "1,5" — Monday and Friday
+	// "weekdays at 6pm" example. It used to yield "1,5": Monday and Friday
 	// only, losing three of five weekly runs.
 	for _, in := range []string{
 		"monday to friday at 07:30",

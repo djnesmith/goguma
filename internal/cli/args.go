@@ -7,7 +7,7 @@ import "strings"
 // Go's flag package stops parsing at the first non-flag argument, so
 // `history morning-briefing --json` silently treats `--json` as a second
 // positional and drops it. The command then prints a human table while the
-// caller believes it asked for JSON — a script parsing that output fails in a
+// caller believes it asked for JSON; a script parsing that output fails in a
 // way that points nowhere near the actual cause.
 //
 // Users reasonably write the subject before the options, so rather than
@@ -15,7 +15,7 @@ import "strings"
 // positionals before parsing.
 //
 // Everything after a bare `--` is left untouched and returned as positional,
-// which is what allows `wakeguard-mark <job> -- <command with its own flags>`
+// which is what allows `goguma-mark <job> -- <command with its own flags>`
 // to pass a command line through unmolested.
 func hoistFlags(args []string) (flags, positional []string) {
 	for i := 0; i < len(args); i++ {

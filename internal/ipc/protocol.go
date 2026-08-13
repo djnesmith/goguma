@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
 )
 
 // ProtocolVersion is bumped on any breaking change to a request or response
@@ -39,7 +39,7 @@ const (
 	OpTestMatch  Op = "match.test"
 	OpSync       Op = "sync"
 
-	// wakeguard-mark -> daemon. These are the exact-detection path: the
+	// goguma-mark -> daemon. These are the exact-detection path: the
 	// wrapper announces the job's real start and exit rather than the daemon
 	// inferring them from the process table.
 	OpMarkStart Op = "mark.start"
@@ -49,6 +49,7 @@ const (
 	// these are the entire privileged surface of the product.
 	OpHelperSetSleepBlocked Op = "helper.set_sleep_blocked"
 	OpHelperScheduleWake    Op = "helper.schedule_wake"
+	OpHelperVerifyWake      Op = "helper.verify_wake"
 	OpHelperCancelWake      Op = "helper.cancel_wake"
 	OpHelperStatus          Op = "helper.status"
 )
@@ -143,7 +144,7 @@ type ConfigResp struct {
 }
 
 type ConfigSetReq struct {
-	// Key/Value form for `wakeguard config set <key> <value>`.
+	// Key/Value form for `goguma config set <key> <value>`.
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
@@ -153,7 +154,7 @@ type SkipNextReq struct {
 	Ref string `json:"ref,omitempty"`
 }
 
-// KeepAwakeReq asks for a manual keep-awake window — sleep held off for a
+// KeepAwakeReq asks for a manual keep-awake window: sleep held off for a
 // fixed period regardless of whether any job is running.
 //
 // Asking again while one is open replaces it rather than extending it: the
@@ -192,7 +193,7 @@ type ProcessInfo struct {
 	Command string `json:"command"`
 }
 
-// ---- Payloads: wakeguard-mark -> daemon ----
+// ---- Payloads: goguma-mark -> daemon ----
 
 // MarkStartReq is sent the instant a wrapped job begins.
 type MarkStartReq struct {
@@ -213,7 +214,7 @@ type MarkEndReq struct {
 }
 
 // MarkResp tells the wrapper whether the daemon accepted the mark. The
-// wrapper ignores failures and runs the job regardless — WakeGuard must never
+// wrapper ignores failures and runs the job regardless; goguma must never
 // be the reason a user's job does not run.
 type MarkResp struct {
 	Known bool `json:"known"`
@@ -255,7 +256,7 @@ type ImportCandidate struct {
 	NextFire        *time.Time `json:"next_fire,omitempty"`
 
 	// MissRisk is the measured probability this entry has been firing while
-	// the machine was asleep — the whole basis for recommending it.
+	// the machine was asleep, the whole basis for recommending it.
 	MissRatio     float64 `json:"miss_ratio"`
 	MissedOf      string  `json:"missed_of,omitempty"` // "12 of 14 recent runs"
 	RiskLevel     string  `json:"risk_level"`
@@ -263,7 +264,7 @@ type ImportCandidate struct {
 
 	// SuggestedMatch is the pattern to use if the user declines the wrapper.
 	SuggestedMatch string `json:"suggested_match,omitempty"`
-	// WrappedCommand is the rewritten line using wakeguard-mark.
+	// WrappedCommand is the rewritten line using goguma-mark.
 	WrappedCommand string `json:"wrapped_command,omitempty"`
 
 	// AlreadyAdded is true when a job with this id already exists.
@@ -284,6 +285,18 @@ type ScheduleWakeReq struct {
 	At time.Time `json:"at"`
 	// UseWakeOrPowerOn also boots a powered-off machine.
 	UseWakeOrPowerOn bool `json:"use_wake_or_power_on"`
+}
+
+type VerifyWakeReq struct {
+	At time.Time `json:"at"`
+}
+
+type VerifyWakeResp struct {
+	// Registered is whether the OS genuinely holds a wake at the requested
+	// time. "The scheduling command succeeded" is not proof of this: pmset
+	// entries can be dropped by other apps, and rtcwake can program an alarm
+	// the firmware ignores or offsets.
+	Registered bool `json:"registered"`
 }
 
 type HelperStatusResp struct {

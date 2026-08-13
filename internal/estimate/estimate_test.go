@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
 )
 
 func run(d time.Duration, outcome model.Outcome) model.Run {
@@ -150,11 +150,11 @@ func TestOnlyRecentHistoryIsConsidered(t *testing.T) {
 	}
 }
 
-func TestSummarizeCountsBatteryDrained(t *testing.T) {
+func TestSummarizeAveragesBatteryPerRun(t *testing.T) {
 	cfg := config.Default()
 
 	// What the job cost, from two real battery readings per run. Runs on AC
-	// contribute nothing because they cost nothing — a job that only ever
+	// contribute nothing because they cost nothing, a job that only ever
 	// fires while plugged in is genuinely free.
 	runs := []model.Run{
 		{Outcome: model.OutcomeOK, BatteryStart: 80, BatteryEnd: 78}, // 2%
@@ -164,9 +164,12 @@ func TestSummarizeCountsBatteryDrained(t *testing.T) {
 	}
 	st := Summarize(&model.Job{ID: "x"}, runs, cfg)
 
-	if st.BatteryDrained != 3 {
-		t.Errorf("drained = %d%%, want 3%% (2+1, ignoring the AC run and the charge)",
-			st.BatteryDrained)
+	// 2% + 1% + 0% (charging) over the three runs measured on battery = 1.0%
+	// per run. The AC run is excluded from both halves: counting it in the
+	// denominator would report a cheaper job for having been plugged in.
+	if st.BatteryPerRun != 1.0 {
+		t.Errorf("per run = %.2f%%, want 1.00%% (3%% over 3 battery runs, AC excluded)",
+			st.BatteryPerRun)
 	}
 }
 

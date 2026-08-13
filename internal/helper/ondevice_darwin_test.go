@@ -15,6 +15,49 @@ import (
 //
 // Only the two write operations genuinely require root. Everything else in
 // this package can be, and now is, verified on the machine itself.
+// TestParseSleepDisabled pins the parse against real `pmset -g` output.
+//
+// This is the half of the old on-device test that was worth keeping. The
+// fixtures are captured verbatim from a live machine, tabs included: the
+// separator is not a space, and the line is emitted for both values rather
+// than omitted when sleep is allowed, so a parser cannot assume either.
+func TestParseSleepDisabled(t *testing.T) {
+	const blockedOutput = "System-wide power settings:\n SleepDisabled\t\t1\nCurrently in use:\n sleep\t0\n"
+	const allowedOutput = "System-wide power settings:\n SleepDisabled\t\t0\nCurrently in use:\n sleep\t10\n"
+
+	cases := []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{"blocked, tab separated", blockedOutput, true},
+		{"allowed, tab separated", allowedOutput, false},
+		{"space separated", "SleepDisabled 1\n", true},
+		{"trailing carriage return", "SleepDisabled\t1\r\n", true},
+		{"field absent entirely", "Currently in use:\n sleep\t10\n", false},
+		{"empty output", "", false},
+		{"value is not a number", "SleepDisabled\tyes\n", false},
+		{"name appears without a value", "SleepDisabled\n", false},
+		{"must not match a longer field name", "SleepDisabledUntil\t1\n", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := parseSleepDisabled(c.out); got != c.want {
+				t.Errorf("parseSleepDisabled(%q) = %v, want %v", c.out, got, c.want)
+			}
+		})
+	}
+}
+
+// TestReadSleepBlockedAgainstTheRealSystem checks that the real pmset call
+// works on this machine.
+//
+// It deliberately does not assert which value comes back. SleepDisabled is
+// global mutable state that this very daemon changes: it takes the block when
+// a wake window opens and releases it when the job finishes, so any assertion
+// about the value is a race against a job starting. Correctness of the parse
+// is covered hermetically by TestParseSleepDisabled; what is left to verify
+// here is only that the command runs and its output is understood.
 func TestReadSleepBlockedAgainstTheRealSystem(t *testing.T) {
 	if testing.Short() {
 		t.Skip("on-device probe skipped in short mode")
@@ -23,45 +66,11 @@ func TestReadSleepBlockedAgainstTheRealSystem(t *testing.T) {
 		t.Skip("pmset unavailable")
 	}
 
-	// Sampled together, and retried on disagreement.
-	//
-	// Both reads observe the same live system, and that system changes: a
-	// wake window opening or closing flips SleepDisabled underneath a test
-	// that reads it twice. This failed exactly once, at :58, while a job's
-	// hold was being taken — a real mismatch that says nothing about the
-	// parser. Retrying keeps what the test is actually for (a parser that
-	// always returns false, or that misreads the field, still fails every
-	// attempt) without failing for being observed at a bad moment.
-	const attempts = 5
-	var blocked, wantBlocked bool
-	var agreed bool
-	for i := 0; i < attempts; i++ {
-		var err error
-		blocked, err = readSleepBlocked()
-		if err != nil {
-			t.Fatalf("reading the real sleep state failed: %v", err)
-		}
-		out, err := exec.Command("pmset", "-g").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		wantBlocked = false
-		for _, line := range splitLinesForTest(string(out)) {
-			fields := fieldsForTest(line)
-			if len(fields) >= 2 && fields[0] == "SleepDisabled" {
-				wantBlocked = fields[1] == "1"
-			}
-		}
-		if blocked == wantBlocked {
-			agreed = true
-			break
-		}
+	blocked, err := readSleepBlocked()
+	if err != nil {
+		t.Fatalf("reading the real sleep state failed: %v", err)
 	}
 	t.Logf("SleepDisabled on this machine: %v", blocked)
-	if !agreed {
-		t.Errorf("readSleepBlocked() = %v, but `pmset -g` reports %v, over %d attempts",
-			blocked, wantBlocked, attempts)
-	}
 }
 
 // TestScheduledWakesAgainstTheRealSystem runs the read-back that the whole
@@ -69,7 +78,7 @@ func TestReadSleepBlockedAgainstTheRealSystem(t *testing.T) {
 //
 // PRD §5.2: a scheduled wake can be silently dropped, so success from the
 // scheduling command is not treated as proof. This is the check that turns
-// that into something verifiable — and it must not claim other applications'
+// that into something verifiable, and it must not claim other applications'
 // entries, of which a normal Mac has several.
 func TestScheduledWakesAgainstTheRealSystem(t *testing.T) {
 	if testing.Short() {
@@ -83,31 +92,35 @@ func TestScheduledWakesAgainstTheRealSystem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading the real wake schedule failed: %v", err)
 	}
-	t.Logf("wake entries owned by wakeguard: %d", len(ours))
+	t.Logf("wake entries owned by goguma: %d", len(ours))
 
 	// The machine has Apple-owned entries; none of them may be claimed.
 	out, err := exec.Command("pmset", "-g", "sched").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Legacy entries from the binary's previous name are deliberately
+	// claimed too: an upgrade must be able to reconcile them away instead of
+	// leaving an orphaned wake nothing can cancel.
 	total, mine := 0, 0
 	for _, line := range splitLinesForTest(string(out)) {
 		if !containsForTest(line, " at ") {
 			continue
 		}
 		total++
-		if containsForTest(line, "'"+wakeOwner+"'") {
+		if containsForTest(line, "'"+wakeOwnerTag+"'") ||
+			containsForTest(line, "'"+legacyWakeOwnerTag+"'") {
 			mine++
 		}
 	}
 	t.Logf("scheduled power events on this machine: %d total, %d ours", total, mine)
 
 	if len(ours) != mine {
-		t.Errorf("scheduledWakes() returned %d entries, but %d lines carry our owner tag",
+		t.Errorf("scheduledWakes() returned %d entries, but %d lines carry our owner tags",
 			len(ours), mine)
 	}
 	if total > 0 && mine == 0 && len(ours) != 0 {
-		t.Error("entries were claimed despite none carrying our owner tag")
+		t.Error("entries were claimed despite none carrying our owner tags")
 	}
 }
 
@@ -125,24 +138,6 @@ func splitLinesForTest(s string) []string {
 	}
 	if start < len(s) {
 		out = append(out, s[start:])
-	}
-	return out
-}
-
-func fieldsForTest(s string) []string {
-	var out []string
-	i := 0
-	for i < len(s) {
-		for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
-			i++
-		}
-		start := i
-		for i < len(s) && s[i] != ' ' && s[i] != '\t' {
-			i++
-		}
-		if i > start {
-			out = append(out, s[start:i])
-		}
 	}
 	return out
 }

@@ -11,7 +11,7 @@ import (
 //
 // The daemon re-asserts the same wake time routinely. The old code only
 // cancelled the previous entry when the time had *changed*, so an unchanged
-// re-assertion skipped the cancel and scheduled anyway — and `pmset schedule`
+// re-assertion skipped the cancel and scheduled anyway, and `pmset schedule`
 // does not deduplicate, so each call added another identical entry.
 func TestRepeatedScheduleDoesNotAccumulateEntries(t *testing.T) {
 	f := &fakeOps{}
@@ -47,7 +47,7 @@ func TestScheduleReconcilesEntriesThisProcessDidNotCreate(t *testing.T) {
 	want := time.Now().Add(time.Hour).Round(time.Second)
 
 	// A fresh Service, as after a restart: no memory of these at all.
-	f := &fakeOps{wakes: []time.Time{stale1, stale2}}
+	f := &fakeOps{wakes: []wakeEntry{{at: stale1, owner: wakeOwnerTag}, {at: stale2, owner: wakeOwnerTag}}}
 	s := withOps(f)
 
 	if err := s.ScheduleWake(want, false); err != nil {
@@ -56,7 +56,7 @@ func TestScheduleReconcilesEntriesThisProcessDidNotCreate(t *testing.T) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.wakes) != 1 || !f.wakes[0].Equal(want) {
+	if len(f.wakes) != 1 || !f.wakes[0].at.Equal(want) {
 		t.Errorf("wake entries = %v, want exactly [%v]", f.wakes, want)
 	}
 	if len(f.cancels) != 2 {
@@ -69,18 +69,18 @@ func TestScheduleReconcilesEntriesThisProcessDidNotCreate(t *testing.T) {
 // requested time is the goal state, and a changed time still re-registers.
 func TestScheduleKeepsAnAlreadyRegisteredWake(t *testing.T) {
 	at := time.Now().Add(time.Hour).Round(time.Second)
-	f := &fakeOps{wakes: []time.Time{at}}
+	f := &fakeOps{wakes: []wakeEntry{{at: at, owner: wakeOwnerTag}}}
 	s := withOps(f)
 
 	if err := s.ScheduleWake(at, false); err != nil {
 		t.Fatal(err)
 	}
 	f.mu.Lock()
-	if len(f.wakes) != 1 || !f.wakes[0].Equal(at) {
+	if len(f.wakes) != 1 || !f.wakes[0].at.Equal(at) {
 		t.Errorf("wake entries = %v, want the existing [%v] untouched", f.wakes, at)
 	}
 	if len(f.cancels) != 0 {
-		t.Errorf("cancelled %d entries, want 0 — the wanted wake was already registered", len(f.cancels))
+		t.Errorf("cancelled %d entries, want 0; the wanted wake was already registered", len(f.cancels))
 	}
 	f.mu.Unlock()
 
@@ -91,7 +91,7 @@ func TestScheduleKeepsAnAlreadyRegisteredWake(t *testing.T) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.wakes) != 1 || !f.wakes[0].Equal(moved) {
+	if len(f.wakes) != 1 || !f.wakes[0].at.Equal(moved) {
 		t.Errorf("wake entries = %v, want exactly [%v]", f.wakes, moved)
 	}
 }
@@ -117,12 +117,12 @@ func TestScheduleStillRegistersWhenTheScheduleCannotBeRead(t *testing.T) {
 var errListUnavailable = errors.New("pmset unavailable")
 
 // TestScheduleCollapsesPreExistingDuplicates covers cleanup of the mess an
-// earlier build already left in the system schedule — six identical entries in
+// earlier build already left in the system schedule: six identical entries in
 // the case that prompted this. Deduplicating future calls is not enough if the
 // entries already registered stay there forever.
 func TestScheduleCollapsesPreExistingDuplicates(t *testing.T) {
 	at := time.Now().Add(time.Hour).Round(time.Second)
-	f := &fakeOps{wakes: []time.Time{at, at, at, at, at, at}}
+	f := &fakeOps{wakes: []wakeEntry{{at: at, owner: wakeOwnerTag}, {at: at, owner: wakeOwnerTag}, {at: at, owner: wakeOwnerTag}, {at: at, owner: wakeOwnerTag}, {at: at, owner: wakeOwnerTag}, {at: at, owner: wakeOwnerTag}}}
 	s := withOps(f)
 
 	if err := s.ScheduleWake(at, false); err != nil {
@@ -131,7 +131,7 @@ func TestScheduleCollapsesPreExistingDuplicates(t *testing.T) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.wakes) != 1 || !f.wakes[0].Equal(at) {
+	if len(f.wakes) != 1 || !f.wakes[0].at.Equal(at) {
 		t.Errorf("wake entries = %d %v, want exactly one at %v", len(f.wakes), f.wakes, at)
 	}
 }

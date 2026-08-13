@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -120,7 +121,7 @@ func entryFromPlist(p launchdPlist, label, path string) Entry {
 		// Apple's launchd.plist(5) is explicit: "Unlike cron which skips job
 		// invocations when the computer is asleep, launchd will start the job
 		// the next time the computer wakes up." So a calendar job is deferred,
-		// not lost — WakeGuard's contribution here is punctuality, not
+		// not lost; goguma's contribution here is punctuality, not
 		// survival. Marking it keeps the recommendation honest instead of
 		// implying these runs disappear.
 		e.SelfHealing = true
@@ -180,9 +181,12 @@ func nameFromLabel(label string) string {
 //
 // launchd treats missing keys as wildcards, matching crontab semantics, so
 // the translation is direct. An array of dictionaries means several fire
-// times; only the first is translated, because a cron expression cannot
-// always express the union and inventing an approximation would silently
-// schedule wakes at the wrong times.
+// times. When the dictionaries differ in exactly one field the union is a
+// plain cron list ("0 2,14 * * *" for 02:00 and 14:00), which is the common
+// shape by far, and dropping its extra fires silently lost the overnight
+// one, the only fire goguma matters for. A union cron cannot express (the
+// dictionaries differ in several fields) falls back to the first entry,
+// because inventing an approximation would schedule wakes at wrong times.
 func cronFromCalendar(raw json.RawMessage) string {
 	var single calendarInterval
 	if err := json.Unmarshal(raw, &single); err == nil {
@@ -190,9 +194,84 @@ func cronFromCalendar(raw json.RawMessage) string {
 	}
 	var many []calendarInterval
 	if err := json.Unmarshal(raw, &many); err == nil && len(many) > 0 {
+		if merged, ok := mergeCalendar(many); ok {
+			return merged
+		}
 		return cronOf(many[0])
 	}
 	return ""
+}
+
+// mergeCalendar joins an array of calendar intervals into one cron line when
+// they are identical in every field but one, and that field is set in all of
+// them. Returns ok=false otherwise.
+func mergeCalendar(many []calendarInterval) (string, bool) {
+	fields := func(c calendarInterval) [5]*int {
+		return [5]*int{c.Minute, c.Hour, c.Day, c.Month, c.Weekday}
+	}
+	same := func(a, b *int) bool {
+		if a == nil || b == nil {
+			return a == b
+		}
+		return *a == *b
+	}
+
+	base := fields(many[0])
+	varying := -1
+	for _, c := range many[1:] {
+		f := fields(c)
+		diffs := 0
+		for i := range f {
+			if same(f[i], base[i]) {
+				continue
+			}
+			diffs++
+			if varying == -1 {
+				varying = i
+			}
+			if varying != i {
+				return "", false
+			}
+		}
+		if diffs > 1 {
+			return "", false
+		}
+	}
+	if varying == -1 {
+		return cronOf(many[0]), true // duplicates of one fire time
+	}
+
+	seen := map[int]bool{}
+	vals := make([]int, 0, len(many))
+	for _, c := range many {
+		v := fields(c)[varying]
+		if v == nil {
+			return "", false // a wildcard cannot join a comma list
+		}
+		if !seen[*v] {
+			seen[*v] = true
+			vals = append(vals, *v)
+		}
+	}
+	sort.Ints(vals)
+	parts := make([]string, 0, len(vals))
+	for _, v := range vals {
+		parts = append(parts, fmt.Sprintf("%d", v))
+	}
+
+	out := []string{}
+	for i, v := range base {
+		if i == varying {
+			out = append(out, strings.Join(parts, ","))
+			continue
+		}
+		if v == nil {
+			out = append(out, "*")
+			continue
+		}
+		out = append(out, fmt.Sprintf("%d", *v))
+	}
+	return strings.Join(out, " "), true
 }
 
 func cronOf(c calendarInterval) string {
@@ -211,7 +290,7 @@ func cronOf(c calendarInterval) string {
 // LoadedLabels returns launchd labels that currently have a running process.
 //
 // Used to mark entries as always-running even when their plist does not say
-// KeepAlive — a service with a live pid is demonstrably resident regardless
+// KeepAlive: a service with a live pid is demonstrably resident regardless
 // of how it was configured.
 func LoadedLabels(ctx context.Context) map[string]bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

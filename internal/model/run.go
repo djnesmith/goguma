@@ -1,41 +1,44 @@
 package model
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Outcome is how a job's wake window ended. These strings appear in
 // history files and webhook payloads, so they are part of the contract.
 type Outcome string
 
 const (
-	// OutcomeOK — the job was observed to start and exit normally within its
+	// OutcomeOK: the job was observed to start and exit normally within its
 	// ceiling. This is the only outcome that feeds the duration estimator.
 	OutcomeOK Outcome = "ok"
 
-	// OutcomeFailed — the job ran to completion but reported a non-zero exit
-	// code. Only detectable via wakeguard-mark; pattern detection cannot see
+	// OutcomeFailed: the job ran to completion but reported a non-zero exit
+	// code. Only detectable via goguma-mark; pattern detection cannot see
 	// exit codes. The duration is still real, so it does feed the estimator.
 	OutcomeFailed Outcome = "failed"
 
-	// OutcomeCeiling — the job was still running when its ceiling expired and
+	// OutcomeCeiling: the job was still running when its ceiling expired and
 	// the hold was force-released. The machine was allowed to sleep out from
 	// under a live job, so the recorded duration is a lower bound, not a real
 	// runtime, and must not train the estimator.
 	OutcomeCeiling Outcome = "ceiling"
 
-	// OutcomeNeverDetected — the window opened and closed without the daemon
+	// OutcomeNeverDetected: the window opened and closed without the daemon
 	// ever seeing the job. Almost always a wrong --match pattern. Surfaced
 	// loudly, because it means this job's whole configuration is inert.
 	OutcomeNeverDetected Outcome = "never_detected"
 
-	// OutcomeCutout — a thermal or low-battery safety cutout force-released
+	// OutcomeCutout: a thermal or low-battery safety cutout force-released
 	// the hold mid-job. Not the job's fault; excluded from the estimator.
 	OutcomeCutout Outcome = "cutout"
 )
 
 // TrainsEstimator reports whether a run's duration reflects a real completed
 // runtime. Truncated runs (ceiling, cutout) would drag the estimate toward
-// the ceiling itself — a feedback loop where one hung run permanently pins
-// the ceiling high — so they are excluded.
+// the ceiling itself (a feedback loop where one hung run permanently pins
+// the ceiling high), so they are excluded.
 func (o Outcome) TrainsEstimator() bool {
 	return o == OutcomeOK || o == OutcomeFailed
 }
@@ -45,9 +48,9 @@ func (o Outcome) TrainsEstimator() bool {
 type Run struct {
 	JobID string `json:"job_id"`
 
-	// WindowOpened is when WakeGuard began holding sleep off, which precedes
+	// WindowOpened is when goguma began holding sleep off, which precedes
 	// Started by roughly the wake buffer. The gap between the two is the
-	// overhead WakeGuard itself costs, and is worth being able to audit.
+	// overhead goguma itself costs, and is worth being able to audit.
 	WindowOpened time.Time `json:"window_opened"`
 
 	// Started is when the job process was first observed. Zero if the job was
@@ -64,7 +67,7 @@ type Run struct {
 
 	// HoldDuration is how long sleep was actually blocked, window open to
 	// release. This is the number that costs battery, and the delta against
-	// Duration is exactly the waste WakeGuard exists to minimise.
+	// Duration is exactly the waste goguma exists to minimise.
 	HoldDuration Duration `json:"hold_duration"`
 
 	// BatteryStart and BatteryEnd bracket the hold, in percent. Both are -1
@@ -85,9 +88,9 @@ type Run struct {
 	// show how close each run came to being truncated.
 	Ceiling Duration `json:"ceiling"`
 
-	// WokeMachine is true when WakeGuard scheduled an OS wake for this run
-	// and the machine was actually asleep beforehand — i.e. this run would
-	// have been silently skipped without WakeGuard. It is the tool's core
+	// WokeMachine is true when goguma scheduled an OS wake for this run
+	// and the machine was actually asleep beforehand, i.e. this run would
+	// have been silently skipped without goguma. It is the tool's core
 	// value metric, so it is recorded per-run rather than inferred later.
 	WokeMachine bool `json:"woke_machine"`
 
@@ -101,7 +104,7 @@ type Stats struct {
 	JobID string `json:"job_id"`
 	Runs  int    `json:"runs"`
 
-	// Typical is the median completed runtime — what the user should expect.
+	// Typical is the median completed runtime, what the user should expect.
 	Typical Duration `json:"typical"`
 
 	// P95 is the 95th-percentile completed runtime, the basis of the ceiling.
@@ -114,17 +117,20 @@ type Stats struct {
 	// Ceiling is the conservative default rather than a learned value.
 	ColdStart bool `json:"cold_start"`
 
-	// BatteryDrained is how much charge this job cost, in percentage points,
-	// summed over the runs that happened on battery power.
+	// BatteryPerRun is what one firing of this job costs, in percentage
+	// points, averaged over the runs that happened on battery power.
 	//
-	// This replaced a "wasted hold time" duration. That number was a proxy —
-	// it said how long the Mac stayed up beyond the job, and left the reader
-	// to guess what that cost. This is the cost itself, in the unit anyone
-	// deciding whether a job is worth waking for actually thinks in.
+	// Per run rather than a running total. A total only grows, and grows
+	// faster for a job that fires often, so an hourly job that costs almost
+	// nothing each time would out-score a daily one that costs a lot, which
+	// is the opposite of the comparison anyone wants to make. It also depends
+	// on how much history happens to be retained, so the same job reports
+	// different numbers as its window rolls.
 	//
-	// Runs on AC contribute nothing, because they cost nothing. A job that
-	// only ever fires while plugged in reports 0, which is the truth.
-	BatteryDrained int `json:"battery_drained"`
+	// Averaged over runs measured *on battery*, not over all runs: dividing by
+	// runs that were on AC would report a cheaper job simply for having been
+	// plugged in more often.
+	BatteryPerRun float64 `json:"battery_per_run"`
 
 	LastRun     *Run  `json:"last_run,omitempty"`
 	Failures    int   `json:"failures"`
@@ -151,4 +157,20 @@ func (r Run) Drained() int {
 // Distinguishes "cost nothing, it was plugged in" from "cost nothing measured".
 func (r Run) MeasuredOnBattery() bool {
 	return r.BatteryStart >= 0 && r.BatteryEnd >= 0
+}
+
+// Percent renders a battery cost the way a person would say it.
+//
+// One decimal below 10%, none above: a job costing 0.3% and one costing 0.4%
+// are meaningfully different, while 12.4% and 12% are not, and a long tail of
+// decimals on a bigger number reads as false precision from a battery that
+// only reports whole percents.
+func Percent(v float64) string {
+	if v <= 0 {
+		return "0%"
+	}
+	if v < 10 {
+		return fmt.Sprintf("%.1f%%", v)
+	}
+	return fmt.Sprintf("%.0f%%", v)
 }

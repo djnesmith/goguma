@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/junnam/wakeguard/internal/paths"
+	"github.com/junnam586/goguma/internal/paths"
 )
 
 func platformArtifacts(l paths.Layout) []string {
@@ -16,7 +16,7 @@ func platformArtifacts(l paths.Layout) []string {
 		l.HelperUnitFile(),
 		paths.HelperBinary,
 		// The unprivileged staging copy; see the darwin equivalent.
-		filepath.Join(l.BinDir, "wakeguard-helper"),
+		filepath.Join(l.BinDir, "goguma-helper"),
 	}
 }
 
@@ -27,8 +27,8 @@ func platformArtifacts(l paths.Layout) []string {
 // deliberate stop during uninstall.
 func daemonUnit(binary, logDir string) string {
 	return fmt.Sprintf(`[Unit]
-Description=WakeGuard daemon — wakes this machine for scheduled jobs
-Documentation=https://github.com/junnam/wakeguard
+Description=goguma daemon: wakes this machine for scheduled jobs
+Documentation=https://github.com/junnam586/goguma
 After=default.target
 
 [Service]
@@ -48,8 +48,8 @@ WantedBy=default.target
 // stranded by a crash or a forced power-off before anything else runs.
 func helperUnit(binary string, ownerUID int) string {
 	return fmt.Sprintf(`[Unit]
-Description=WakeGuard privileged helper — blocks sleep and schedules wakes
-Documentation=https://github.com/junnam/wakeguard
+Description=goguma privileged helper: blocks sleep and schedules wakes
+Documentation=https://github.com/junnam586/goguma
 DefaultDependencies=no
 After=basic.target
 
@@ -66,15 +66,15 @@ WantedBy=multi-user.target
 
 // BuildPlan assembles the install steps for Linux.
 func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
-	cliSrc, err := findBinary("wakeguard")
+	cliSrc, err := findBinary("goguma")
 	if err != nil {
 		return nil, err
 	}
-	daemonSrc, err := findBinary("wakeguard-daemon")
+	daemonSrc, err := findBinary("goguma-daemon")
 	if err != nil {
 		return nil, err
 	}
-	markSrc, err := findBinary("wakeguard-mark")
+	markSrc, err := findBinary("goguma-mark")
 	if err != nil {
 		return nil, err
 	}
@@ -83,27 +83,27 @@ func BuildPlan(l paths.Layout, withHelper bool) (*Plan, error) {
 	// See findBinary for why BinDir is searched as well as the sibling dir.
 	var helperSrc string
 	if withHelper {
-		helperSrc, err = findBinary("wakeguard-helper", l.BinDir)
+		helperSrc, err = findBinary("goguma-helper", l.BinDir)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	p := &Plan{}
-	binCLI := filepath.Join(l.BinDir, "wakeguard")
-	binDaemon := filepath.Join(l.BinDir, "wakeguard-daemon")
-	binMark := filepath.Join(l.BinDir, "wakeguard-mark")
+	binCLI := filepath.Join(l.BinDir, "goguma")
+	binDaemon := filepath.Join(l.BinDir, "goguma-daemon")
+	binMark := filepath.Join(l.BinDir, "goguma-mark")
 
 	copies := []struct{ src, dst, label string }{
-		{cliSrc, binCLI, "wakeguard"},
-		{daemonSrc, binDaemon, "wakeguard-daemon"},
-		{markSrc, binMark, "wakeguard-mark"},
+		{cliSrc, binCLI, "goguma"},
+		{daemonSrc, binDaemon, "goguma-daemon"},
+		{markSrc, binMark, "goguma-mark"},
 	}
 	if withHelper {
 		// Staged unprivileged so a re-run finds it. Never executed: the system
 		// unit runs the root-owned copy.
 		copies = append(copies, struct{ src, dst, label string }{
-			helperSrc, filepath.Join(l.BinDir, "wakeguard-helper"), "wakeguard-helper",
+			helperSrc, filepath.Join(l.BinDir, "goguma-helper"), "goguma-helper",
 		})
 	}
 
@@ -186,10 +186,10 @@ func Uninstall(l paths.Layout, keepState bool) []error {
 
 	for _, path := range []string{
 		l.DaemonUnitFile(),
-		filepath.Join(l.BinDir, "wakeguard-daemon"),
-		filepath.Join(l.BinDir, "wakeguard-mark"),
-		filepath.Join(l.BinDir, "wakeguard-helper"),
-		filepath.Join(l.BinDir, "wakeguard"),
+		filepath.Join(l.BinDir, "goguma-daemon"),
+		filepath.Join(l.BinDir, "goguma-mark"),
+		filepath.Join(l.BinDir, "goguma-helper"),
+		filepath.Join(l.BinDir, "goguma"),
 	} {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, fmt.Errorf("removing %s: %w", path, err))
@@ -197,6 +197,7 @@ func Uninstall(l paths.Layout, keepState bool) []error {
 	}
 	_ = run("systemctl", "--user", "daemon-reload")
 
+	hadHelperUnit := fileExists(l.HelperUnitFile())
 	for _, path := range []string{l.HelperUnitFile(), paths.HelperBinary} {
 		if !fileExists(path) {
 			continue
@@ -205,10 +206,15 @@ func Uninstall(l paths.Layout, keepState bool) []error {
 			errs = append(errs, fmt.Errorf("removing %s: %w", path, err))
 		}
 	}
-	if fileExists(l.HelperUnitFile()) {
+	// Checked BEFORE the removal above: testing afterwards asked about a
+	// file that was just deleted, so the reload never ran and systemd kept
+	// a dangling not-found unit until some unrelated reload.
+	if hadHelperUnit {
 		_ = sudoRun("systemctl", "daemon-reload")
 	}
 
+	// Kept unless the user explicitly purged; see the darwin equivalent for why
+	// the default runs this way round.
 	if !keepState {
 		if err := os.RemoveAll(l.StateDir); err != nil {
 			errs = append(errs, fmt.Errorf("removing %s: %w", l.StateDir, err))

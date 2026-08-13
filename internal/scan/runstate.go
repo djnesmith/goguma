@@ -8,9 +8,9 @@ import (
 // RunRecord is a scheduler's own account of one job's most recent run.
 //
 // This is the third rung of the detection ladder, between "the tool calls us"
-// (a hook) and "we watch a process". It exists because in-process schedulers —
-// ones that run jobs inside a long-lived daemon rather than spawning a process
-// per job — are invisible to process watching: nothing appears, nothing exits,
+// (a hook) and "we watch a process". It exists because in-process schedulers
+// (ones that run jobs inside a long-lived daemon rather than spawning a process
+// per job) are invisible to process watching: nothing appears, nothing exits,
 // so there is nothing whose lifetime equals the job's. Those schedulers do
 // almost always write their run state to disk, because that is how they
 // survive a restart, and reading it needs no cooperation, no configuration and
@@ -30,6 +30,16 @@ type RunRecord struct {
 	// Status is the scheduler's own word for the outcome, normalised to "ok"
 	// or "error". Empty when it does not say.
 	Status string
+
+	// NextRun is when the scheduler itself intends to run this job next, or
+	// zero when it does not record one.
+	//
+	// Authoritative, and not the same as re-deriving it from the schedule
+	// string. An interval scheduler counts from the *last* run, so "every 6
+	// hours" slides every time a run is late; goguma parsing the same words
+	// as a fixed recurrence produces a time that agrees only by coincidence.
+	// Observed drifting hours apart within a single night.
+	NextRun time.Time
 }
 
 // Succeeded reports a completed run the scheduler called good.

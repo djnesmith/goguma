@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	neturl "net/url"
 	"time"
 )
 
 // webhookPayload is the JSON posted to the configured webhook URL.
 //
-// Only problems are dispatched — overruns, wake failures, undetected jobs,
+// Only problems are dispatched: overruns, wake failures, undetected jobs,
 // and cutouts. A webhook that fires on every successful run would be noise
 // that trains the user to ignore it, which defeats the purpose of having one.
 type webhookPayload struct {
@@ -63,14 +65,23 @@ func (w *webhookSender) send(url string, p webhookPayload) {
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
-			w.log.Warn("webhook request could not be built", "err", err)
+			// The error text embeds the URL, and webhook URLs are bearer
+			// credentials (Slack and Discord put the token in the path), so
+			// it must not reach the log.
+			w.log.Warn("webhook request could not be built; check webhook_url", "event", p.Event)
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "wakeguard")
+		req.Header.Set("User-Agent", "goguma")
 
 		resp, err := w.client.Do(req)
 		if err != nil {
+			// url.Error embeds the full URL; log only the underlying cause,
+			// for the same credential reason as above.
+			var uerr *neturl.Error
+			if errors.As(err, &uerr) {
+				err = uerr.Err
+			}
 			w.log.Warn("webhook delivery failed", "event", p.Event, "err", err)
 			return
 		}

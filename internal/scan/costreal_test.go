@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 // TestRealWorldCost prices the job set actually found on the development
@@ -89,7 +89,7 @@ func TestInfrequentJobsAreNotPricedAsDaily(t *testing.T) {
 		}}, time.Now(), perWake)
 
 		if c.WakesPerDay > tc.wantMax {
-			t.Errorf("%q priced at %.2f wakes/day, want at most %.2f — "+
+			t.Errorf("%q priced at %.2f wakes/day, want at most %.2f; "+
 				"infrequent jobs must not be rounded up to a daily minimum",
 				tc.sched, c.WakesPerDay, tc.wantMax)
 		}

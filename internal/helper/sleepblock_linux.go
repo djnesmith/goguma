@@ -34,12 +34,17 @@ const inhibitWhat = "sleep:idle:handle-lid-switch"
 // when they wonder why their laptop will not sleep. inhibitWho is also how
 // readSleepBlocked recognises our lock, so it must stay a single word.
 const (
-	inhibitWho = "WakeGuard"
-	inhibitWhy = "WakeGuard is holding the machine awake for a scheduled job"
+	// inhibitWho must differ from the daemon's unprivileged inhibitor WHO
+	// ("goguma" in internal/power). The liveness check greps the inhibitor
+	// list for this exact name; sharing one name let the daemon's weaker
+	// idle lock satisfy the check for the helper's lid-closed block after a
+	// logind restart invalidated both, so the block was never re-taken.
+	inhibitWho = "goguma-helper"
+	inhibitWhy = "goguma is holding the machine awake for a scheduled job"
 )
 
 // systemdTimeout bounds every systemd-inhibit and rtcwake invocation. A wedged
-// subprocess must not be able to deadlock the helper's policy lock — if that
+// subprocess must not be able to deadlock the helper's policy lock; if that
 // happened while blocked, the block could never be cleared.
 const systemdTimeout = 10 * time.Second
 
@@ -90,8 +95,8 @@ var (
 //
 // The subprocess exists because logind hands the lock back as a file
 // descriptor over D-Bus, and taking it in-process would mean implementing the
-// D-Bus wire protocol — SASL, type-signature marshalling, SCM_RIGHTS fd
-// passing — which cannot be done here without adding a dependency the project
+// D-Bus wire protocol (SASL, type-signature marshalling, SCM_RIGHTS fd
+// passing), which cannot be done here without adding a dependency the project
 // has deliberately not taken.
 func setSleepBlocked(blocked bool) error {
 	inhibitMu.Lock()
@@ -104,7 +109,7 @@ func setSleepBlocked(blocked bool) error {
 		// Re-assertion must be a no-op while the lock is genuinely held. The
 		// daemon re-pushes its state every few seconds, and tearing the child
 		// down to start a fresh one each time would leave a window in which
-		// the machine could suspend — the opposite of what re-assertion is for.
+		// the machine could suspend, the opposite of what re-assertion is for.
 		return nil
 	}
 	// Clear any dead bookkeeping first so a child that exited on its own does
@@ -192,8 +197,8 @@ func stopInhibitor() error {
 	case <-time.After(inhibitStopTimeout):
 	}
 
-	// The child ignored EOF on stdin. Killing it is safe — logind drops the
-	// lock when the holder dies — and leaving it alive would hold sleep off
+	// The child ignored EOF on stdin. Killing it is safe (logind drops the
+	// lock when the holder dies), and leaving it alive would hold sleep off
 	// indefinitely with nothing tracking it, which is the worst outcome here.
 	if err := cmd.Process.Kill(); err != nil {
 		return fmt.Errorf("killing unresponsive systemd-inhibit (pid %d): %w", cmd.Process.Pid, err)
@@ -206,7 +211,7 @@ func stopInhibitor() error {
 // inhibitMu.
 //
 // Both halves are checked because they can disagree. The child can die on its
-// own, and logind can drop the lock while the child lives — a logind restart
+// own, and logind can drop the lock while the child lives: a logind restart
 // invalidates every inhibitor fd without notifying the holders. Asking logind
 // as well means that case self-heals on the daemon's next re-push instead of
 // leaving the machine unprotected until someone reads the status output.
@@ -250,7 +255,7 @@ func inhibitorListed() (bool, error) {
 // parseInhibitList looks for our lock in `systemd-inhibit --list` output, e.g.
 //
 //	WHO       UID USER PID  COMM ... WHY                        MODE
-//	WakeGuard 0   root 4711 cat  ... WakeGuard is holding ...   block
+//	goguma 0   root 4711 cat  ... goguma is holding ...   block
 //
 // It matches on the first and last columns rather than counting fields,
 // because the WHY column contains spaces and the table's column set has
@@ -324,14 +329,14 @@ func scheduleWake(t time.Time, useWakeOrPowerOn bool) error {
 // cancelWake clears the RTC alarm.
 //
 // The RTC has a single alarm slot with no notion of ownership, unlike pmset's
-// owner-tagged entries, so the alarm currently programmed may not be ours —
+// owner-tagged entries, so the alarm currently programmed may not be ours;
 // the firmware or another tool can have overwritten it. The alarm is read back
 // first and only cleared when it matches the one being cancelled, so a
 // cancellation cannot silently delete somebody else's wake. An alarm that is
 // no longer registered is not an error: the normal case after the machine
 // actually woke is that the kernel already consumed it.
-func cancelWake(t time.Time, useWakeOrPowerOn bool) error {
-	_ = useWakeOrPowerOn
+func cancelWake(e wakeEntry) error {
+	t := e.at
 
 	paths := rtcWakealarmPaths(rtcRoot)
 	if len(paths) == 0 {
@@ -395,13 +400,13 @@ func clearWakealarm(path string) error {
 // It cannot detect the harder failure: firmware that accepts an alarm and then
 // declines to act on it. Only a real suspend/resume test on the specific
 // machine can rule that out.
-func scheduledWakes() ([]time.Time, error) {
+func scheduledWakes() ([]wakeEntry, error) {
 	paths := rtcWakealarmPaths(rtcRoot)
 	if len(paths) == 0 {
 		return nil, errors.New("no RTC device exposes a wakealarm attribute")
 	}
 
-	var times []time.Time
+	var entries []wakeEntry
 	var firstErr error
 	for _, path := range paths {
 		at, ok, err := readWakealarm(path)
@@ -412,17 +417,20 @@ func scheduledWakes() ([]time.Time, error) {
 			continue
 		}
 		if ok {
-			times = append(times, at)
+			// The RTC has no kind or owner; a listed alarm is simply what
+			// is programmed. It is tagged as ours because cancel matching
+			// already guards against clearing somebody else's alarm.
+			entries = append(entries, wakeEntry{at: at, owner: wakeOwnerTag})
 		}
 	}
-	if len(times) == 0 && firstErr != nil {
+	if len(entries) == 0 && firstErr != nil {
 		return nil, firstErr
 	}
-	return times, nil
+	return entries, nil
 }
 
 // readWakealarm reads one RTC alarm. The attribute holds seconds since the
-// epoch, and is empty — not zero — when no alarm is programmed, though some
+// epoch, and is empty (not zero) when no alarm is programmed, though some
 // drivers write a literal 0 instead.
 func readWakealarm(path string) (time.Time, bool, error) {
 	b, err := os.ReadFile(path)

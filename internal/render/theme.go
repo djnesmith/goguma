@@ -1,13 +1,13 @@
 package render
 
 // ─────────────────────────────────────────────────────────────────────────────
-// THEME — snowscroll
+// THEME: snowscroll
 //
 // Every visual decision for the command line lives in this file: colours,
 // symbols, and the words used for each state. Nothing else in the CLI emits an
 // escape sequence or picks a glyph.
 //
-// The source system is arctic and calm — one accent, everything else quiet
+// The source system is arctic and calm: one accent, everything else quiet
 // neutrals. Its stated principles are restraint and honesty, which is why the
 // 256-colour values below are the soft variants (72/179/167) rather than the
 // saturated ones (40/214/196). A tool that only raises its voice when
@@ -40,7 +40,7 @@ type Role struct {
 var (
 	// Accent is the primary highlight: next wake, commands to run, the value
 	// the eye should land on. It carries no symbol because it marks a value
-	// rather than a state — position and content already identify it.
+	// rather than a state, position and content already identify it.
 	//
 	// 110 is a mid arctic blue. The brand accent proper is a much lighter
 	// #8FB6D4, which is designed as a fill behind dark text and is unreadable
@@ -53,7 +53,7 @@ var (
 	Good = Role{Color256: "72", ANSI16: "2", Symbol: "✓"}
 
 	// Warn needs attention but is not broken: a cold-start ceiling, a job that
-	// hit its cap, a wake deliberately held back. Deep amber — clearly warm
+	// hit its cap, a wake deliberately held back. Deep amber, clearly warm
 	// against an otherwise cool palette, which is what makes it register at a
 	// glance without a loud saturation.
 	Warn = Role{Color256: "179", ANSI16: "3", Symbol: "!"}
@@ -63,7 +63,7 @@ var (
 	// to stop the reader.
 	Danger = Role{Color256: "167", ANSI16: "1", Symbol: "✗"}
 
-	// Muted is secondary text — labels, timestamps, explanations. Also the
+	// Muted is secondary text: labels, timestamps, explanations. Also the
 	// correct role for "there is nothing to show here", which is why an
 	// unobservable job's empty duration is muted and never danger.
 	Muted = Role{Color256: "245", ANSI16: "8"}
@@ -127,7 +127,7 @@ const (
 	// is corruption, not styling.
 	depthNone colorDepth = iota
 
-	// depthBold is a real terminal with colour switched off — NO_COLOR, or
+	// depthBold is a real terminal with colour switched off: NO_COLOR, or
 	// TERM=dumb. Bold still renders and still helps, and NO_COLOR asks for the
 	// absence of colour rather than the absence of all formatting. Section
 	// headings stay legible as a result.

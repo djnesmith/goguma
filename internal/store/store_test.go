@@ -3,10 +3,11 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/paths"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/paths"
 )
 
 func testStore(t *testing.T) (*Store, paths.Layout) {
@@ -209,5 +210,53 @@ func TestHistorySurvivesATruncatedLine(t *testing.T) {
 	}
 	if len(runs) != 1 {
 		t.Errorf("got %d runs, want the 1 complete one", len(runs))
+	}
+}
+
+// An entry that fails Validate is quarantined, not erased: the next persist
+// must write it back verbatim. Dropping it meant one unrelated job change
+// after a hand-edit typo silently destroyed the broken job's schedule,
+// pattern, and timezone, the very data needed to repair it.
+func TestAnInvalidEntrySurvivesThePersistCycle(t *testing.T) {
+	layout := paths.Layout{StateDir: t.TempDir()}
+	layout.LogDir = layout.StateDir
+	if err := layout.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	broken := `{"version":1,"jobs":[
+	  {"id":"good","name":"good","schedule":"0 9 * * *","detection":"none","enabled":true},
+	  {"id":"typo","name":"typo","schedule":"0 2 * * *","detection":"pattern","match":"restic (","enabled":true}
+	]}`
+	if err := os.WriteFile(layout.JobsFile(), []byte(broken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(layout)
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Jobs()) != 1 {
+		t.Fatalf("loaded %d jobs, want 1 valid", len(s.Jobs()))
+	}
+
+	// An unrelated mutation persists the store.
+	if err := s.Add(&model.Job{
+		ID: "new", Name: "new", Schedule: "0 5 * * *",
+		Detection: model.DetectNone, Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The broken entry must still be in the file, still reported invalid.
+	b, err := os.ReadFile(layout.JobsFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"typo"`) || !strings.Contains(string(b), "restic (") {
+		t.Fatal("the invalid entry was erased by an unrelated persist; " +
+			"the user's broken-but-repairable job is gone")
+	}
+	if errs := s.InvalidJobs(); len(errs) != 1 {
+		t.Errorf("InvalidJobs reports %d entries, want the quarantined one", len(errs))
 	}
 }

@@ -29,7 +29,7 @@ func TestSocketOwnerDefaultsToTheProcessUID(t *testing.T) {
 //
 // The helper binds as root and serves the daemon, which runs as the logged-in
 // user. Before `WithSocketOwner` existed, the socket was left root-owned at
-// mode 0600, so the daemon could not open it — it never reached the
+// mode 0600, so the daemon could not open it; it never reached the
 // peer-credential check meant to authorise it. Worse, the failure surfaced as
 // "nothing is listening on the socket", which points squarely at a helper that
 // is running perfectly, so the diagnosis pointed away from the cause.
@@ -106,7 +106,7 @@ func noopHandler(_ context.Context, _ Op, _ json.RawMessage) (any, error) {
 // shortSocketPath returns a socket path inside the OS limit.
 //
 // t.TempDir() on macOS produces a ~100-byte path under /var/folders, which on
-// its own exceeds sockaddr_un.sun_path. Using it made these tests fail — and
+// its own exceeds sockaddr_un.sun_path. Using it made these tests fail, and
 // made the negative test pass for entirely the wrong reason, which is worse.
 func shortSocketPath(t *testing.T) string {
 	t.Helper()

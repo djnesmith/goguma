@@ -19,7 +19,7 @@ type Peer struct {
 // This is the helper's trust boundary, so it must come from the kernel rather
 // than from anything the client sends. macOS exposes the peer euid via
 // LOCAL_PEEREUID; the pid comes from LOCAL_PEERPID and is advisory (it can be
-// recycled), used only for logging — never for authorization.
+// recycled), used only for logging, never for authorization.
 func PeerOf(conn net.Conn) (Peer, error) {
 	uc, ok := conn.(*net.UnixConn)
 	if !ok {
@@ -59,7 +59,7 @@ func AllowOwnerOrRoot(owner uint32) func(Peer) error {
 		if p.UID == owner || p.UID == 0 {
 			return nil
 		}
-		return fmt.Errorf("uid %d is not authorized to control WakeGuard", p.UID)
+		return fmt.Errorf("uid %d is not authorized to control goguma", p.UID)
 	}
 }
 

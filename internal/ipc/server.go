@@ -28,6 +28,13 @@ type Server struct {
 	closed   bool
 	shutdown chan struct{}
 
+	// conns tracks accepted connections so Close can sever them. Closing
+	// only the listener left keep-alive clients (the GUI polls over one
+	// connection) pinning their handler goroutines, which blocked shutdown
+	// at wg.Wait until launchd or systemd killed the process.
+	connMu sync.Mutex
+	conns  map[net.Conn]struct{}
+
 	// socketUID owns the socket file. -1 leaves it with the process's own uid,
 	// which is right for the daemon and wrong for the root helper. See
 	// WithSocketOwner.
@@ -52,7 +59,7 @@ func WithLogger(l *slog.Logger) ServerOption {
 //
 // Required whenever a root process serves an unprivileged client, which is
 // exactly the helper's situation. Binding as root produces a root-owned socket,
-// and at mode 0600 the daemon — running as the logged-in user — cannot open it
+// and at mode 0600 the daemon (running as the logged-in user) cannot open it
 // at all. It never reaches the peer-credential check that was supposed to
 // authorise it; the connection fails at the filesystem, and the error surfaces
 // as "nothing is listening on the socket", which points at a helper that is in
@@ -61,7 +68,7 @@ func WithLogger(l *slog.Logger) ServerOption {
 // Ownership rather than a wider mode: 0600 owned by the one permitted uid keeps
 // the socket unreachable by every other unprivileged user on the machine, which
 // a group- or world-accessible mode would not. `WithAuthz` still runs and is
-// still the trust boundary — this only lets the authorised client get far
+// still the trust boundary; this only lets the authorised client get far
 // enough to be checked.
 func WithSocketOwner(uid int) ServerOption {
 	return func(s *Server) { s.socketUID = uid }
@@ -72,21 +79,21 @@ func WithSocketOwner(uid int) ServerOption {
 // sockaddr_un.sun_path is a fixed 104-byte buffer on macOS and 108 on Linux;
 // exceeding it fails with a bare EINVAL ("invalid argument") that says nothing
 // about the actual cause. Checking up front turns a genuinely baffling startup
-// failure into an actionable one — which matters because it is reachable in
-// practice through a long username or a WAKEGUARD_STATE_DIR override.
+// failure into an actionable one, which matters because it is reachable in
+// practice through a long username or a GOGUMA_STATE_DIR override.
 const maxSocketPath = 100
 
 // Listen binds the socket. mode is applied to the socket file itself.
 //
-// A stale socket from a previous run is removed first — a daemon that was
+// A stale socket from a previous run is removed first; a daemon that was
 // SIGKILLed leaves the file behind, and refusing to start because of it would
-// mean a crash permanently disables WakeGuard until the user cleans up by
+// mean a crash permanently disables goguma until the user cleans up by
 // hand.
 func Listen(path string, mode os.FileMode, h Handler, opts ...ServerOption) (*Server, error) {
 	if len(path) > maxSocketPath {
 		return nil, fmt.Errorf(
 			"the socket path is %d bytes, over the %d-byte limit the operating system allows: %s\n"+
-				"set WAKEGUARD_STATE_DIR to a shorter directory",
+				"set GOGUMA_STATE_DIR to a shorter directory",
 			len(path), maxSocketPath, path)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -148,7 +155,7 @@ func removeStaleSocket(path string) error {
 	conn, err := net.DialTimeout("unix", path, 500*time.Millisecond)
 	if err == nil {
 		conn.Close()
-		return fmt.Errorf("another WakeGuard process is already listening on %s", path)
+		return fmt.Errorf("another goguma process is already listening on %s", path)
 	}
 	return os.Remove(path)
 }
@@ -182,9 +189,20 @@ func (s *Server) Serve(ctx context.Context) error {
 			s.log.Warn("accept failed", "err", err)
 			continue
 		}
+		s.connMu.Lock()
+		if s.conns == nil {
+			s.conns = map[net.Conn]struct{}{}
+		}
+		s.conns[conn] = struct{}{}
+		s.connMu.Unlock()
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
+			defer func() {
+				s.connMu.Lock()
+				delete(s.conns, conn)
+				s.connMu.Unlock()
+			}()
 			s.handle(ctx, conn)
 		}()
 	}
@@ -215,6 +233,12 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 		if err := ReadFrame(conn, &req); err != nil {
 			return // includes clean EOF
 		}
+		// A request is in hand; give the handler room to work. The idle
+		// deadline above must not also cap dispatch: the CLI deliberately
+		// waits 60s for sync and import scans, and a 30s ceiling here made
+		// the reply fail after the daemon had already mutated state, so the
+		// user saw an error for work that succeeded.
+		_ = conn.SetDeadline(time.Now().Add(dispatchDeadline))
 		resp := s.dispatch(ctx, req)
 		if err := WriteFrame(conn, resp); err != nil {
 			return
@@ -225,12 +249,20 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 	}
 }
 
-func (s *Server) dispatch(ctx context.Context, req Request) Response {
-	resp := Response{Protocol: ProtocolVersion}
+// dispatchDeadline bounds one request's handling and reply. It must exceed
+// the longest client-side budget (the CLI grants sync and import 60s) or the
+// server gives up on a reply the client is still happily waiting for.
+const dispatchDeadline = 90 * time.Second
+
+// dispatch's result is named so the panic-recovery deferred function below
+// actually delivers its message: with an unnamed result, a panic returned
+// the zero Response and the client saw a blank "request failed".
+func (s *Server) dispatch(ctx context.Context, req Request) (resp Response) {
+	resp = Response{Protocol: ProtocolVersion}
 
 	if req.Protocol != 0 && req.Protocol != ProtocolVersion {
 		resp.Error = fmt.Sprintf(
-			"protocol mismatch: client speaks v%d, this daemon speaks v%d — update both to the same release",
+			"protocol mismatch: client speaks v%d, this daemon speaks v%d; update both to the same release",
 			req.Protocol, ProtocolVersion)
 		return resp
 	}
@@ -262,7 +294,14 @@ func (s *Server) dispatch(ctx context.Context, req Request) Response {
 	return resp
 }
 
-// Close stops the listener and removes the socket file.
+// Close stops the listener and severs every accepted connection.
+//
+// The socket file is NOT removed here: closing a net.Listen unix listener
+// already unlinks its own path, and an unconditional extra remove could
+// delete a replacement daemon's freshly bound socket during an overlapping
+// restart, leaving the new daemon serving an unlinked inode nobody can
+// reach. A path a crash leaves behind is handled by removeStaleSocket on
+// the next start.
 func (s *Server) Close() error {
 	s.closeMu.Lock()
 	defer s.closeMu.Unlock()
@@ -272,6 +311,10 @@ func (s *Server) Close() error {
 	s.closed = true
 	close(s.shutdown)
 	err := s.ln.Close()
-	os.Remove(s.path)
+	s.connMu.Lock()
+	for conn := range s.conns {
+		conn.Close()
+	}
+	s.connMu.Unlock()
 	return err
 }

@@ -10,7 +10,7 @@ import (
 //
 // PRD §5.2 is explicit that a scheduled wake can be silently dropped by the
 // system, so "pmset returned success" is not treated as proof. This parser is
-// what turns that into a verifiable claim — if it silently matched nothing,
+// what turns that into a verifiable claim; if it silently matched nothing,
 // verification would always fail open and the mitigation would be decorative.
 func TestParseScheduledReadsRealPmsetOutput(t *testing.T) {
 	// Captured verbatim from `pmset -g sched` on macOS 26.5, including the
@@ -18,16 +18,19 @@ func TestParseScheduledReadsRealPmsetOutput(t *testing.T) {
 	const out = `Scheduled power events:
  [0]  wake at 08/04/2026 11:54:47 by 'com.apple.alarm.user-invisible-com.apple.calaccessd.travelEngine.periodicRefreshTimer'
  [1]  wake at 08/05/2026 00:00:00 by 'com.apple.alarm.user-visible-com.apple.donotdisturb.server.ScheduleLifetimeMonitor.timer' User visible: true
- [2]  wake at 08/06/2026 08:58:30 by 'wakeguard'
- [3]  wake at 08/07/2026 02:07:00 by 'wakeguard'
+ [2]  wake at 08/06/2026 08:58:30 by 'goguma'
+ [3]  wake at 08/07/2026 02:07:00 by 'goguma'
 `
 	got := parseScheduled(out)
 	if len(got) != 2 {
 		t.Fatalf("parsed %d of our entries, want 2 (Apple's must not be claimed)", len(got))
 	}
 	want := time.Date(2026, 8, 6, 8, 58, 30, 0, time.Local)
-	if !got[0].Equal(want) {
-		t.Errorf("first entry = %s, want %s", got[0], want)
+	if !got[0].at.Equal(want) {
+		t.Errorf("first entry = %s, want %s", got[0].at, want)
+	}
+	if got[0].powerOn || got[0].owner != wakeOwnerTag {
+		t.Errorf("entry = %+v, want a plain wake owned by %q", got[0], wakeOwnerTag)
 	}
 }
 
@@ -46,8 +49,8 @@ func TestParseScheduledIgnoresOtherOwners(t *testing.T) {
 func TestParseScheduledSurvivesGarbage(t *testing.T) {
 	for _, in := range []string{
 		"", "Scheduled power events:\n", "nonsense\n\n\n",
-		" [0]  wake at not-a-date by 'wakeguard'\n",
-		" [0]  wake by 'wakeguard'\n",
+		" [0]  wake at not-a-date by 'goguma'\n",
+		" [0]  wake by 'goguma'\n",
 		"\x00\x01\x02",
 	} {
 		// Must not panic, and must not invent an entry.
@@ -60,7 +63,7 @@ func TestParseScheduledSurvivesGarbage(t *testing.T) {
 // TestWakeTimeFormatMatchesWhatPmsetAccepts pins the layout string.
 //
 // pmset takes "MM/dd/yy HH:mm:ss". Getting the layout wrong produces a command
-// that either fails or, worse, schedules a wake at the wrong time — and since
+// that either fails or, worse, schedules a wake at the wrong time, and since
 // nothing else in the system would object, it would only surface as a job that
 // silently did not run.
 func TestWakeTimeFormatMatchesWhatPmsetAccepts(t *testing.T) {

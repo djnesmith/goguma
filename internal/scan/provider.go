@@ -9,8 +9,8 @@ import (
 // Provider discovers scheduled jobs from one source.
 //
 // The OS schedulers (crontab, launchd, systemd) are only part of the picture.
-// Plenty of tools run their own scheduler entirely inside their own config —
-// Hermes, n8n, Jenkins, self-hosted runners — and those jobs are invisible to
+// Plenty of tools run their own scheduler entirely inside their own config
+// (Hermes, n8n, Jenkins, self-hosted runners), and those jobs are invisible to
 // `crontab -l` and `launchctl list`. A user who does not know exactly what
 // they have scheduled is precisely the person whose most important jobs live
 // in one of these, so discovery has to be extensible rather than hardcoded to
@@ -56,7 +56,7 @@ func Providers() []Provider {
 // Coverage records what a scan actually looked at.
 //
 // This exists because the most dangerous output `import` can produce is a
-// confident "nothing needs WakeGuard" when the real answer is "your jobs live
+// confident "nothing needs goguma" when the real answer is "your jobs live
 // somewhere I did not check". Reporting coverage turns an unqualified
 // all-clear into an auditable one.
 type Coverage struct {
@@ -70,8 +70,8 @@ type Coverage struct {
 // DiscoverAll runs every registered provider, returning the entries and a
 // per-source coverage report.
 //
-// A provider that fails does not abort the scan — one broken source should not
-// hide every other source's jobs — but its error is recorded and surfaced.
+// A provider that fails does not abort the scan (one broken source should not
+// hide every other source's jobs), but its error is recorded and surfaced.
 func DiscoverAll(ctx context.Context) ([]Entry, []Coverage) {
 	var (
 		all      []Entry

@@ -70,7 +70,7 @@ func TestValidateBoundsTheGroupName(t *testing.T) {
 //
 // The manual hold lives in the daemon's hold map under KeepAwakeJobID. If a
 // user's job could slug to the same id, one of the two would silently displace
-// the other mid-flight — a job's window closed by someone cancelling a coffee
+// the other mid-flight, a job's window closed by someone cancelling a coffee
 // break, or a keep-awake that quietly ends when a job finishes. Trimming
 // underscores reserves the whole __name__ shape for internal ids.
 func TestSlugCannotProduceTheReservedID(t *testing.T) {

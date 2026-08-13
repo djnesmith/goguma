@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/model"
+	"github.com/junnam586/goguma/internal/model"
 )
 
 // SourceHermes identifies jobs from the Hermes agent's own scheduler.
@@ -52,7 +52,7 @@ func (h *hermesProvider) Available() bool {
 	return err == nil
 }
 
-// hermesFile is the on-disk shape. Only the fields WakeGuard needs are
+// hermesFile is the on-disk shape. Only the fields goguma needs are
 // declared; Hermes carries a lot more per job (prompts, model settings,
 // credentials context) that is deliberately not read.
 type hermesFile struct {
@@ -67,7 +67,7 @@ type hermesJob struct {
 	Schedule hermesSchedule `json:"schedule"`
 
 	// ScheduleDisplay is Hermes's own rendering and already uses the forms
-	// WakeGuard parses ("0 9 * * *", "every 360m").
+	// goguma parses ("0 9 * * *", "every 360m").
 	ScheduleDisplay string `json:"schedule_display"`
 
 	LastRunAt *time.Time `json:"last_run_at"`
@@ -77,7 +77,7 @@ type hermesJob struct {
 	// run began.
 	//
 	// This is internal coordination state, not a published field. It is read
-	// defensively for exactly that reason — see ObserveRun.
+	// defensively for exactly that reason; see ObserveRun.
 	FireClaim  *hermesFireClaim `json:"fire_claim"`
 	NextRunAt  *time.Time       `json:"next_run_at"`
 	LastStatus string           `json:"last_status"`
@@ -121,7 +121,7 @@ func (h *hermesProvider) Discover(ctx context.Context) ([]Entry, error) {
 			Label:    j.ID,
 
 			// A cron-kind schedule names a specific wall-clock time, which
-			// implies the time is the point — a 9am briefing delivered at 1pm
+			// implies the time is the point: a 9am briefing delivered at 1pm
 			// has lost most of its value. An interval schedule only asks to
 			// happen every so often, so running late costs far less.
 			TimeSensitive: j.Schedule.Kind == "cron",
@@ -137,7 +137,7 @@ func (h *hermesProvider) Discover(ctx context.Context) ([]Entry, error) {
 	return out, nil
 }
 
-// hermesScheduleExpr picks the expression WakeGuard can parse.
+// hermesScheduleExpr picks the expression goguma can parse.
 func hermesScheduleExpr(j hermesJob) string {
 	switch {
 	case j.Schedule.Expr != "":
@@ -166,9 +166,9 @@ func shortenHome(p string) string {
 
 // ObserveRun reads Hermes's own record of a job's last run.
 //
-// Hermes runs cron jobs *inside* its gateway process — its source is explicit
+// Hermes runs cron jobs *inside* its gateway process; its source is explicit
 // that "the cron ticker only runs inside the gateway; there is no standalone
-// cron daemon" — so no process ever appears or exits for a job and process
+// cron daemon", so no process ever appears or exits for a job and process
 // watching cannot see one. What it does do, on every completion, is write:
 //
 //	job["last_run_at"] = now
@@ -176,8 +176,8 @@ func shortenHome(p string) string {
 //	job["fire_claim"]  = None
 //
 // and stamp `fire_claim = {"at": now, ...}` on dispatch. That is a complete
-// per-job signal — start, finish, and outcome — for the price of reading a
-// file WakeGuard already parses for schedules.
+// per-job signal (start, finish, and outcome) for the price of reading a
+// file goguma already parses for schedules.
 //
 // Everything here is defensive. `jobs.json` carries no schema version, and
 // `fire_claim` is coordination state Hermes is free to rename. Anything
@@ -196,7 +196,7 @@ func (h *hermesProvider) ObserveRun(_ context.Context, jobID string) (RunRecord,
 		return RunRecord{}, false
 	}
 	// An empty jobs array is a readable file describing nothing, which is not
-	// the same as a file we failed to understand — but either way there is no
+	// the same as a file we failed to understand, but either way there is no
 	// record for this job.
 	for _, j := range file.Jobs {
 		if !sameJob(j, jobID) {
@@ -209,6 +209,9 @@ func (h *hermesProvider) ObserveRun(_ context.Context, jobID string) (RunRecord,
 		if j.LastRunAt != nil {
 			rec.CompletedAt = *j.LastRunAt
 		}
+		if j.NextRunAt != nil {
+			rec.NextRun = *j.NextRunAt
+		}
 		switch j.LastStatus {
 		case "ok", "error":
 			rec.Status = j.LastStatus
@@ -218,7 +221,7 @@ func (h *hermesProvider) ObserveRun(_ context.Context, jobID string) (RunRecord,
 	return RunRecord{}, false
 }
 
-// sameJob matches WakeGuard's slug against Hermes's own id or name, because
+// sameJob matches goguma's slug against Hermes's own id or name, because
 // adoption slugs the name and Hermes keys on an opaque id.
 func sameJob(j hermesJob, wanted string) bool {
 	return j.ID == wanted || model.Slug(j.Name) == wanted || j.Name == wanted

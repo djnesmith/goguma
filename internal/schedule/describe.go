@@ -18,8 +18,8 @@ const maxListed = 4
 // compact form for rows that show the schedule next to its next fire time.
 //
 // Every field is expanded to its concrete set of values before any wording
-// happens. The previous version decided from the raw text — "is this field a
-// single number?" — and so bailed to the cron string for the shapes people
+// happens. The previous version decided from the raw text ("is this field a
+// single number?") and so bailed to the cron string for the shapes people
 // actually write. "0 9,21 * * *" is a morning and an evening run, not an
 // exotic expression, and it showed up in the GUI verbatim.
 //
@@ -111,7 +111,7 @@ type phrasing struct {
 }
 
 // cadence names n fires per period ("daily", "monthly"). "twice" is spelled
-// out because two a day — a morning and an evening run — is the commonest
+// out because two a day (a morning and an evening run) is the commonest
 // shape after one, and it deserves to read like English rather than a count.
 func cadence(n int, period string) string {
 	switch n {
@@ -285,7 +285,7 @@ func timePhrase(minute, hour cronField) (p phrasing, times int, ok bool) {
 // phrase means the schedule runs every day and the caller should say nothing
 // about days at all.
 //
-// A weekday phrase is its own short form — "weekdays" is already the cadence —
+// A weekday phrase is its own short form ("weekdays" is already the cadence)
 // while a list of dates has to be counted into one.
 func dayPhrase(dom, month, dow cronField) (phrasing, bool) {
 	byDate, byWeekday, byMonth := !dom.all, !dow.star, !month.all
@@ -322,7 +322,7 @@ func dayPhrase(dom, month, dow cronField) (phrasing, bool) {
 		if byDate && !byWeekday {
 			// A date pinned to named months comes round once a year per
 			// combination, so "monthly" would overstate it by a factor of
-			// twelve — here the month field is what sets the cadence.
+			// twelve; here the month field is what sets the cadence.
 			p.short = yearlyCadence(len(dom.values)*len(month.values), month.values)
 		} else {
 			p.short += " in " + monthPhrase(month.values)

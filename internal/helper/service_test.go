@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
+	"github.com/junnam586/goguma/internal/ipc"
 )
 
 // fakeOps records what the helper asked the platform to do.
@@ -18,16 +18,18 @@ import (
 // Only the two write operations genuinely need root, so replacing them makes
 // every policy decision around them testable: crash recovery, state
 // reconciliation, the dead-man switch, and the shutdown ordering. Those are
-// where a bug would actually live — a stranded sleep block leaves a laptop
+// where a bug would actually live, a stranded sleep block leaves a laptop
 // unable to sleep until someone notices by hand.
 type fakeOps struct {
 	mu sync.Mutex
 
-	blocked   bool
-	setCalls  []bool
-	schedules []time.Time
-	cancels   []time.Time
-	wakes     []time.Time
+	blocked     bool
+	setCalls    []bool
+	schedules   []time.Time
+	schedKinds  []bool
+	cancels     []time.Time
+	cancelKinds []bool
+	wakes       []wakeEntry
 
 	setErr   error
 	listErr  error
@@ -52,39 +54,42 @@ func (f *fakeOps) ops() platformOps {
 			defer f.mu.Unlock()
 			return f.blocked, f.readErr
 		},
-		scheduleAt: func(t time.Time, _ bool) error {
+		scheduleAt: func(t time.Time, kind bool) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			if f.schedErr != nil {
 				return f.schedErr
 			}
 			f.schedules = append(f.schedules, t)
-			f.wakes = append(f.wakes, t)
+			f.schedKinds = append(f.schedKinds, kind)
+			f.wakes = append(f.wakes, wakeEntry{at: t, powerOn: kind, owner: wakeOwnerTag})
 			return nil
 		},
-		cancelAt: func(t time.Time, _ bool) error {
+		cancelAt: func(e wakeEntry) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
-			f.cancels = append(f.cancels, t)
-			// Actually remove it, the way pmset does. Recording the call while
-			// leaving the entry in `wakes` would let a duplicate-accumulation
-			// bug pass its own regression test.
+			f.cancels = append(f.cancels, e.at)
+			f.cancelKinds = append(f.cancelKinds, e.powerOn)
+			// Actually remove it, the way pmset does: matching on time, kind
+			// and owner. Recording the call while leaving the entry in
+			// `wakes` would let a duplicate-accumulation bug pass its own
+			// regression test.
 			kept := f.wakes[:0]
 			for _, w := range f.wakes {
-				if !w.Equal(t) {
+				if !(w.at.Equal(e.at) && w.powerOn == e.powerOn && w.owner == e.owner) {
 					kept = append(kept, w)
 				}
 			}
 			f.wakes = kept
 			return nil
 		},
-		listWakes: func() ([]time.Time, error) {
+		listWakes: func() ([]wakeEntry, error) {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			if f.listErr != nil {
 				return nil, f.listErr
 			}
-			return append([]time.Time(nil), f.wakes...), nil
+			return append([]wakeEntry(nil), f.wakes...), nil
 		},
 	}
 }
@@ -99,7 +104,7 @@ func withOps(f *fakeOps) *Service {
 //
 // disablesleep is global and is NOT cleared when the process that set it dies.
 // A helper that crashed while blocked, or a machine force-powered-off mid-hold,
-// would otherwise come back up unable to sleep at all — and the unit is
+// would otherwise come back up unable to sleep at all, and the unit is
 // configured to run this before any user logs in precisely so nobody has to
 // notice and fix it by hand.
 func TestRecoverClearsAStrandedBlock(t *testing.T) {
@@ -154,7 +159,7 @@ func TestSetBlockedAlwaysCallsThrough(t *testing.T) {
 		}
 	}
 	if len(f.setCalls) != 3 {
-		t.Errorf("setBlocked called %d times across three pushes, want 3 — "+
+		t.Errorf("setBlocked called %d times across three pushes, want 3; "+
 			"short-circuiting would break the repair path", len(f.setCalls))
 	}
 }
@@ -207,7 +212,7 @@ func TestStatusReconcilesWithTheKernel(t *testing.T) {
 
 func TestScheduleWakeCancelsThePreviousEntry(t *testing.T) {
 	// Re-assertion happens every 60s. Without cancelling first, the system
-	// schedule accumulates a stale entry per push — and `pmset -g sched` on an
+	// schedule accumulates a stale entry per push, and `pmset -g sched` on an
 	// ordinary Mac is already crowded with other applications' events.
 	f := &fakeOps{}
 	s := withOps(f)
@@ -270,6 +275,61 @@ func TestCancelWakeIsSafeWithNothingScheduled(t *testing.T) {
 	}
 }
 
+// A helper restart forgets scheduledAt while the persisted pmset entries
+// survive. Cancel must reconcile against the OS, not memory, or it reports
+// success with the wake still registered and the machine keeps waking.
+func TestCancelWakeSweepsEntriesThatSurviveARestart(t *testing.T) {
+	f := &fakeOps{wakes: []wakeEntry{
+		{at: time.Now().Add(time.Hour).Truncate(time.Second), owner: wakeOwnerTag},
+		{at: time.Now().Add(2 * time.Hour).Truncate(time.Second), owner: wakeOwnerTag},
+	}}
+	s := withOps(f) // a fresh service remembers nothing, as after a restart
+	if err := s.CancelWake(); err != nil {
+		t.Fatalf("cancel failed: %v", err)
+	}
+	if len(f.wakes) != 0 {
+		t.Errorf("%d owner-tagged entries survived a cancel; nothing would ever remove them", len(f.wakes))
+	}
+}
+
+// When the schedule cannot be read and nothing is remembered, reporting
+// success would end the caller's retries with an unknown entry still
+// registered.
+func TestCancelWakeReportsAnUnreadableSchedule(t *testing.T) {
+	f := &fakeOps{listErr: errors.New("pmset unavailable")}
+	s := withOps(f)
+	if err := s.CancelWake(); err == nil {
+		t.Error("an unreadable schedule with nothing remembered reported success; the daemon would stop retrying")
+	}
+}
+
+// pmset cancel matches on kind as well as time, so a kind change must drop
+// and re-add the entry. Recording the new kind over the old entry leaves an
+// OS entry no later cancel can match.
+func TestScheduleWakeReRegistersWhenTheKindChanges(t *testing.T) {
+	f := &fakeOps{}
+	s := withOps(f)
+	at := time.Now().Add(time.Hour).Truncate(time.Second)
+
+	if err := s.ScheduleWake(at, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ScheduleWake(at, true); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(f.cancels) == 0 || !f.cancels[len(f.cancels)-1].Equal(at) ||
+		f.cancelKinds[len(f.cancelKinds)-1] != false {
+		t.Error("the old-kind entry was not cancelled before re-registering")
+	}
+	if k := f.schedKinds[len(f.schedKinds)-1]; k != true {
+		t.Errorf("re-registered with kind %v, want the new kind", k)
+	}
+	if len(f.wakes) != 1 {
+		t.Errorf("%d entries registered, want exactly one", len(f.wakes))
+	}
+}
+
 // TestVerifyWakeDetectsAVanishedEntry is the mitigation for PRD §5.2: a
 // scheduled wake can be silently dropped by the system, so "the command
 // succeeded" is not treated as proof it is still there.
@@ -315,8 +375,8 @@ func TestVerifyWakeToleratesSubSecondDrift(t *testing.T) {
 
 // TestDeadManClearsAnAbandonedBlock is the last line of defence.
 //
-// If the daemon is SIGKILLed at logout while blocked — which is exactly what
-// happens at logout — nothing else would ever clear the global setting.
+// If the daemon is SIGKILLed at logout while blocked (which is exactly what
+// happens at logout), nothing else would ever clear the global setting.
 func TestDeadManClearsAnAbandonedBlock(t *testing.T) {
 	f := &fakeOps{}
 	s := withOps(f)
@@ -353,7 +413,7 @@ func TestShutdownClearsTheBlock(t *testing.T) {
 
 func TestShutdownLeavesAScheduledWakeInPlace(t *testing.T) {
 	// Deliberate: the machine should still wake for the job even if the helper
-	// is merely restarting, and a stale entry is harmless — it wakes the
+	// is merely restarting, and a stale entry is harmless; it wakes the
 	// machine once and is consumed.
 	f := &fakeOps{}
 	s := withOps(f)
@@ -417,5 +477,37 @@ func TestHandleRoutesEveryPrivilegedOperation(t *testing.T) {
 	}
 	if len(f.cancels) != 1 {
 		t.Error("cancel_wake did not reach the platform")
+	}
+}
+
+// The verify op is how the daemon learns the OS really holds the alarm it
+// asked for. It existed but was unreachable: no IPC op, no caller, so a
+// dropped or firmware-offset wake was reported as scheduled forever.
+func TestVerifyWakeIsReachableOverIPC(t *testing.T) {
+	f := &fakeOps{}
+	s := withOps(f)
+	at := time.Now().Add(time.Hour).Truncate(time.Second)
+	if err := s.ScheduleWake(at, false); err != nil {
+		t.Fatal(err)
+	}
+
+	payload, _ := json.Marshal(ipc.VerifyWakeReq{At: at})
+	got, err := s.Handle(context.Background(), ipc.OpHelperVerifyWake, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, ok := got.(ipc.VerifyWakeResp)
+	if !ok || !resp.Registered {
+		t.Fatalf("a registered wake did not verify over IPC: %+v", got)
+	}
+
+	// And a time the OS does not hold must come back unregistered.
+	payload, _ = json.Marshal(ipc.VerifyWakeReq{At: at.Add(time.Hour)})
+	got, err = s.Handle(context.Background(), ipc.OpHelperVerifyWake, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := got.(ipc.VerifyWakeResp); resp.Registered {
+		t.Fatal("a wake the OS does not hold verified as registered")
 	}
 }

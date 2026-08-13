@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/power"
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 // fakeAssertion counts releases, so a test can prove the idle assertion of a
@@ -78,7 +78,7 @@ func TestKeepAwakeOpensOneHoldAndReplacesIt(t *testing.T) {
 		t.Fatalf("holding %d windows after a second request, want 1 (it must replace, not stack)", n)
 	}
 	if want := later.Add(time.Hour); !resp2.Until.Equal(want) {
-		t.Errorf("until = %s, want %s — the window runs from the new request", resp2.Until, want)
+		t.Errorf("until = %s, want %s; the window runs from the new request", resp2.Until, want)
 	}
 
 	if len(plat.assertions) != 2 {
@@ -131,7 +131,7 @@ func TestKeepAwakeDeadlineIsNowPlusDurationAndExpires(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A wake-only hold has nothing to observe, so its window is exactly the
-	// fixed period that was asked for — no detection grace, no extension.
+	// fixed period that was asked for: no detection grace, no extension.
 	if want := now.Add(30 * time.Minute); !resp.Until.Equal(want) {
 		t.Errorf("until = %s, want %s", resp.Until, want)
 	}
@@ -191,7 +191,7 @@ func TestKeepAwakeClampsBothEnds(t *testing.T) {
 //
 // A manual window's length is a number the user typed, not a measurement of
 // anything. Filed as a run it would train the ceiling estimator, count towards
-// job statistics, and appear as `status`'s "last run" — teaching the tool that
+// job statistics, and appear as `status`'s "last run", teaching the tool that
 // jobs take as long as somebody once wanted a coffee break.
 func TestKeepAwakeIsNeverRecordedAsARun(t *testing.T) {
 	d, _ := keepAwakeDaemon(t)
@@ -244,7 +244,7 @@ func TestCutoutReleasesTheKeepAwakeHold(t *testing.T) {
 	}
 
 	// A lid-closed machine that has reached its thermal limit is exactly the
-	// hazard the valve exists for, and a manual hold is not exempt from it —
+	// hazard the valve exists for, and a manual hold is not exempt from it:
 	// the user asking to stay awake cannot know the machine is cooking in a bag.
 	hot := power.State{LidClosed: true, TempC: tempOf(95), OnAC: true, BatteryPct: 100}
 	d.evaluateCutouts(hot, config.Default(), now.Add(time.Minute))
@@ -294,8 +294,8 @@ func TestKeepAwakeIsNotAJob(t *testing.T) {
 		t.Error("the synthetic keep-awake job is resolvable from the store")
 	}
 
-	// It is still a hold, though — that is the entire point of building it as
-	// one — and Status carries the deadline so a client needs no second call.
+	// It is still a hold, though; that is the entire point of building it as
+	// one, and Status carries the deadline so a client needs no second call.
 	st := d.Status()
 	if !st.Holding || len(st.Holds) != 1 {
 		t.Errorf("status reports holding=%v with %d holds, want one held window", st.Holding, len(st.Holds))

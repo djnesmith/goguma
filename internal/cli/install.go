@@ -8,19 +8,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/install"
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/paths"
-	"github.com/junnam/wakeguard/internal/render"
-	"github.com/junnam/wakeguard/internal/scan"
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/install"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/paths"
+	"github.com/junnam586/goguma/internal/render"
+	"github.com/junnam586/goguma/internal/scan"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 var cmdInstall = &Command{
 	Name:    "install",
 	Summary: "install and start the background services",
-	Usage: `wakeguard install [--no-helper] [--dry-run]
+	Usage: `goguma install [--no-helper] [--dry-run]
 
 Installs the binaries, registers the background daemon so it starts at login,
 and installs the privileged helper.
@@ -29,9 +29,9 @@ The helper is a separate root service that does exactly two things: block
 sleep, and register a wake with the OS. All scheduling and policy stays in the
 unprivileged daemon. Installing it requires your password once.
 
-  --no-helper   skip the privileged helper. WakeGuard will still hold sleep
+  --no-helper   skip the privileged helper. goguma will still hold sleep
                 off with the lid OPEN, but cannot hold a lid-closed machine
-                awake, and cannot schedule OS wakes — which is most of what
+                awake, and cannot schedule OS wakes, which is most of what
                 it is for.
   --dry-run     print the steps without doing anything`,
 	Run: runInstall,
@@ -57,7 +57,7 @@ func runInstall(ctx *Context, args []string) error {
 		return err
 	}
 
-	r.Line(r.Bold("WakeGuard will:"))
+	r.Line(r.Bold("goguma will:"))
 	r.Blank()
 	privileged := 0
 	for i, s := range plan.Steps {
@@ -74,14 +74,14 @@ func runInstall(ctx *Context, args []string) error {
 		// Said before the first step runs, not discovered at step 7.
 		//
 		// The prompt appears partway through a list of things that are already
-		// succeeding, and `sudo` gives it no context of its own — so without
+		// succeeding, and `sudo` gives it no context of its own, so without
 		// this it reads as an unexplained password box from a tool that was
 		// working a second ago. It also fails outright when this is run
 		// anywhere without a terminal, which is worth knowing up front.
 		r.Blank()
 		r.Line(r.Bold("You will be asked for your Mac login password."))
 		r.Printf("%s\n", r.Muted(
-			"That is macOS asking, not WakeGuard — it is the standard `sudo` prompt, and it is"))
+			"That is macOS asking, not goguma; it is the standard `sudo` prompt, and it is"))
 		r.Printf("%s\n", r.Muted(
 			"needed to install the piece that can wake a sleeping Mac. Nothing is typed to us and"))
 		r.Printf("%s\n", r.Muted(
@@ -115,7 +115,7 @@ func runInstall(ctx *Context, args []string) error {
 	if !onPath(l.BinDir) {
 		r.Blank()
 		r.Problem(
-			fmt.Sprintf("%s is not on your PATH, so the wakeguard command will not be found", l.BinDir),
+			fmt.Sprintf("%s is not on your PATH, so the goguma command will not be found", l.BinDir),
 			fmt.Sprintf(`echo 'export PATH="%s:$PATH"' >> ~/.zshrc`, l.BinDir))
 	}
 
@@ -123,14 +123,14 @@ func runInstall(ctx *Context, args []string) error {
 
 	r.Blank()
 	r.Line(r.Bold("Next:"))
-	r.Printf("  %s   look for anything else worth waking for\n", r.Accent("wakeguard import"))
-	r.Printf("  %s   see what it is doing\n", r.Accent("wakeguard status"))
+	r.Printf("  %s   look for anything else worth waking for\n", r.Accent("goguma import"))
+	r.Printf("  %s   see what it is doing\n", r.Accent("goguma status"))
 	return nil
 }
 
-// reportAdopted tells the user what WakeGuard started covering by itself.
+// reportAdopted tells the user what goguma started covering by itself.
 //
-// Adoption happens without being asked, which is the right default — installing
+// Adoption happens without being asked, which is the right default: installing
 // the tool is the statement that jobs should survive sleep, and a second opt-in
 // mostly produces installs that quietly do nothing. But acting unprompted is
 // only acceptable if it is not also invisible. The cost is stated in wakes per
@@ -138,6 +138,16 @@ func runInstall(ctx *Context, args []string) error {
 // of the battery it intends to spend.
 func reportAdopted(ctx *Context) {
 	r := ctx.Out
+
+	// Force the first sync rather than racing it. Two seconds after boot the
+	// daemon has usually not scanned yet, so listing immediately reported an
+	// empty machine and install said nothing, while the jobs were adopted
+	// moments later in silence. That contradicts the whole disclosure: the
+	// unprompted adoption below is only acceptable because install states it.
+	var syncResp struct {
+		Added int `json:"added"`
+	}
+	_ = callDaemon(ctx, ipc.OpSync, nil, &syncResp)
 
 	var resp ipc.JobsListResp
 	if err := callDaemon(ctx, ipc.OpJobsList, nil, &resp); err != nil {
@@ -172,15 +182,15 @@ func reportAdopted(ctx *Context) {
 			r.Printf("  %s %s\n", r.Warn(r.Sym().Warn), r.Warn(cost.Summary()))
 			if cost.Busiest != "" {
 				r.Printf("    %s\n", r.Muted(fmt.Sprintf(
-					"most of it is %q at %.0f wakes a day, consider 'wakeguard disable %s'",
+					"most of it is %q at %.0f wakes a day, consider 'goguma disable %s'",
 					cost.Busiest, cost.BusiestWakes, model.Slug(cost.Busiest))))
 			}
 		} else {
 			r.Printf("%s\n", r.Muted(line))
 		}
 	}
-	r.Printf("  %s\n", r.Muted("turn any of it off with 'wakeguard disable <name>', "+
-		"or all of it with 'wakeguard config set auto_adopt off'"))
+	r.Printf("  %s\n", r.Muted("turn any of it off with 'goguma disable <name>', "+
+		"or all of it with 'goguma config set auto_adopt off'"))
 }
 
 // estimateWakeCost prices the adopted set in wakes per day.
@@ -212,7 +222,7 @@ func estimateWakeCost(ctx *Context, views []ipc.JobView) (scan.Cost, bool) {
 // verifyInstall confirms the services actually came up.
 //
 // A successful `launchctl bootstrap` does not mean the daemon is running and
-// answering — reporting success without checking is how an install appears to
+// answering; reporting success without checking is how an install appears to
 // work and silently does nothing.
 func verifyInstall(ctx *Context, expectHelper bool) {
 	r := ctx.Out
@@ -256,7 +266,7 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 		return
 	}
 	r.Problem("the privileged helper is not answering yet, lid-closed holds will not work until it does",
-		"wakeguard doctor")
+		"goguma doctor")
 }
 
 func onPath(dir string) bool {
@@ -272,21 +282,26 @@ func onPath(dir string) bool {
 var cmdUninstall = &Command{
 	Name:    "uninstall",
 	Summary: "remove the services and binaries",
-	Usage: `wakeguard uninstall [--keep-state] [--yes]
+	Usage: `goguma uninstall [--purge] [--yes]
 
 Stops and removes the daemon, the privileged helper, and the installed
 binaries. Removing the helper needs your password.
 
-  --keep-state   keep jobs, config, and run history in the state directory
-  --yes          do not ask for confirmation`,
+Jobs, config, and run history are kept, so reinstalling picks up where you
+left off. Duration history takes weeks of real runs to accumulate and cannot
+be reconstructed, so throwing it away is opt-in.
+
+  --purge   also delete jobs, config, and run history
+  --yes     do not ask for confirmation`,
 	Run: func(ctx *Context, args []string) error {
 		fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
-		keepState := fs.Bool("keep-state", false, "keep jobs and history")
+		purge := fs.Bool("purge", false, "also delete jobs, config, and history")
 		assumeYes := fs.Bool("yes", false, "skip confirmation")
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
+		keepState := !*purge
 
 		r := ctx.Out
 		l := ctx.Layout
@@ -299,7 +314,7 @@ binaries. Removing the helper needs your password.
 			}
 			r.Printf("  %s %s%s\n", r.Muted("·"), a, marker)
 		}
-		if *keepState {
+		if keepState {
 			r.Printf("  %s %s %s\n", r.Muted("·"), l.StateDir, r.Good("(kept)"))
 		} else {
 			r.Printf("  %s %s %s\n", r.Muted("·"), l.StateDir,
@@ -316,7 +331,16 @@ binaries. Removing the helper needs your password.
 			}
 		}
 
-		errs := install.Uninstall(l, *keepState)
+		// Cancel the pending OS wake while the daemon can still reach the
+		// helper. Pause does exactly the teardown uninstall needs (release
+		// holds, cancel the wake, clear the bookkeeping); without it the
+		// wake survived in the OS schedule and the machine woke once, or
+		// with wake-or-power-on powered itself on, for a tool that was
+		// already gone. Best-effort: a daemon that is not running has
+		// nothing registered to cancel through it.
+		_ = callDaemon(ctx, ipc.OpPause, nil, nil)
+
+		errs := install.Uninstall(l, keepState)
 		for _, e := range errs {
 			r.Problem(e.Error(), "")
 		}
@@ -325,7 +349,7 @@ binaries. Removing the helper needs your password.
 		}
 
 		r.Printf("%s uninstalled cleanly\n", r.Good(r.Sym().OK))
-		if *keepState {
+		if keepState {
 			r.Printf("  %s\n", r.Muted("jobs and history are still in "+l.StateDir))
 		}
 		return nil

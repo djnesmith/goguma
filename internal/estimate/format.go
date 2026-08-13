@@ -6,7 +6,7 @@ import (
 )
 
 // These render the human-readable Reason string attached to every ceiling.
-// The reason is shown verbatim by `wakeguard list --explain` and in the GUI,
+// The reason is shown verbatim by `goguma list --explain` and in the GUI,
 // so a ceiling is never an unexplained number the user has to trust blindly.
 
 func itoa(n int) string { return strconv.Itoa(n) }

@@ -7,7 +7,7 @@ import (
 
 // Cost is the battery price of covering a set of jobs.
 //
-// WakeGuard exists to save battery by sleeping between jobs, so it owes the
+// goguma exists to save battery by sleeping between jobs, so it owes the
 // user an honest account of what waking for those jobs costs. Presenting the
 // list of jobs without this makes covering forty of them look the same as
 // covering two.
@@ -35,7 +35,7 @@ func EstimateCost(candidates []Candidate, now time.Time, perWake time.Duration) 
 	//
 	// Nothing is rounded up to a daily minimum. An earlier version clamped
 	// every job to at least one wake a day, which priced a weekly job at seven
-	// times its real cost and a yearly one at three hundred and sixty-five —
+	// times its real cost and a yearly one at three hundred and sixty-five,
 	// enough that a handful of weekly jobs tripped the "this is heavy" warning
 	// while costing almost nothing.
 	counted := map[string]bool{}

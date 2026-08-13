@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 // journalTimeLayouts are the timestamp formats `journalctl --output=short-iso`
@@ -72,8 +72,8 @@ type journalEvent struct {
 // that starts it, Linux only logs the two edges, so intervals have to be built
 // by pairing a suspend against the resume that follows it.
 //
-// A machine with no journal — a non-systemd distro, a container, or a user
-// without journal read access — yields an empty history rather than an error.
+// A machine with no journal (a non-systemd distro, a container, or a user
+// without journal read access) yields an empty history rather than an error.
 // That is deliberate: the daemon records its own observed sleep intervals as
 // it runs, and an empty history simply means risk estimates report themselves
 // as not confident until enough of those accumulate. Reporting an error here
@@ -126,8 +126,8 @@ func (p *linuxPlatform) SleepHistory(lookback time.Duration) (*schedule.SleepHis
 // They cannot be combined. journalctl ANDs matches on different fields, so
 // `-k -u systemd-logind.service` asks for entries that are simultaneously
 // kernel messages and logind unit messages, which is nothing. Running both and
-// merging the results also means a machine where one source is unreadable —
-// kernel messages need journal group membership on many distros — still gets
+// merging the results also means a machine where one source is unreadable
+// (kernel messages need journal group membership on many distros) still gets
 // whatever the other source provides.
 func journalQueries(since time.Time) [][]string {
 	stamp := since.Format(journalSinceLayout)
@@ -148,8 +148,8 @@ func journalQueries(since time.Time) [][]string {
 // back this query's data actually reaches.
 //
 // Failures are reported as no data rather than propagated. Every way this can
-// fail — journalctl missing the units, the journal being unreadable by this
-// user, a non-persistent journal wiped at boot — is a normal configuration,
+// fail (journalctl missing the units, the journal being unreadable by this
+// user, a non-persistent journal wiped at boot) is a normal configuration,
 // not a fault, and SleepHistory's contract is to degrade to "unknown".
 func collectJournalEvents(ctx context.Context, args []string) ([]journalEvent, time.Time) {
 	cmd := exec.CommandContext(ctx, "journalctl", args...)
@@ -247,7 +247,7 @@ func parseJournalTime(field string) (time.Time, bool) {
 // Duplicate edges are expected rather than exceptional: one suspend produces
 // both a kernel "PM: suspend entry" and a systemd-sleep message a fraction of
 // a second apart, and both queries observe it. A marker that arrives while the
-// machine is already recorded as asleep — or a resume with nothing open — is
+// machine is already recorded as asleep (or a resume with nothing open) is
 // therefore ignored rather than treated as a new period.
 //
 // A suspend with no matching resume is dropped. It is tempting to close it at
@@ -255,7 +255,7 @@ func parseJournalTime(field string) (time.Time, bool) {
 // a machine that failed to resume and was power-cycled, and closing it at the
 // following line would then record every hour until the reboot as sleep. That
 // error runs in the dangerous direction: it inflates every risk estimate after
-// it, making WakeGuard claim jobs are being missed when they are not. Losing
+// it, making goguma claim jobs are being missed when they are not. Losing
 // one interval is the cheaper mistake, and the daemon's own recorded intervals
 // cover the gap.
 func buildSleepIntervals(events []journalEvent) []schedule.SleepInterval {

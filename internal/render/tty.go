@@ -43,13 +43,13 @@ func detectColorDepth(w io.Writer) colorDepth {
 // supportsColor decides whether to emit escape sequences.
 //
 // The rules, in priority order, follow the conventions users already expect:
-//   - NO_COLOR set (any value) disables colour — https://no-color.org
+//   - NO_COLOR set (any value) disables colour (https://no-color.org)
 //   - FORCE_COLOR or CLICOLOR_FORCE enables it even when piped, which is how
 //     CI systems and tools like `less -R` opt in
 //   - TERM=dumb disables it
 //   - otherwise, colour only when the stream is a real terminal
 //
-// This is what makes `wakeguard list | grep` produce clean text without the
+// This is what makes `goguma list | grep` produce clean text without the
 // user having to remember a flag.
 func supportsColor(w io.Writer) bool {
 	if _, ok := os.LookupEnv("NO_COLOR"); ok {

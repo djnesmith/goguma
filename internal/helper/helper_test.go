@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
+	"github.com/junnam586/goguma/internal/ipc"
 )
 
 func testService() *Service {
@@ -109,7 +109,7 @@ func TestDeadManOnlyFiresWhenBlockedAndAbandoned(t *testing.T) {
 func TestConnectionCountingNeverGoesNegative(t *testing.T) {
 	// The count gates the dead-man switch. If it could go negative, a later
 	// genuine disconnect would leave it above zero and the switch would never
-	// fire — the block would stay stranded.
+	// fire; the block would stay stranded.
 	s := testService()
 	s.ConnectionClosed()
 	s.ConnectionClosed()

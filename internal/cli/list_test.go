@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/render"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/render"
 )
 
 func listOutput(t *testing.T, resp ipc.JobsListResp) string {

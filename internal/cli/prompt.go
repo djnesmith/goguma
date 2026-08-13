@@ -4,13 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/detect"
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/detect"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 // stdinReader is shared so a prompt does not lose buffered input between
@@ -49,8 +50,8 @@ func ask(prompt string) (string, error) {
 func promptForJob(ctx *Context, name, cron, detection, match, command *string) error {
 	r := ctx.Out
 
-	r.Line(r.Bold("Registering a job for WakeGuard to wake the machine for."))
-	r.Line(r.Muted("WakeGuard does not run the job, whatever runs it now still does."))
+	r.Line(r.Bold("Registering a job for goguma to wake the machine for."))
+	r.Line(r.Muted("goguma does not run the job, whatever runs it now still does."))
 	r.Blank()
 
 	if *name == "" {
@@ -112,7 +113,7 @@ func promptForJob(ctx *Context, name, cron, detection, match, command *string) e
 	// terms of what the user gets rather than by mode name.
 	if *detection == "mark" && *match == "" {
 		r.Blank()
-		r.Line(r.Muted("  How should WakeGuard tell when the job is running?"))
+		r.Line(r.Muted("  How should goguma tell when the job is running?"))
 		// Padded on the unstyled label: a styled string carries escape bytes
 		// that %-24s would count, collapsing the column.
 		opt := func(key, label, note string) {
@@ -173,6 +174,30 @@ func promptForMatch(ctx *Context, command string, match *string) error {
 		return fmt.Errorf("a match pattern is required for process watching")
 	}
 	*match = v
+
+	// A pattern that also matches another registered job's command is worse
+	// than none: the daemon releases a hold when *a* match exits, so the
+	// fastest sibling ends this job's window and every recorded duration is
+	// wrong. Import checks its whole scan for this; the interactive path
+	// checked nothing, so registering two sibling jobs one at a time
+	// accepted the collision. Best-effort: with the daemon down the check
+	// degrades to nothing, same as every other daemon-backed nicety here.
+	var jobs ipc.JobsListResp
+	if err := callDaemon(ctx, ipc.OpJobsList, nil, &jobs); err == nil {
+		if re, reErr := regexp.Compile(v); reErr == nil {
+			for _, jv := range jobs.Jobs {
+				if jv.Job.Command == "" || jv.Job.Command == command {
+					continue
+				}
+				if re.MatchString(jv.Job.Command) {
+					return fmt.Errorf(
+						"that pattern also matches the job %q (%s); a shared pattern "+
+							"would release this hold when the wrong job exits",
+						jv.Job.Name, jv.Job.Command)
+				}
+			}
+		}
+	}
 
 	var resp ipc.MatchTestResp
 	if err := callDaemon(ctx, ipc.OpTestMatch, ipc.MatchTestReq{Pattern: v}, &resp); err != nil {

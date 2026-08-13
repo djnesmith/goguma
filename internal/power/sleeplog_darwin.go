@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/schedule"
+	"github.com/junnam586/goguma/internal/schedule"
 )
 
 // pmsetLogTimeLayout matches the timestamps `pmset -g log` emits, e.g.
@@ -49,19 +49,44 @@ func (p *darwinPlatform) SleepHistory(lookback time.Duration) (*schedule.SleepHi
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // some lines are enormous
 	for sc.Scan() {
 		iv, ts, ok := parseSleepLine(sc.Text())
+		// Every parseable timestamp extends coverage, not just Sleep lines:
+		// a machine that stayed awake for days then slept once was otherwise
+		// credited with a history no older than that one sleep, shrinking
+		// Coverage until real risk read as "unknown".
+		if !ts.IsZero() && (earliest.IsZero() || ts.Before(earliest)) {
+			earliest = ts
+		}
+		// A later log line proves the machine was awake again by then. A
+		// Sleep entry with no recorded duration mid-log is a sleep the
+		// machine never woke from normally (battery died; powerd never
+		// wrote the trailing secs); leaving it open-ended made AsleepAt
+		// read "asleep forever after", swallowing every later interval and
+		// scoring every schedule as ~100% missed for up to a fortnight.
+		if !ts.IsZero() {
+			if n := len(intervals); n > 0 && intervals[n-1].Wake.IsZero() && ts.After(intervals[n-1].Sleep) {
+				intervals[n-1].Wake = ts
+			}
+		}
 		if !ok {
 			continue
 		}
-		if earliest.IsZero() || ts.Before(earliest) {
-			earliest = ts
-		}
 		if iv.Sleep.Before(cutoff) {
-			continue
+			if !iv.Wake.After(cutoff) {
+				continue
+			}
+			// Straddles the window edge: keep the in-window portion. It was
+			// dropped whole, and the fires inside it scored "not missed".
+			iv.Sleep = cutoff
 		}
 		intervals = append(intervals, iv)
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
+	}
+	// Whoever is reading this log is awake, so a still-open trailing sleep
+	// ends now at the latest.
+	if n := len(intervals); n > 0 && intervals[n-1].Wake.IsZero() {
+		intervals[n-1].Wake = time.Now()
 	}
 
 	if earliest.IsZero() || earliest.Before(cutoff) {

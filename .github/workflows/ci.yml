@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # macOS is the platform goguma is developed and used on, so this job runs the
+  # on-device probes as well as the unit tests.
+  macos:
+    name: test (macos)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l ./cmd ./internal)"
+          if [ -n "$unformatted" ]; then
+            echo "these files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test
+        run: go test ./... -count=1
+
+      # The daemon is concurrent and holds global system state, so the race
+      # detector is not optional here.
+      - name: test (race)
+        run: go test ./... -count=1 -race
+
+      # Catches tests that only pass because an earlier test left state behind.
+      - name: test (shuffled)
+        run: go test ./... -count=1 -shuffle=on
+
+  # Linux exists to stop the systemd/journalctl/rtcwake paths rotting. Until
+  # this job existed, that code had never executed anywhere: it compiled, and
+  # nothing more was known about it.
+  linux:
+    name: test (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test
+        run: go test ./... -count=1
+
+      - name: test (race)
+        run: go test ./... -count=1 -race
+
+  # A build-only check for every architecture we might ship, so a compile error
+  # in an untested target is caught at push time rather than at release time.
+  #
+  # darwin is built on a macOS runner and linux on a Linux one, deliberately.
+  # The macOS build needs cgo for IOKit and CoreFoundation, cgo cross-compiling
+  # needs that platform's SDK, and `go build` defaults CGO_ENABLED to 0 when
+  # cross-compiling. Building darwin from ubuntu therefore fails with
+  # "undefined: darwinPlatform" no matter how healthy the code is.
+  cross-build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: darwin, goarch: arm64, runner: macos-latest, cgo: 1 }
+          - { goos: darwin, goarch: amd64, runner: macos-latest, cgo: 1 }
+          - { goos: linux, goarch: amd64, runner: ubuntu-latest, cgo: 0 }
+          - { goos: linux, goarch: arm64, runner: ubuntu-latest, cgo: 0 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: go build ./...

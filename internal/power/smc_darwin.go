@@ -9,7 +9,7 @@ package power
 
 // Apple's SMC user-client protocol. These structures are not in any public
 // header, but the layout has been stable for well over a decade and access
-// requires no entitlement — the same public IOKit path `powermetrics` and
+// requires no entitlement: the same public IOKit path `powermetrics` and
 // every Mac temperature utility uses.
 
 typedef struct { char major; char minor; char build; char reserved[1]; unsigned short release; } SMCVers;
@@ -122,7 +122,7 @@ import (
 // detect the architecture, which would be a proxy for the real question
 // ("which sensor does this machine actually have?") rather than an answer.
 var tempCandidates = []string{
-	"TC0P", // Intel: CPU proximity — the key Adrafinil validated
+	"TC0P", // Intel: CPU proximity, the key Adrafinil validated
 	"TC0D", // Intel: CPU die
 	"Tp09", // Apple silicon: P-core cluster die
 	"Tp0T", // Apple silicon: SoC die
@@ -158,7 +158,7 @@ func readSMCTemp() (float64, string, bool) {
 	}
 	if smcProbed && smcKey != "" {
 		if v, ok := readKey(smcKey); ok {
-			return v, "smc:" + smcKey, true
+			return v, smcSourceLabel(smcKey), true
 		}
 		// A previously working key started failing; re-probe rather than
 		// silently going blind.
@@ -169,7 +169,7 @@ func readSMCTemp() (float64, string, bool) {
 	for _, k := range tempCandidates {
 		if v, ok := readKey(k); ok {
 			smcKey, smcProbed = k, true
-			return v, "smc:" + k, true
+			return v, smcSourceLabel(k), true
 		}
 	}
 	smcProbed = true
@@ -197,4 +197,15 @@ func closeSMC() {
 	smcMu.Lock()
 	defer smcMu.Unlock()
 	C.wg_smc_close()
+}
+
+// smcSourceLabel names the sensor honestly. TCHP is heat-pipe/chassis
+// proximity, not the die: it reads tens of degrees under the silicon, so a
+// status line claiming a plain CPU reading from it would tell the user the
+// thermal valve is armed at a calibration it cannot meet.
+func smcSourceLabel(key string) string {
+	if key == "TCHP" {
+		return "smc:TCHP (chassis proximity)"
+	}
+	return "smc:" + key
 }

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Assembles WakeGuard.app around the SwiftPM executable.
+# Assembles goguma.app around the SwiftPM executable.
 #
 # The binary already behaves as a menu bar app on its own — the delegate calls
 # setActivationPolicy(.accessory) at launch — so this bundle exists for the
@@ -14,8 +14,8 @@ set -euo pipefail
 
 CONFIG="${1:-release}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="WakeGuard"
-BUNDLE_ID="glass.wakeguard.ui"
+APP_NAME="goguma"
+BUNDLE_ID="glass.goguma.ui"
 VERSION="0.1.0"
 
 cd "$ROOT"
@@ -23,7 +23,7 @@ cd "$ROOT"
 echo "Building ($CONFIG)…"
 swift build -c "$CONFIG"
 
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/WakeGuardUI"
+BIN="$(swift build -c "$CONFIG" --show-bin-path)/GogumaUI"
 if [[ ! -x "$BIN" ]]; then
     echo "error: built binary not found at $BIN" >&2
     exit 1

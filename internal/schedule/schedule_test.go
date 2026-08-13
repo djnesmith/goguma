@@ -37,7 +37,7 @@ func TestParseRejectsNonsense(t *testing.T) {
 }
 
 func TestRebootIsRejectedWithAReason(t *testing.T) {
-	// @reboot has no fire time to wake for — the machine is awake by
+	// @reboot has no fire time to wake for: the machine is awake by
 	// definition when it runs. Accepting it would create a job that can never
 	// trigger a wake, which is worse than refusing it.
 	_, err := Parse("@reboot", time.UTC)
@@ -97,7 +97,7 @@ func TestTypicalIntervalUsesTheSmallestGap(t *testing.T) {
 
 	// Fires at 09:00 and 09:05 daily. The gaps alternate between 5 minutes
 	// and just under 24 hours. For "is a dedicated wake worth it", the job is
-	// five-minutes-apart, not daily — so the minimum is the right statistic.
+	// five-minutes-apart, not daily, so the minimum is the right statistic.
 	if got := mustParse(t, "0,5 9 * * *").TypicalInterval(from); got != 5*time.Minute {
 		t.Errorf("interval = %s, want the 5m minimum gap", got)
 	}
@@ -214,7 +214,7 @@ func TestIntervalAnchorEqualToTStepsToTheNextFire(t *testing.T) {
 }
 
 func TestIntervalAnchorInTheFutureIsTheFirstFire(t *testing.T) {
-	// A created_at ahead of the clock — a clock that stepped backwards, or a
+	// A created_at ahead of the clock, a clock that stepped backwards, or a
 	// hand-edited jobs.json. The lattice must not be extended backwards: a
 	// fire time in the past reads as "due now" to the daemon, which would hold
 	// the machine awake immediately for a job that is not coming.
@@ -231,8 +231,8 @@ func TestIntervalAnchorInTheFutureIsTheFirstFire(t *testing.T) {
 
 func TestIntervalZeroAnchorIsStillStable(t *testing.T) {
 	// No anchor available falls back to process start, which is fixed for the
-	// life of the process. The fire time is arbitrary — it has to be, nothing
-	// told us the phase — but it must not move between two calls, because that
+	// life of the process. The fire time is arbitrary; it has to be, nothing
+	// told us the phase, but it must not move between two calls, because that
 	// movement is the bug.
 	s1, err := ParseAt("every 6h", time.UTC, time.Time{})
 	if err != nil {
@@ -296,7 +296,7 @@ func TestFixedPeriodDescriptorsStayCalendar(t *testing.T) {
 	// @hourly, @daily and @weekly report an interval so that import can price
 	// them, but they parse to calendar schedules: the top of the hour, and
 	// midnight. They were never affected by the sliding-fire bug, and they must
-	// not be anchored — anchoring @daily on a job's created_at would move it
+	// not be anchored, anchoring @daily on a job's created_at would move it
 	// off midnight to whenever the job happened to be registered, which is not
 	// what the user wrote and not what their real cron does.
 	anchor := time.Date(2026, 8, 1, 5, 47, 3, 0, time.UTC)

@@ -3,15 +3,15 @@ package daemon
 import (
 	"time"
 
-	"github.com/junnam/wakeguard/internal/config"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/power"
+	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
 )
 
 // hold is one open wake window.
 //
 // A window is opened before the job's fire time and stays open until the job
-// is observed to exit — not until a timer expires. That distinction is the
+// is observed to exit, not until a timer expires. That distinction is the
 // whole battery argument: hold duration converges on the job's real runtime
 // plus wake overhead, rather than on a padded guess.
 type hold struct {
@@ -29,8 +29,8 @@ type hold struct {
 	startedAt time.Time
 	pid       int
 
-	// markEnded is set when wakeguard-mark reported the exit, which also
-	// carries a real exit code — something pattern detection cannot observe.
+	// markEnded is set when goguma-mark reported the exit, which also
+	// carries a real exit code, something pattern detection cannot observe.
 	markEnded bool
 	exitCode  *int
 
@@ -44,7 +44,7 @@ type hold struct {
 	batteryStart int
 
 	// endedAt is when the job actually finished, when something authoritative
-	// says so — currently a scheduler's own completion record. Distinct from
+	// says so, currently a scheduler's own completion record. Distinct from
 	// when the hold was released: the daemon notices on its next poll, up to a
 	// poll interval later, and charging that lag to the job would inflate
 	// every learned duration by the sampling rate.
@@ -52,7 +52,7 @@ type hold struct {
 
 	// wokeMachine records that the machine was actually asleep before this
 	// window opened, meaning the run would have been skipped entirely without
-	// WakeGuard. This is the tool's value metric.
+	// goguma. This is the tool's value metric.
 	wokeMachine bool
 
 	assertion power.IdleAssertion
@@ -63,7 +63,7 @@ type hold struct {
 // the ceiling measured from the observed start.
 //
 // A wake-only hold has no detection to wait for, so its window runs from the
-// job's fire time for exactly the ceiling — there is nothing to observe and
+// job's fire time for exactly the ceiling; there is nothing to observe and
 // no reason to extend past it.
 func (h *hold) deadline() time.Time {
 	if h.job.Detection == model.DetectNone {
@@ -95,8 +95,8 @@ func (h *hold) hardDeadline(cfg config.Config) time.Time {
 // a job's wake window.
 //
 // It is the one hold with no registered job behind it, so every path that
-// treats a closed window as evidence about a job — run history, the ceiling
-// estimator, job statistics — has to skip it.
+// treats a closed window as evidence about a job (run history, the ceiling
+// estimator, job statistics) has to skip it.
 func (h *hold) manual() bool { return h.job.ID == model.KeepAwakeJobID }
 
 // view converts to the wire representation.

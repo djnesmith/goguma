@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/render"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/render"
 )
 
 func fetchStatus(ctx *Context) (model.Status, error) {
@@ -23,14 +23,14 @@ func fetchStatus(ctx *Context) (model.Status, error) {
 // connection error, because "connection refused" tells a user nothing about
 // what to do next.
 func errDaemonDown() error {
-	return errors.New("WakeGuard's background service isn't running, start it with 'wakeguard install', " +
-		"or check 'wakeguard doctor' if you have already installed it")
+	return errors.New("goguma's background service isn't running, start it with 'goguma install', " +
+		"or check 'goguma doctor' if you have already installed it")
 }
 
 var cmdStatus = &Command{
 	Name:    "status",
-	Summary: "show what wakeguard is doing right now",
-	Usage: `wakeguard status [--json]
+	Summary: "show what goguma is doing right now",
+	Usage: `goguma status [--json]
 
 Shows whether sleep is currently being held, when the machine will next wake,
 and any problems that need attention.
@@ -105,7 +105,7 @@ func printStatus(r *render.Renderer, st model.Status) {
 			remain := h.Remaining(now)
 
 			// A wake-only job is never observed, so "waiting" is a state it
-			// can never leave — it reads as a job that is late when the hold
+			// can never leave; it reads as a job that is late when the hold
 			// is simply running its fixed window. Same reasoning the app
 			// already applies to manual holds.
 			// Ordered by what is actually known, not by how the job is
@@ -148,7 +148,7 @@ func printStatus(r *render.Renderer, st model.Status) {
 				r.Accent(st.NextJob), st.NextFire.Local().Format("15:04:05"))})
 		}
 	} else if st.WakeSuppressed != "" {
-		// A deliberate decision, not a failure — worded so it does not read
+		// A deliberate decision, not a failure, worded so it does not read
 		// like something went wrong.
 		pairs = append(pairs, [2]string{"next wake",
 			r.Warn("held back") + r.Muted("  "+st.WakeSuppressed)})
@@ -247,7 +247,7 @@ func describeRun(r *render.Renderer, run *model.Run) string {
 	when := run.WindowOpened.Local().Format("Mon 15:04")
 	line := fmt.Sprintf("%s %s  %s", mark, r.Muted(when), note)
 	if run.WokeMachine {
-		line += r.Muted("  (machine was asleep; wakeguard woke it)")
+		line += r.Muted("  (machine was asleep; goguma woke it)")
 	}
 	return line
 }

@@ -12,7 +12,7 @@ import (
 // The point is that a person knows *when* they want something to run long
 // before they know how to write it in cron. Requiring "0 9 * * *" to register
 // a morning briefing asks the human to speak the machine's language for no
-// reason — the translation is mechanical and the machine can do it.
+// reason: the translation is mechanical and the machine can do it.
 //
 // Every accepted phrase is echoed back as both the cron expression and the
 // next concrete fire time, because a natural-language parser that silently
@@ -51,7 +51,7 @@ func FromHuman(input string) (string, bool) {
 	// to fall through.
 	//
 	// The regexp above is anchored, so "every 15 minutes on weekdays" does not
-	// match it — and the 15 then reached the time-of-day rules and was read as
+	// match it, and the 15 then reached the time-of-day rules and was read as
 	// 15:00. The result was a job running once a day instead of ninety-six
 	// times, which is both wrong and impossible to notice from the rendered
 	// schedule. Any count of 12 to 23 did this, which is precisely why it
@@ -169,7 +169,7 @@ var dayNames = map[string]string{
 //
 // They must cause a refusal rather than being ignored. "the third tuesday"
 // silently reduced to "tuesday" schedules a weekly job where the user asked
-// for a monthly one — the job would then fire four times as often as intended,
+// for a monthly one: the job would then fire four times as often as intended,
 // waking the machine for three runs that should not happen.
 var qualifiers = map[string]bool{
 	"first": true, "second": true, "third": true, "fourth": true,
@@ -191,7 +191,7 @@ var filler = map[string]bool{
 // Every token must be accounted for. An earlier version returned as soon as it
 // matched a day word, so the "anything unrecognised" check never ran on that
 // path and leftover words were silently dropped. That turned "monday to friday
-// at 07:30" into Monday and Friday only — three of five weekly runs never woken
+// at 07:30" into Monday and Friday only: three of five weekly runs never woken
 // for, from the natural spelling of a documented example. Recognising less and
 // refusing more is much the safer failure.
 func dayConstraint(rest string) (string, bool) {
@@ -212,19 +212,19 @@ func dayConstraint(rest string) (string, bool) {
 
 	consumed := make([]bool, len(words))
 
-	// A range first — "monday to friday", "mon-fri" — so its endpoints are not
+	// A range first ("monday to friday", "mon-fri"), so its endpoints are not
 	// also collected as individual days.
 	for i, w := range words {
 		lo, isDay := dayNames[w]
 		if isDay && i+2 < len(words) && isRangeWord(words[i+1]) {
 			if hi, ok := dayNames[words[i+2]]; ok {
 				consumed[i], consumed[i+1], consumed[i+2] = true, true, true
-				return lo + "-" + hi, accountedFor(words, consumed)
+				return dayRange(lo, hi), accountedFor(words, consumed)
 			}
 		}
 		if lo2, hi2, ok := splitDayRange(w); ok {
 			consumed[i] = true
-			return lo2 + "-" + hi2, accountedFor(words, consumed)
+			return dayRange(lo2, hi2), accountedFor(words, consumed)
 		}
 	}
 
@@ -259,7 +259,7 @@ func dayConstraint(rest string) (string, bool) {
 	case everyDay:
 		return "*", accountedFor(words, consumed)
 	default:
-		// A bare time means daily, the overwhelmingly common intent — but only
+		// A bare time means daily, the overwhelmingly common intent, but only
 		// when nothing else was said.
 		return "*", accountedFor(words, consumed)
 	}
@@ -309,4 +309,24 @@ func HumanExamples() []string {
 		"daily at midnight",
 		"hourly",
 	}
+}
+
+// dayRange renders lo..hi as a cron day-of-week field. A range that runs
+// "backwards" through the week ("friday to monday") cannot be a cron range,
+// so it is spelled out as the wrapped list instead; emitting "5-1" produced
+// an expression the parser rejects, which used to surface as a nil schedule.
+func dayRange(lo, hi string) string {
+	l, lerr := strconv.Atoi(lo)
+	h, herr := strconv.Atoi(hi)
+	if lerr != nil || herr != nil || l <= h {
+		return lo + "-" + hi
+	}
+	var days []string
+	for d := l; ; d = (d + 1) % 7 {
+		days = append(days, strconv.Itoa(d))
+		if d == h {
+			break
+		}
+	}
+	return strings.Join(days, ",")
 }

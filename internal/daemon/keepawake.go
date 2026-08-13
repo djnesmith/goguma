@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/junnam/wakeguard/internal/ipc"
-	"github.com/junnam/wakeguard/internal/model"
-	"github.com/junnam/wakeguard/internal/store"
+	"github.com/junnam586/goguma/internal/ipc"
+	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/store"
 )
 
 // Bounds on a manual keep-awake window.
@@ -17,7 +17,7 @@ import (
 //
 // The ceiling is the real safeguard. There is deliberately no "stay awake
 // until I say otherwise": a hold nobody remembers is exactly the failure the
-// safety chapter exists to prevent — a laptop held awake in a bag overnight —
+// safety chapter exists to prevent (a laptop held awake in a bag overnight)
 // and the difference between that and a bounded window is that the bounded one
 // ends by itself. Twelve hours is longer than any deliberate use of this and
 // still cannot run past a working day.
@@ -35,7 +35,7 @@ const (
 //
 // DetectNone is exactly the right mode: hold.deadline gives a wake-only hold a
 // fixed window running from fireAt for its ceiling, with nothing to observe and
-// no reason to extend — which is the whole of what "keep this machine awake for
+// no reason to extend, which is the whole of what "keep this machine awake for
 // 30 minutes" means.
 //
 // It is never handed to the store, so it reaches neither jobs.json, the job
@@ -64,7 +64,7 @@ func (d *Daemon) KeepAwake(want time.Duration, now time.Time) (ipc.KeepAwakeResp
 	//
 	// This is not merely tidy. evaluateCutouts stops firing once the latch is
 	// engaged, so a hold opened during a latched cutout is not released by the
-	// next pass — it would sit out its full window on a machine already judged
+	// next pass; it would sit out its full window on a machine already judged
 	// too hot or too flat to be held awake. Refusing is the only point at which
 	// that can be caught.
 	d.mu.RLock()
@@ -83,7 +83,7 @@ func (d *Daemon) KeepAwake(want time.Duration, now time.Time) (ipc.KeepAwakeResp
 	// would stall every tick and every status call for its duration.
 	h := &hold{job: job, fireAt: now, openedAt: now, ceiling: ceiling,
 		batteryStart: batteryLevel(d.lastState)}
-	if a, err := d.plat.HoldIdleSleep("wakeguard: " + job.Name); err != nil {
+	if a, err := d.plat.HoldIdleSleep("goguma: " + job.Name); err != nil {
 		d.log.Error("could not hold idle sleep for a manual keep-awake", "err", err)
 	} else {
 		h.assertion = a
@@ -94,7 +94,7 @@ func (d *Daemon) KeepAwake(want time.Duration, now time.Time) (ipc.KeepAwakeResp
 	// starting now, not for the sum of this request and the last one. The old
 	// hold is finished properly instead of being overwritten, because dropping
 	// the map entry would strand its idle assertion with nothing left able to
-	// release it — the machine would then refuse to idle-sleep until the daemon
+	// release it; the machine would then refuse to idle-sleep until the daemon
 	// restarted.
 	if prev, ok := d.holds[model.KeepAwakeJobID]; ok {
 		d.finishHoldLocked(prev, now, model.OutcomeOK)
