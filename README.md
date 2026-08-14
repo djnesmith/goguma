@@ -34,15 +34,14 @@ which jobs have been missing runs, and how often:
 
 </div>
 
-`import` is read-only.
+It asks before registering anything. Add `--dry-run` to look without being
+asked at all.
 
 ## Features
 
-- Finds the scheduled work you already have. If Claude, an agent framework, or
-  anything else set up a nightly digest, a repo watcher or a morning briefing,
-  it scheduled that through cron or launchd underneath, which is exactly where
-  goguma looks. You do not register anything by hand
-- Tells you which of them have been missing runs, and how often
+- Finds the work already scheduled on your machine. You wrote none of this
+  down for goguma; it goes and reads what is there
+- Tells you which of those jobs have been missing runs, and how often
 - Wakes the machine right before each job fires, and sleeps again the moment
   it exits
 - Learns how long each job takes, so the window fits the work instead of
@@ -82,43 +81,20 @@ Both paths end in the same place: a background daemon, a privileged helper and
 the `goguma` command. The app is a viewer for that daemon, so adding it later
 is just opening it, and removing it changes nothing about your jobs.
 
-Other ways: download a release archive for your platform and run
-`./goguma install` from inside it, or with Go 1.26+:
+`goguma install` sets up the daemon and the helper. The helper only blocks
+sleep and schedules wakes; everything else runs unprivileged. Run
+`goguma install --dry-run` first to see exactly what it will do.
 
-```sh
-go install github.com/junnam586/goguma/cmd/...@latest
-```
-
-From source:
-
-```sh
-git clone https://github.com/junnam586/goguma && cd goguma
-go build -ldflags "-X main.version=$(git describe --tags --always)" -o bin/ ./cmd/...
-./bin/goguma install
-```
-
-On Linux, goguma is aimed at laptops and desktops, since a machine that never
-suspends has nothing to miss. It is tested in CI but has had far less real-world
-use than the macOS build, so please report anything that looks wrong.
-
-`install` sets up a user daemon and a small privileged helper. The helper
-only blocks sleep and schedules wakes; everything else runs unprivileged.
-Use `--dry-run` to see what it would do first.
+Also available as a release archive, via `go install`, or built from source
+with `go build ./cmd/...`. Linux builds are tested in CI but have seen far less
+real use than macOS.
 
 ## Usage
 
-If you installed the app, most of this is a click instead. The menu bar shows
-what is being held awake and what is coming next, the jobs window lists
-everything with its learned duration and lets you add, edit or pause a job,
-and settings covers the timing and safety limits. The commands below are the
-same features for people who would rather type.
-
-```sh
-goguma import    # find scheduled jobs on this machine
-goguma status    # see what goguma is doing
-```
-
-`import` shows which of your jobs are actually affected by sleep:
+You do not have to do this. goguma reads every scheduler on the machine by
+itself, every couple of minutes, and starts waking for what it finds. Run
+`goguma import` when you want to see what it found, or to give one of those
+jobs exact timing:
 
 ```
 7 of 43 worth waking for:
@@ -126,6 +102,24 @@ goguma status    # see what goguma is doing
 [1] Morning briefing: Global News
   schedule  daily at 09:00  (0 9 * * *)
   last run  10h 30m late  (ran Tue 19:30, scheduled for 09:00)
+```
+
+Adopted jobs are woken for either way. Where a job's process can be picked out
+of the process table, goguma watches for it and sleeps the moment it exits.
+Where it cannot, the machine is held for a bounded window instead, which costs
+a little more battery. `import` is how you close that gap: it offers to wrap
+the job in `goguma-mark`, which reports the exact start, end and exit code.
+That needs one line of your crontab changed, and goguma will never make that
+edit on your behalf.
+
+Everything else is a click. The menu bar shows what is being held awake and
+what is coming next, the jobs window lists everything with its learned duration
+and lets you add, edit or pause a job, and settings covers the timing and
+safety limits. The rest of this section is the same features for people who
+would rather type.
+
+```sh
+goguma status    # see what goguma is doing
 ```
 
 Add a job by hand with cron syntax or plain English:
@@ -147,15 +141,24 @@ start, end, and exit code, so the machine sleeps the moment the job is done:
 ## Safety
 
 A hold is released early if the machine gets too hot (80°C by default) or the
-battery drops below 20%, so a laptop in a bag cannot overheat or run itself
-flat. If a job hangs, a time limit learned from its previous runs ends the
-hold rather than letting it run forever.
+battery drops below 10%, so a laptop in a bag cannot overheat or run itself
+flat. The battery floor rises for jobs measured to cost more than that, so a
+job that drains 4% never starts a run it cannot finish. If a job hangs, a
+time limit learned from its previous runs ends the hold rather than letting
+it run forever.
 
 ## FAQ
 
 **Does goguma run my jobs?**
-No. cron, launchd, or systemd still run them; goguma only makes sure the
-machine is awake at the time.
+No. Whatever runs them now still runs them; goguma only makes sure the machine
+is awake at the time.
+
+**If I only install the app, does it find my jobs on its own?**
+Yes. The daemon re-reads every scheduler on the machine every couple of
+minutes and wakes for whatever is worth waking for, with no terminal step. It
+never edits your crontab to do it, so a job whose process it cannot recognise
+gets a bounded window rather than exact timing. `goguma import` is how you
+upgrade those.
 
 **What if I can't change a job's command?**
 goguma can watch the process table for it instead (`--detection pattern
@@ -164,13 +167,13 @@ goguma can watch the process table for it instead (`--detection pattern
 
 **Does it work on Linux?**
 It compiles and the logic is unit tested, but it hasn't run on real Linux
-hardware yet. macOS on Apple silicon is what's tested. Windows is not
-supported.
+hardware yet. macOS on Apple silicon is what's tested, and Windows is not
+supported at all.
 
 **Where's the menu bar app?**
 In the [release download](https://github.com/junnam586/goguma/releases/latest),
-or build it yourself from [`macos/`](macos/) with `cd macos &&
-./scripts/make-app.sh`.
+or build it yourself from [`macos/`](macos/) by running
+`cd macos && ./scripts/make-app.sh`.
 
 **Where can I read more?**
 Architecture notes are in [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md).

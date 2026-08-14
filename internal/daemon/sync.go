@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/junnam586/goguma/internal/config"
+	"github.com/junnam586/goguma/internal/detect"
 	"github.com/junnam586/goguma/internal/model"
 	"github.com/junnam586/goguma/internal/power"
 	"github.com/junnam586/goguma/internal/scan"
@@ -125,19 +126,39 @@ func (d *Daemon) adoptNew(candidates []scan.Candidate, sources []string) (adopte
 			continue
 		}
 
-		// Only adopt what can work with no further human action.
+		// Pick the best detection that needs nothing from the user.
 		//
-		// A wrappable job needs its command line edited to be detectable.
-		// Adopting one automatically would create a job that is registered,
-		// looks correct, and is recorded as never-detected on every single
-		// run, generating a permanent warning about a configuration nobody
-		// chose. Those stay a deliberate `import` decision.
-		if c.Wrappable {
-			// Not adopted, but no longer forgotten. Skipping silently meant a
-			// user with a crontab full of jobs saw a healthy goguma and a
-			// Mac that still slept through every one of them.
+		// Never `mark` here. That one requires the command line to be edited,
+		// and adopting a job as mark-detected without editing it produces a
+		// job that looks configured and is recorded never-detected on every
+		// run, which is a permanent warning about a choice nobody made. It
+		// stays a deliberate `import` decision.
+		//
+		// Pattern is real detection and costs the user nothing, so it wins
+		// whenever the pattern identifies this job and nothing else. Distinctive
+		// is checked against every other candidate and every registered command,
+		// because a pattern that also matches a sibling is worse than none: the
+		// daemon releases on the first match to exit, so the fastest sibling
+		// closes everyone's window and every duration recorded is wrong.
+		//
+		// Wake-only is the floor. It observes nothing and holds a bounded
+		// window, which is exactly the honest behaviour for a job that cannot
+		// be watched, and still the difference between the job running and the
+		// machine sleeping through it.
+		detection := model.DetectNone
+		match := ""
+		if pattern := detect.SuggestPattern(c.Command); pattern != "" {
+			if detect.Distinctive(pattern, adoptionSiblings(c, candidates, d.store.Jobs())) {
+				detection = model.DetectPattern
+				match = pattern
+			}
+		}
+
+		// Still reported, but now as "could be exact" rather than "not
+		// covered". The job is already being woken for; `import` upgrades it
+		// from a bounded window to its real runtime.
+		if c.Wrappable && detection != model.DetectPattern {
 			uncovered = append(uncovered, c)
-			continue
 		}
 
 		job := &model.Job{
@@ -146,7 +167,8 @@ func (d *Daemon) adoptNew(candidates []scan.Candidate, sources []string) (adopte
 			Schedule:  c.Schedule,
 			Command:   c.Command,
 			Source:    string(c.Source),
-			Detection: model.DetectNone,
+			Detection: detection,
+			Match:     match,
 			Enabled:   true,
 			Managed:   true,
 			CreatedAt: time.Now(),
@@ -174,6 +196,29 @@ func (d *Daemon) adoptNew(candidates []scan.Candidate, sources []string) (adopte
 	d.uncovered = uncovered
 	d.mu.Unlock()
 	return adopted
+}
+
+// adoptionSiblings is every other command a suggested pattern must not match:
+// the rest of this scan, plus everything already registered.
+//
+// Both halves matter. Checking only the scan misses a collision with a job the
+// user added by hand, and checking only the store misses two candidates in the
+// same batch that share a pattern, where whichever is adopted first would
+// silently claim the other's process.
+func adoptionSiblings(self scan.Candidate, batch []scan.Candidate, registered []*model.Job) []string {
+	out := make([]string, 0, len(batch)+len(registered))
+	for _, c := range batch {
+		if c.Name == self.Name && c.Source == self.Source {
+			continue
+		}
+		out = append(out, c.Command)
+	}
+	for _, j := range registered {
+		out = append(out, j.Command)
+	}
+	// The pattern is derived from this command, so it must be present exactly
+	// once for Distinctive's "matches one thing" test to mean what it says.
+	return append(out, self.Command)
 }
 
 // updateChanged refreshes managed jobs whose source entry still exists but
@@ -342,17 +387,23 @@ func EffectiveAutoAdopt(configured []string) []string {
 
 // adoptableSources lists sources that can be watched.
 //
-// A source is adoptable only if its jobs need no further human action, which
-// in practice means the application runs them itself. Crontab and launchd
-// entries are excluded: covering those properly requires editing a command
-// line, which is a decision only the user can make.
+// Every source, including crontab, launchd and systemd. Those three used to be
+// excluded on the grounds that covering them requires editing a command line,
+// but that is only true of `goguma-mark`, which is one of three detection
+// modes and the only one that needs a file changed. Pattern matching and
+// wake-only need nothing from the user at all.
+//
+// Excluding them meant the common case failed silently: someone downloads the
+// app, it reports itself healthy, and the machine goes on sleeping through the
+// crontab that made them install it. A warning pointing at a terminal command
+// is not a substitute for the tool doing its job, and the app has no way to
+// run that command.
+//
+// So they are adopted with whatever detection works unattended, and `goguma
+// import` remains the way to upgrade a job to exact timing.
 func adoptableSources() []string {
 	var out []string
 	for _, p := range scan.Providers() {
-		switch p.Name() {
-		case "crontab", "launchd", "systemd":
-			continue
-		}
 		out = append(out, p.Name())
 	}
 	return out

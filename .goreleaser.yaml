@@ -78,13 +78,19 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# No generated changelog.
+#
+# Commit subjects are written for whoever next has to change the code, and they
+# read as gibberish on a release page: "Give safety its own section" and "Drop
+# em dashes" tell a user nothing about what they are downloading. With no
+# previous tag to diff against, a generated changelog is also the entire
+# history of the project, alphabetised.
+#
+# release.header below is the release note, written for the person installing
+# it. The comparison link returns for the second release, when there is
+# something to compare with.
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
+  disable: true
 
 # A cask rather than a formula. `brews:` was soft-deprecated in goreleaser 2.10
 # and removed in 2.16; Homebrew now prefers casks for pre-compiled binaries,
@@ -124,5 +130,32 @@ homebrew_casks:
 
 release:
   draft: true
+  header: |
+    goguma wakes your Mac shortly before each scheduled job, keeps it awake
+    while the job runs, and lets it sleep again as soon as the job is done.
+
+    ### Install
+
+    Download the `.dmg`, drag goguma to Applications, and open it. It will
+    offer to set itself up, and the command line tools are inside the app.
+
+    Or from the terminal:
+
+    ```sh
+    brew install junnam586/tap/goguma
+    goguma install
+    ```
+
+    ### What it does
+
+    - Finds the scheduled work already on your machine and reports which jobs
+      have been missing runs, and how often
+    - Wakes for each job, then sleeps again the moment it exits
+    - Learns how long each job takes, so the window fits the work
+    - Releases a hold early if the machine gets hot or the battery runs low
+    - Menu bar app showing what is being held awake and what is coming next
+
+    Requires macOS 26+. Linux builds are included and pass CI, but have seen
+    far less real use.
   footer: |
-    **Full changelog**: https://github.com/junnam586/goguma/compare/{{ .PreviousTag }}...{{ .Tag }}
+    {{ if .PreviousTag }}**Full changelog**: https://github.com/junnam586/goguma/compare/{{ .PreviousTag }}...{{ .Tag }}{{ end }}

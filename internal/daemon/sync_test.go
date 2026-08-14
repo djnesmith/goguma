@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -44,22 +45,82 @@ func TestAdoptOnlyFromWatchedSources(t *testing.T) {
 	}
 }
 
-func TestAdoptSkipsWrappableJobs(t *testing.T) {
+func TestAdoptsWrappableJobsWithoutEditingAnything(t *testing.T) {
 	d := testDaemon(t)
 	if err := d.store.Load(); err != nil {
 		t.Fatal(err)
 	}
 
-	// A wrappable job needs its command line edited before it can be detected.
-	// Adopting one unprompted creates a job that is registered, looks correct,
-	// and is recorded as never-detected on every run, a permanent warning
-	// about a configuration nobody chose.
+	// A wrappable job is adopted rather than skipped. Editing its command line
+	// buys exact timing, but declining to adopt it at all meant the machine
+	// slept through it, which is the failure the tool exists to prevent.
 	d.adoptNew([]scan.Candidate{
 		candidate("crontab job", scan.SourceCrontab, true),
 	}, []string{"crontab"})
 
-	if n := len(d.store.Jobs()); n != 0 {
-		t.Errorf("adopted %d wrappable jobs; they require a human decision", n)
+	jobs := d.store.Jobs()
+	if len(jobs) != 1 {
+		t.Fatalf("adopted %d jobs, want the crontab entry covered", len(jobs))
+	}
+	// Never mark: that is the one mode that needs the command line changed,
+	// and claiming it without the edit records never-detected on every run.
+	if jobs[0].Detection == model.DetectMark {
+		t.Error("adopted as mark-detected without the command line being wrapped")
+	}
+	if !jobs[0].Managed {
+		t.Error("an adopted job should be managed so sync can keep it current")
+	}
+}
+
+func TestAdoptPrefersPatternWhenItIdentifiesOneJob(t *testing.T) {
+	d := testDaemon(t)
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pattern is real detection and costs the user nothing, so a candidate
+	// whose pattern matches only itself should get it rather than falling back
+	// to a fixed window.
+	c := candidate("restic backup", scan.SourceCrontab, true)
+	c.Command = "/usr/local/bin/restic backup /home"
+	d.adoptNew([]scan.Candidate{c}, []string{"crontab"})
+
+	jobs := d.store.Jobs()
+	if len(jobs) != 1 {
+		t.Fatalf("adopted %d jobs, want 1", len(jobs))
+	}
+	if jobs[0].Detection == model.DetectPattern && jobs[0].Match == "" {
+		t.Error("pattern detection with no pattern stored never matches anything")
+	}
+	if jobs[0].Detection == model.DetectNone && jobs[0].Match != "" {
+		t.Error("wake-only job carries a match pattern it will never use")
+	}
+}
+
+func TestAdoptWillNotGiveTwoJobsTheSamePattern(t *testing.T) {
+	d := testDaemon(t)
+	if err := d.store.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two candidates sharing a pattern must not both take it. The daemon
+	// releases a hold when *a* match exits, so the faster one would close the
+	// other's window and every duration recorded would be wrong.
+	a := candidate("backup home", scan.SourceCrontab, true)
+	a.Command = "/usr/local/bin/restic backup /home"
+	b := candidate("backup work", scan.SourceCrontab, true)
+	b.Command = "/usr/local/bin/restic backup /work"
+	d.adoptNew([]scan.Candidate{a, b}, []string{"crontab"})
+
+	seen := map[string]string{}
+	for _, j := range d.store.Jobs() {
+		if j.Detection != model.DetectPattern {
+			continue
+		}
+		if prev, dup := seen[j.Match]; dup {
+			t.Errorf("%q and %q share pattern %q", prev, j.Name, j.Match)
+		}
+		seen[j.Match] = j.Name
 	}
 }
 
@@ -314,12 +375,17 @@ func TestEditingAManagedJobStopsSyncFromRevertingIt(t *testing.T) {
 	}
 }
 
-func TestValidateAutoAdoptRejectsWrappableSources(t *testing.T) {
-	// Crontab and launchd entries need a command line edited to be covered
-	// properly, which is a decision only the user can make.
-	for _, src := range []string{"crontab", "launchd", "systemd"} {
-		if _, err := validateAutoAdopt(src); err == nil {
-			t.Errorf("validateAutoAdopt(%q) should be rejected", src)
+func TestValidateAutoAdoptAcceptsEverySource(t *testing.T) {
+	// Every real source is watchable now, including the three that need a
+	// command line edited for exact timing. They are adopted with detection
+	// that needs no edit, so refusing to watch them only meant the machine
+	// slept through them.
+	for _, src := range []string{"crontab", "launchd", "systemd", "hermes"} {
+		if !slices.Contains(adoptableSources(), src) {
+			continue // not built on this platform
+		}
+		if _, err := validateAutoAdopt(src); err != nil {
+			t.Errorf("validateAutoAdopt(%q) rejected it: %v", src, err)
 		}
 	}
 	if _, err := validateAutoAdopt("nonsense"); err == nil {

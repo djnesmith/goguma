@@ -428,72 +428,77 @@ struct DisclosureHeaderStyle: ButtonStyle {
 }
 
 
-/// The state indicator, shown wherever the app says what it is doing.
+/// The mark, and only the mark.
 ///
-/// The bear for idle and holding, standard symbols for the three exceptional
-/// states, the same split the menu bar makes, so the popover header and the
-/// menu bar glyph are never two different pictures of one state.
-struct StateGlyph: View {
-    let state: GogumaState
+/// Replaces the old `StateGlyph`, which sat left of the title carrying both
+/// the brand and the state and, for the two states that are on screen almost
+/// all the time, carrying neither: `SweetPotatoMark.image` ignores its
+/// `asleep:` argument, and the emoji is drawn `.original`, so no tint ever
+/// landed on it either. One slot therefore read as a logo in `.idle` and
+/// `.holding` and as a severity signal in the other three, which is why it
+/// never looked settled in either position.
+///
+/// So the two jobs are split. This is the wordmark's companion and never
+/// changes; `StateIcon` carries severity, on the line that already changes
+/// colour for it.
+struct BrandGlyph: View {
     var size: CGFloat = Theme.IconSize.row
 
     var body: some View {
         Group {
-            switch state {
-            case .idle:
-                bear(asleep: true)
-            case .holding:
-                bear(asleep: false)
-            case .paused, .cutout, .disconnected:
-                Image(systemName: state.iconName)
-                    .font(.system(size: size))
+            if Theme.Colors.sweetPotato {
+                // `.original`, not `.template`.
+                //
+                // Template rendering throws away every colour in an image and
+                // refills the silhouette with the tint, which for a colour
+                // emoji means discarding the yellow cut face that is the only
+                // reason it reads as a sweet potato rather than as a purple
+                // pebble. The whole point of using Apple's artwork is its own
+                // palette, so it must be drawn as-is and left untinted.
+                Image(nsImage: SweetPotatoMark.image(size: size, asleep: false))
+                    .renderingMode(.original)
+            } else {
+                // `brandFill`, not `accent`. The accent is tuned for text and
+                // lines, where it has to clear 4.5:1, and reads as heavy and
+                // dark as a filled glyph. This mark is a fill, which is what
+                // `brandFill` exists for: unmistakably the brand, sitting only
+                // a little darker than the surface it is on.
+                Image(nsImage: MenuBarMark.image(size: size, asleep: false))
+                    .renderingMode(.template)
+                    .foregroundStyle(Theme.Colors.brandFill)
             }
         }
-        // The bear takes the mark's own colour, never the muted state tint.
-        //
-        // `state.tint` resolves to a grey for idle, and a grey bear on a light
-        // surface reads as black, which is exactly what this mark is not
-        // allowed to be. The exceptional states keep their severity colour,
-        // because there the colour is the message.
-        .foregroundStyle(Theme.Colors.sweetPotato ? Color.primary : tint)
         .accessibilityHidden(true)
+    }
+}
+
+/// The severity symbol for the three states that have something to warn about.
+///
+/// Nothing at all for `.idle` and `.holding`. Those states are already fully
+/// described by the headline's wording and its colour, and a symbol that is
+/// present in every state stops being a signal.
+struct StateIcon: View {
+    let state: GogumaState
+    var size: CGFloat = Theme.IconSize.row
+
+    var body: some View {
+        switch state {
+        case .idle, .holding:
+            EmptyView()
+        case .paused, .cutout, .disconnected:
+            Image(systemName: state.iconName)
+                .font(.system(size: size))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+        }
     }
 
     private var tint: Color {
         switch state {
-        // `brandFill`, not `accent`. The accent is tuned for text and lines,
-        // where it has to clear 4.5:1, as a large filled glyph that reads as
-        // heavy and dark. This mark is a fill, which is exactly what
-        // `brandFill` exists for: present and unmistakably the brand, sitting
-        // only a little darker than the surface it is on.
-        //
-        // Ember when holding, for the same reason: it is a fill, and `ember` is
-        // the lit-hearth counterpart to `brandFill`'s cold one. This is the
-        // mark that sits beside "staying awake", so it should agree with the
-        // counter next to it rather than stay blue while the counter glows.
-        case .idle: Theme.Colors.brandFill
-        case .holding: Theme.Colors.emberFill
         case .cutout: Theme.Colors.danger
         case .paused, .disconnected: Theme.Colors.textSecondary
-        }
-    }
-
-    @ViewBuilder
-    private func bear(asleep: Bool) -> some View {
-        if Theme.Colors.sweetPotato {
-            // `.original`, not `.template`.
-            //
-            // Template rendering throws away every colour in an image and
-            // refills the silhouette with the tint, which for a colour emoji
-            // means discarding the yellow cut face that is the only reason it
-            // reads as a sweet potato rather than as a purple pebble. The
-            // whole point of using Apple's artwork is its own palette, so it
-            // must be drawn as-is and left untinted.
-            Image(nsImage: SweetPotatoMark.image(size: size, asleep: asleep))
-                .renderingMode(.original)
-        } else {
-            Image(nsImage: MenuBarMark.image(size: size, asleep: asleep))
-                .renderingMode(.template)
+        // Unreachable: `body` draws nothing for these.
+        case .idle, .holding: Theme.Colors.textSecondary
         }
     }
 }

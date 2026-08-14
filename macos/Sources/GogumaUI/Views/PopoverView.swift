@@ -101,80 +101,89 @@ struct PopoverView: View {
     /// the better hierarchy anyway: the title says what is happening, the
     /// counter is a detail of it.
     private var header: some View {
+        // No mark on the title row. The wordmark carries the name on its own,
+        // and every arrangement that put a glyph up there cost something: left
+        // of the title indented "goguma" while the lines below stayed flush,
+        // and right of it stranded the mark between the wordmark and the
+        // author link. The mark now rides with the state line instead, where
+        // it has a short piece of text to sit against rather than a gap.
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
-                // Optically centred on the title's cap height, not sitting on
-                // its baseline.
-                //
-                // `.firstTextBaseline` puts an image's *bottom edge* on the
-                // baseline, which for a round glyph beside 20pt text parks it
-                // low and slightly left of where the eye expects it. The guide
-                // below moves the glyph's own centre to the middle of the cap
-                // height instead. Still baseline-driven, so a title that wraps
-                // to two lines keeps the glyph on the first line rather than
-                // drifting to the centre of the block.
-                StateGlyph(state: store.state, size: Theme.StatusItem.glyphSize)
-                    .alignmentGuide(.firstTextBaseline) { d in
-                        // The extra nudge is for the ears.
-                        //
-                        // Centring on cap height is right for a glyph whose mass
-                        // is its centre, but the bear's silhouette carries two
-                        // ears above the head, so its *visual* centre sits above
-                        // its geometric one and the title read as hanging low
-                        // beside it. Lowering the glyph a couple of points puts
-                        // the title through the middle of the face.
-                        d.height / 2
-                            + Theme.Typography.Size.title * Theme.Typography.capHeightRatio
-                            - Theme.Space.xxs
-                    }
-                Text("goguma")
-                    .font(Theme.Typography.popoverTitle)
-                    .foregroundStyle(Theme.Colors.heading)
-                    .themeHeading()
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: Theme.Space.sm)
-                authorLink
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
-                VStack(alignment: .leading, spacing: 2) {
-                    // The state, demoted from the title but still the first
-                    // thing under it and the only line here that changes
-                    // colour, so it stays the thing the eye lands on.
-                    Text(Format.noWidow(headline))
-                        .font(Theme.Typography.headline)
-                        .foregroundStyle(stateColour)
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
+                    Text("goguma")
+                        .font(Theme.Typography.popoverTitle)
+                        .foregroundStyle(Theme.Colors.heading)
                         .themeHeading()
-                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: Theme.Space.sm)
+                    authorLink
+                }
 
-                    if let detail = subheadline {
-                        Text(Format.noWidow(detail))
-                            .font(Theme.Typography.caption)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .themeProse()
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        // The state, demoted from the title but still the first
+                        // thing under it and the only line here that changes
+                        // colour, so it stays the thing the eye lands on.
+                        //
+                        // The severity symbol rides with this line rather than in
+                        // the title row, so the symbol's colour and the wording it
+                        // describes arrive together instead of a red mark up beside
+                        // the brand and its explanation a line below.
+                        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.xs) {
+                            StateIcon(state: store.state, size: Theme.IconSize.row)
+                            Text(Format.noWidow(headline))
+                                .font(Theme.Typography.headline)
+                                .foregroundStyle(stateColour)
+                                .themeHeading()
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                            // Trailing the state, and sized against it rather
+                            // than the title: 16pt beside 15pt text, where 18
+                            // was drawn to sit beside the 20pt wordmark.
+                            //
+                            // Centred on this line's cap height for the same
+                            // reason the title's guide existed — baseline
+                            // alignment parks a round glyph low — but measured
+                            // off `Size.emphasised`, since that is the type it
+                            // now sits next to.
+                            BrandGlyph(size: Self.stateMarkSize)
+                                .alignmentGuide(.firstTextBaseline) { d in
+                                    d.height / 2
+                                        + Theme.Typography.Size.emphasised
+                                        * Theme.Typography.capHeightRatio
+                                }
+                        }
+
+                        if let detail = subheadline {
+                            Text(Format.noWidow(detail))
+                                .font(Theme.Typography.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .themeProse()
+                        }
+                    }
+                    if store.state == .disconnected, Onboarding.canSelfInstall {
+                        Button("Set up…") { Onboarding.runInstaller() }
+                            .buttonStyle(FooterButtonStyle())
+                            .accessibilityHint(
+                                "Opens Terminal and runs the installer, which will ask for your password")
+                    }
+                    Spacer(minLength: Theme.Space.sm)
+                    if let hold = store.status?.primaryHold, store.state == .holding {
+                        Text(holdCounter(hold))
+                            .font(Theme.Typography.counter)
+                            .foregroundStyle(Theme.Colors.stateHolding)
+                            // Never compressed or wrapped: this is the one value
+                            // that ticks, and a counter that reflows as its digits
+                            // change is worse than one that pushes the prose.
+                            .fixedSize()
+                            .accessibilityLabel(holdCounterLabel(hold))
                     }
                 }
-                if store.state == .disconnected, Onboarding.canSelfInstall {
-                    Button("Set up…") { Onboarding.runInstaller() }
-                        .buttonStyle(FooterButtonStyle())
-                        .accessibilityHint(
-                            "Opens Terminal and runs the installer, which will ask for your password")
-                }
-                Spacer(minLength: Theme.Space.sm)
-                if let hold = store.status?.primaryHold, store.state == .holding {
-                    Text(holdCounter(hold))
-                        .font(Theme.Typography.counter)
-                        .foregroundStyle(Theme.Colors.stateHolding)
-                        // Never compressed or wrapped: this is the one value
-                        // that ticks, and a counter that reflows as its digits
-                        // change is worse than one that pushes the prose.
-                        .fixedSize()
-                        .accessibilityLabel(holdCounterLabel(hold))
-                }
-            }
         }
     }
+
+    /// The mark beside the state line. Smaller than the old title glyph because
+    /// the text it sits against is smaller: 15pt here against the title's 20.
+    private static let stateMarkSize: CGFloat = 16
 
     /// A job hold counts up; you want to know how long it has been running.
     /// A manual hold counts down, because the user chose the end.
@@ -277,15 +286,18 @@ struct PopoverView: View {
             if store.status?.sleepBlocked == true {
                 return "Sleep is still blocked, releasing shortly."
             }
-            // Says what happens to the Mac *and* what happens to the jobs. The
-            // old line ("the Mac is free to sleep") stated only an absence of
-            // interference, which leaves the actual question (will my jobs
-            // still run) unanswered.
             if store.status?.starting == true {
                 return "Checking the machine and working out the next wake."
             }
+            // Nothing. "on watch" above and the wake time on the card below
+            // already say the machine can sleep and when it will be woken, so a
+            // sentence restating both sat between them saying nothing new.
+            //
+            // The other idle returns stay: each of them answers a question the
+            // rest of the surface does not. An empty job list in particular
+            // reads as a fault without its line.
             if store.nextWake != nil {
-                return "Your Mac can sleep. It'll be woken when a job is due."
+                return nil
             }
             // Deliberately does NOT repeat store.wakeSuppressed.
             //
@@ -297,9 +309,7 @@ struct PopoverView: View {
             if !store.wakeSuppressed.isEmpty {
                 return "Nothing is scheduled. See below for why."
             }
-            return store.jobs.isEmpty
-                ? "No jobs registered yet."
-                : "Your Mac can sleep. Nothing is due to wake it."
+            return store.jobs.isEmpty ? "No jobs registered yet." : nil
         }
     }
 

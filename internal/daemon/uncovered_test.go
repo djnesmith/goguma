@@ -68,12 +68,12 @@ func TestSingularUncoveredReadsCorrectly(t *testing.T) {
 	if w == nil {
 		t.Fatal("no warning")
 	}
-	for _, want := range []string{"1 scheduled job", " is not being woken", "it is missed"} {
+	for _, want := range []string{"1 scheduled job", " is woken for", "wrapping it gives"} {
 		if !strings.Contains(w.Message, want) {
 			t.Errorf("singular missing %q: %q", want, w.Message)
 		}
 	}
-	for _, bad := range []string{"jobs", "they are"} {
+	for _, bad := range []string{"jobs", "they are", "them", "it is gives"} {
 		if strings.Contains(w.Message, bad) {
 			t.Errorf("singular used the plural %q: %q", bad, w.Message)
 		}

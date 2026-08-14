@@ -163,13 +163,15 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 		}
 	}
 
-	// Jobs this machine has that goguma is not waking for.
+	// Jobs being woken for, but on a fixed window rather than their real
+	// runtime.
 	//
-	// This is last in the list but it is the most consequential thing here:
-	// every other warning describes a job that runs imperfectly, while this
-	// one describes jobs that do not run at all when the Mac is asleep. It was
-	// silent, which made a half-covered install indistinguishable from a
-	// complete one.
+	// This used to describe jobs goguma had found and deliberately not adopted,
+	// which made a half-covered install indistinguishable from a complete one.
+	// They are adopted now, so this is no longer about coverage: it is the
+	// difference between holding a bounded window and holding exactly as long
+	// as the job runs. Still worth saying, because the bounded window is what
+	// costs battery, but it is an upgrade rather than a gap.
 	d.mu.RLock()
 	uncovered := d.uncovered
 	d.mu.RUnlock()
@@ -188,8 +190,9 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 		out = append(out, model.Warning{
 			Kind: model.WarnUncovered,
 			Message: fmt.Sprintf(
-				"%s on this machine %s not being woken for, so %s missed while it sleeps (%s)",
-				pluralJobs(n), verbIs(n), verbThey(n), list),
+				"%s %s woken for on a fixed window because the command cannot "+
+					"be watched; wrapping %s gives exact timing (%s)",
+				pluralJobs(n), verbIs(n), objectThem(n), list),
 			Fix: "goguma import",
 		})
 	}
@@ -240,4 +243,14 @@ func verbThey(n int) string {
 		return "it is"
 	}
 	return "they are"
+}
+
+// objectThem is the object pronoun, for sentences that do something *to* the
+// jobs rather than saying something is happening to them. `verbThey` carries
+// its own verb and reads as "wrapping it is gives exact timing" here.
+func objectThem(n int) string {
+	if n == 1 {
+		return "it"
+	}
+	return "them"
 }

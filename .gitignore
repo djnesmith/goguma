@@ -4,7 +4,7 @@ macos/.build/
 macos/build/
 
 # A separate Xcode project that happens to live in this folder. It is not
-# Goguma source and should have its own repo.
+# goguma source and should have its own repo.
 adrafinil-main/
 adrafinil-main*.zip
 
