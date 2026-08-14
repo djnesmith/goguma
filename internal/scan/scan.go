@@ -145,10 +145,10 @@ const LatenessThreshold = 5 * time.Minute
 
 // Options tune the filtering.
 type Options struct {
-	// MinInterval rejects entries firing more often than this. Waking the
-	// machine every five minutes defeats the entire purpose: the battery cost
-	// of the wakes dwarfs anything the job saves, and such a job will run on
-	// the next natural wake regardless.
+	// MinInterval rejects entries firing more often than this. Zero means no
+	// schedule is rejected for its frequency, which is the default: the cost
+	// of a frequent job is real, but it is measured and reported rather than
+	// guessed at here, and refusing to even offer the job hides it instead.
 	MinInterval time.Duration
 
 	// Lookback bounds how far back miss-risk is measured.
@@ -162,10 +162,8 @@ type Options struct {
 
 func DefaultOptions() Options {
 	return Options{
-		// An hour. A job running more often than this is essentially never
-		// worth a dedicated wake: the wakes cost far more battery than the
-		// runs are worth, and it will run on the next natural wake anyway.
-		MinInterval: time.Hour,
+		// No frequency floor. See Config.MinImportInterval.
+		MinInterval: 0,
 		Lookback:    14 * 24 * time.Hour,
 	}
 }

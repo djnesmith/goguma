@@ -37,6 +37,9 @@ const (
 	OpResume     Op = "resume"
 	OpTestMatch  Op = "match.test"
 	OpSync       Op = "sync"
+	// OpAckNotices marks one-off notices as seen, so they are not shown
+	// again. Sent by a surface that has actually displayed them.
+	OpAckNotices Op = "notices.ack"
 
 	// goguma-mark -> daemon. These are the exact-detection path: the
 	// wrapper announces the job's real start and exit rather than the daemon
@@ -111,6 +114,18 @@ type JobView struct {
 
 	// CeilingReason explains how the ceiling was derived, for `--explain`.
 	CeilingReason string `json:"ceiling_reason,omitempty"`
+
+	// FiresPerNight is how many times this job is expected to fire across an
+	// unattended stretch, and NightlyBatteryPct what that is projected to
+	// cost. Zero cost means the job has never run on battery, which is
+	// different from costing nothing and has to be displayed differently.
+	//
+	// Computed here rather than by each client, because it needs the schedule
+	// parser to know how often the job actually fires. A twice-daily job and
+	// a job every thirty minutes have wildly different overnight costs at the
+	// same cost per run, and that comparison is the whole point of showing it.
+	FiresPerNight     int     `json:"fires_per_night"`
+	NightlyBatteryPct float64 `json:"nightly_battery_pct"`
 
 	// Holding is true if this job currently has an open wake window.
 	Holding bool `json:"holding"`

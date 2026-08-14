@@ -79,13 +79,22 @@ func runInstall(ctx *Context, args []string) error {
 		// working a second ago. It also fails outright when this is run
 		// anywhere without a terminal, which is worth knowing up front.
 		r.Blank()
-		r.Line(r.Bold("You will be asked for your Mac login password."))
+		r.Line(r.Bold("macOS will ask for your login password."))
 		r.Printf("%s\n", r.Muted(
-			"That is macOS asking, not goguma; it is the standard `sudo` prompt, and it is"))
+			"Waking a sleeping Mac needs root access, so the helper that does it is"))
 		r.Printf("%s\n", r.Muted(
-			"needed to install the piece that can wake a sleeping Mac. Nothing is typed to us and"))
+			"installed as root. That prompt is macOS's own sudo. Your password goes to"))
 		r.Printf("%s\n", r.Muted(
-			"nothing is stored. Run this in Terminal: a password cannot be entered without one."))
+			"macOS and nowhere else, and sudo needs a terminal, which is why this is one."))
+
+		// What is about to be installed as root, checked rather than asserted.
+		//
+		// Everything else printed here is the tool describing itself. This is
+		// the operating system describing the actual bytes, and it is the only
+		// line on the screen that a tampered build could not produce.
+		if err := reportHelperSignature(r); err != nil {
+			return err
+		}
 		r.Blank()
 	}
 
@@ -95,8 +104,10 @@ func runInstall(ctx *Context, args []string) error {
 	}
 	if privileged > 0 {
 		r.Printf("%s\n", r.Muted(fmt.Sprintf(
-			"%d step(s) run as root via sudo. The helper's entire job is to block sleep and", privileged)))
-		r.Printf("%s\n", r.Muted("schedule wakes; it holds no schedules or policy of its own."))
+			"%s run as root. The helper only blocks sleep and schedules wakes; it holds",
+			pluralSteps(privileged))))
+		r.Printf("%s\n", r.Muted(
+			"no schedules or policy of its own, and `goguma uninstall` removes it."))
 		r.Blank()
 	}
 
@@ -358,3 +369,43 @@ be reconstructed, so throwing it away is opt-in.
 
 // helperSocketPath is exposed for doctor.
 func helperSocketPath() string { return paths.HelperSocket }
+
+// pluralSteps avoids "1 step(s)", which is a programmer declining to choose.
+func pluralSteps(n int) string {
+	if n == 1 {
+		return "1 step"
+	}
+	return fmt.Sprintf("%d steps", n)
+}
+
+// reportHelperSignature prints what macOS says about the binary that is about
+// to be installed as root, and refuses to continue if it says the wrong thing.
+//
+// This is the difference between a promise and a check. Everything else the
+// installer prints is goguma describing itself, which a modified copy would
+// print just as convincingly. `codesign --verify` is the operating system
+// reading the actual bytes, and a binary altered after signing fails it.
+//
+// A missing or unrunnable `codesign` prints nothing rather than claiming
+// anything, because "we could not check" and "we checked and it is fine" must
+// never look the same.
+func reportHelperSignature(r *render.Renderer) error {
+	src, err := install.HelperSource()
+	if err != nil {
+		// Nothing to verify yet; BuildPlan already failed for this reason if
+		// it mattered.
+		return nil
+	}
+	sig, err := install.VerifyHelper(src)
+	if err != nil {
+		// Returned, not printed. The dispatcher renders whatever comes back,
+		// so printing here as well put the same failure on screen twice.
+		return fmt.Errorf(
+			"%w\n  refusing to install it as root; download goguma again from the releases page", err)
+	}
+	if desc := sig.Describe(); desc != "" {
+		r.Blank()
+		r.Printf("  %s %s\n", r.Good(r.Sym().OK), r.Muted("the helper is "+desc))
+	}
+	return nil
+}

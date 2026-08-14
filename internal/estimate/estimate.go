@@ -28,7 +28,8 @@ type Result struct {
 	P95       time.Duration
 	Samples   int
 	ColdStart bool
-	// Reason is a short human explanation ("p95 of 12 runs x1.2").
+	// Reason is a short human explanation ("nearly the slowest of 12 runs,
+	// plus 20%"). Written for a settings pane, not a statistics one.
 	Reason string
 }
 
@@ -133,15 +134,33 @@ func Compute(job *model.Job, runs []model.Run, cfg config.Config) Result {
 	return res
 }
 
+// Written for someone reading a settings pane, not a statistics one.
+//
+// "cold start" is a term of art for a state the reader experiences simply as
+// not having used the thing yet, and "p95" names a percentile to an audience
+// that has no reason to know what one is. Both said the true thing to about a
+// tenth of the people who would ever read them.
 func coldStartReason(have, need int) string {
 	if have == 0 {
-		return "cold start: no completed runs yet"
+		return "no finished runs yet, using the default"
 	}
-	return "cold start: " + plural(have, "run") + " of " + itoa(need) + " needed"
+	return "still learning, " + itoa(have) + " of " + itoa(need) + " runs"
+}
+
+// headroomPct turns a multiplier into the percentage a reader can act on:
+// 1.2 is 20% more time, which is the sentence, rather than a number to
+// multiply by.
+func headroomPct(multiplier float64) int {
+	return int(((multiplier - 1) * 100) + 0.5)
 }
 
 func reasonFor(res Result, raw time.Duration, cfg config.Config) string {
-	base := "p95 of " + plural(res.Samples, "run") + " ×" + trimFloat(cfg.CeilingMultiplier)
+	// "nearly the slowest", because p95 is the near-top of the range rather
+	// than the maximum: it deliberately ignores the one freak run so a single
+	// stall does not raise the window for every run after it. The multiplier
+	// reads as the headroom it is rather than as a factor to apply.
+	base := "nearly the slowest of " + plural(res.Samples, "run") +
+		", plus " + itoa(headroomPct(cfg.CeilingMultiplier)) + "%"
 	switch {
 	case raw < cfg.MinCeiling.D():
 		return base + ", raised to the " + model.HumanDuration(cfg.MinCeiling.D()) + " minimum"

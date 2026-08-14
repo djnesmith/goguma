@@ -75,22 +75,35 @@ struct DaemonUnavailableView: View {
                 SetupDisclosure()
             }
 
-            HStack(spacing: Theme.Space.sm) {
-                if Onboarding.canSelfInstall {
-                    Button("Set Up goguma", systemImage: Theme.Icon.add) {
-                        Onboarding.runInstaller()
-                    }
-                    .buttonStyle(.borderedProminent)
+            // One button, in the app's own clothes.
+            //
+            // `.borderedProminent` is AppKit's stock blue capsule, which is the
+            // one control on this surface that belongs to a different program.
+            //
+            // "Try Again" is gone with it. A visible popover polls the daemon
+            // once a second, so the button did exactly what happens on its own
+            // a second later, and offering it next to a password prompt implied
+            // the password might not have taken.
+            if Onboarding.canSelfInstall {
+                Button { Onboarding.runInstaller() } label: {
+                    Text("Set up goguma")
+                        .font(Theme.Typography.rowLabel)
+                        .frame(maxWidth: .infinity)
                 }
-                if let retry {
-                    Button("Try Again", systemImage: Theme.Icon.refresh, action: retry)
-                        .buttonStyle(.bordered)
-                }
+                .buttonStyle(SetupButtonStyle())
+            } else if let retry {
+                // No installer to run, so the only useful action is to look
+                // again after the user has run it themselves.
+                Button("Check again", systemImage: Theme.Icon.refresh, action: retry)
+                    .buttonStyle(.bordered)
             }
         }
         .padding(.horizontal, compact ? Theme.Space.md : Theme.Space.xl)
-        .padding(.vertical, compact ? Theme.Space.sm : Theme.Space.xl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // `xs` when compact. The header now ends on `xs` too, and the rows
+        // inside carry `sm` between them, so the panel's own padding is the
+        // only place left where the seam above it can be tightened.
+        .padding(.vertical, compact ? Theme.Space.xs : Theme.Space.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private var iconName: String {
@@ -112,6 +125,35 @@ struct DaemonUnavailableView: View {
     }
 }
 
+/// The one button on the setup panel, in the app's own material.
+///
+/// Filled with the brand rather than the system accent: this surface has a
+/// palette and AppKit's blue is not in it. Sized and shaped like the popover's
+/// own controls so it reads as part of the same program, and it is the only
+/// control here, so it takes the full width rather than sitting in a row of
+/// one.
+struct SetupButtonStyle: ButtonStyle {
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color.white)
+            .padding(.vertical, Theme.Space.sm)
+            .padding(.horizontal, Theme.Space.md)
+            .background(fill(pressed: configuration.isPressed), in: Theme.cardShape)
+            .contentShape(Theme.cardShape)
+            .onHover { isHovering in
+                withAnimation(.easeOut(duration: 0.12)) { hovering = isHovering }
+            }
+    }
+
+    private func fill(pressed: Bool) -> Color {
+        // Pressed is darker, hover a shade lighter, neither is a new hue.
+        if pressed { return Theme.Colors.accent.opacity(0.82) }
+        return hovering ? Theme.Colors.accent.opacity(0.92) : Theme.Colors.accent
+    }
+}
+
 /// The three facts someone needs before installing a background service that
 /// runs as root and reads their scheduler.
 ///
@@ -121,28 +163,78 @@ struct DaemonUnavailableView: View {
 /// against the source, which is the only reason to believe any of it.
 struct SetupDisclosure: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+        // `sm`, not `xs`. Three single-line facts set four points apart read as
+        // one block of text rather than as three separate things.
+        VStack(alignment: .leading, spacing: Theme.Space.sm) {
             // Literal symbols, not the app's semantic ones. `Theme.Icon.cutout`
             // is a warning triangle, which turned a plain statement of what
             // gets installed into an alert about it, and reusing the
             // disconnected glyph for "stays on this Mac" said nothing.
-            row("calendar", "Reads your scheduled jobs, so it knows when to wake")
+            // The argument, at the size of an argument.
+            //
+            // This was a fourth bullet, level with "no telemetry", which made
+            // the one fact that justifies the whole prompt the least prominent
+            // thing on the panel. Waking a sleeping Mac is privileged: no
+            // amount of design removes that, so the honest move is to lead
+            // with it rather than bury it in a list.
+            // One line, at `rowLabel` rather than `headline`.
+            //
+            // 15pt needed two lines in the 276pt this panel actually has, and a
+            // claim broken across two lines reads as a paragraph rather than as
+            // a statement. 13pt medium holds it on one and keeps the weight
+            // that makes it the loudest thing here; the scale factor is a floor
+            // for a wider system font, not a design.
+            Text("Waking a sleeping Mac needs root access.")
+                .font(Theme.Typography.rowLabel)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.88)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            row("calendar", "Reads your scheduled jobs to know when to wake")
             row("laptopcomputer", "Stays on this Mac. No account, no telemetry")
-            row("key", "Installs a helper that only blocks sleep and sets wake alarms")
+            // Last, because it is the consequence of the line above the list.
+            row("key", "Installs a small helper for it, hence the password")
+
+            // The three lines above are the summary; this is the whole account,
+            // written to be checked rather than believed.
+            Link(destination: Self.securityDoc) {
+                Text("Read what it can and cannot do")
+                    .font(Theme.Typography.caption)
+                    .underline()
+            }
+            .foregroundStyle(Theme.Colors.accent)
+            // Centred under the block rather than hung off the text column.
+            // It belongs to all three lines, not to the last one.
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, Theme.Space.xxs)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private static let securityDoc = URL(
+        string: "https://github.com/junnam586/goguma/blob/main/SECURITY.md")!
+
     private func row(_ icon: String, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.xs) {
+            // A fixed column, because SF Symbols are not a fixed width. A
+            // calendar, a laptop and a key are three different sizes, so each
+            // line of text began at a different x and the block read as
+            // ragged. `.trailing` keeps the symbols themselves on one edge too.
             Image(systemName: icon)
                 .font(Theme.Typography.iconInline)
                 .foregroundStyle(Theme.Colors.textTertiary)
+                .frame(width: Theme.IconSize.row, alignment: .center)
                 .accessibilityHidden(true)
+            // One line each. Three two-line rows read as a wall of prose
+            // rather than as three facts, and the scale factor is a floor
+            // rather than a design: the strings are written to fit, and this
+            // only catches a wider system font.
             Text(text)
                 .font(Theme.Typography.caption)
                 .foregroundStyle(Theme.Colors.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
             Spacer(minLength: 0)
         }
     }

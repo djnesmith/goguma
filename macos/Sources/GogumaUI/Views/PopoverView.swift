@@ -27,14 +27,25 @@ struct PopoverView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
                 .padding(.horizontal, Theme.Space.md)
-                .padding(.top, Theme.Space.md)
-                .padding(.bottom, Theme.Space.sm)
+                // `sm`, not `md`. The popover window contributes its own inset
+                // above this, so 16 here measured as 24pt of air over the
+                // wordmark: a band of nothing before the app has said anything.
+                .padding(.top, Theme.Space.sm)
+                // `xs` below. The panel that follows brings its own padding, and
+                // two `sm` either side of that seam stacked into a gap wider
+                // than the space between any two lines inside the panel.
+                .padding(.bottom, Theme.Space.xs)
 
             if store.connection.blocksContent {
+                // Sized by its content, not to a constant.
+                //
+                // A fixed height taller than what is in it, centred, splits the
+                // surplus above and below, which is where the band of nothing
+                // under the state line came from. The panel is short enough
+                // that the popover does not need it bounded.
                 DaemonUnavailableView(error: store.connection.error, compact: true) {
                     Task { await store.refresh() }
                 }
-                .frame(height: Theme.Surface.popoverOfflinePanelHeight)
                 .padding(.horizontal, Theme.Space.md)
             } else {
                 ThemeHairline()
@@ -108,7 +119,14 @@ struct PopoverView: View {
         // author link. The mark now rides with the state line instead, where
         // it has a short piece of text to sit against rather than a gap.
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
+                // Centred, not baseline-aligned.
+                //
+                // This row is two items now that the mark moved to the state
+                // line, and they are 20pt and 11pt. A shared baseline is
+                // correct typography and reads as a mistake at that ratio: the
+                // small text's mass ends up well below the large text's, so
+                // the credit looked like it had slipped down the row.
+                HStack(alignment: .center, spacing: Theme.Space.sm) {
                     Text("goguma")
                         .font(Theme.Typography.popoverTitle)
                         .foregroundStyle(Theme.Colors.heading)
@@ -747,14 +765,12 @@ struct PopoverView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(FooterButtonStyle(underlinesOnHover: true))
+            .buttonStyle(FooterButtonStyle(underlined: true))
             .help("Open Jun Nam's LinkedIn profile")
             .accessibilityLabel("Open the profile of Jun Nam, who made goguma")
         }
         .font(Theme.Typography.caption)
-        // Sits on the title's baseline rather than its centre, so it reads as
-        // a credit beside the name and not as a control floating next to it.
-        .alignmentGuide(.firstTextBaseline) { d in d[.firstTextBaseline] }
+
     }
 
     // Author rather than project: the popover already says goguma on the left,
@@ -864,7 +880,13 @@ struct PopoverView: View {
 /// a Mac popover; a link out is the exception, because the underline is what
 /// says "this opens a browser" before you click it.
 private struct FooterButtonStyle: ButtonStyle {
-    var underlinesOnHover = false
+    /// Draw the underline at rest, not only under the pointer.
+    ///
+    /// Hover-only underlining is discoverable by people who were already going
+    /// to click. For the credit in the title row, which is the one link on the
+    /// surface and sits among plain labels, the rule has to be there before
+    /// the pointer is.
+    var underlined = false
 
     @State private var hovering = false
 
@@ -873,7 +895,7 @@ private struct FooterButtonStyle: ButtonStyle {
             .foregroundStyle(
                 hovering ? Theme.Colors.textPrimary : Theme.Colors.textSecondary
             )
-            .underline(underlinesOnHover && hovering)
+            .underline(underlined)
             .opacity(configuration.isPressed ? 0.55 : 1)
             .contentShape(Rectangle())
             .onHover { isHovering in

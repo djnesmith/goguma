@@ -137,6 +137,16 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 		}
 		return map[string]any{"skipped_fire": fire}, nil
 
+	// Sent by a surface that has shown the notices and is going away, so the
+	// user is not told the same thing on every launch for three days.
+	//
+	// Acknowledged on close rather than on open. Acking as the popover
+	// appears would clear the notice the same second it was rendered, and the
+	// next poll a second later would erase it while the user was reading it.
+	case ipc.OpAckNotices:
+		d.ackNotices()
+		return nil, nil
+
 	case ipc.OpSync:
 		adopted, updated, retired := d.SyncNow(ctx)
 		return map[string]int{"added": adopted, "updated": updated, "retired": retired}, nil
@@ -224,6 +234,14 @@ func (d *Daemon) Status() model.Status {
 	return st
 }
 
+// unattendedStretch is the window the nightly battery projection covers.
+//
+// Eight hours: a night's sleep, which is the stretch nobody is watching and
+// the one where a job firing every thirty minutes turns into a flat battery
+// by morning. Any figure here is arbitrary; this one is arbitrary and
+// recognisable, which is what makes the number mean something to a reader.
+const unattendedStretch = 8 * time.Hour
+
 func (d *Daemon) jobsList() ipc.JobsListResp {
 	d.mu.RLock()
 	cfg := d.cfg
@@ -261,11 +279,25 @@ func (d *Daemon) jobsList() ipc.JobsListResp {
 			}
 			wake := fire.Add(-buffer)
 			v.NextWake = &wake
+
+			// How often it fires across an unattended night. `TypicalInterval`
+			// is the smallest gap the schedule actually produces, which is the
+			// one that matters: a job at 09:00 and 09:05 costs two wakes, not
+			// one spaced a day apart.
+			if gap := sched.TypicalInterval(now); gap > 0 {
+				v.FiresPerNight = int(unattendedStretch / gap)
+			}
 		}
 
 		runs, _ := d.store.Runs(job.ID)
 		v.Stats = estimate.Summarize(job, runs, cfg)
 		v.CeilingReason = estimate.Compute(job, runs, cfg).Reason
+		// Only where there is a measurement. A job that has never run on
+		// battery has BatteryPerRun zero, and multiplying that out would
+		// report "0.0%" for something whose cost is simply unknown.
+		if v.Stats.BatteryPerRun > 0 {
+			v.NightlyBatteryPct = float64(v.FiresPerNight) * v.Stats.BatteryPerRun
+		}
 		out = append(out, v)
 	}
 	return ipc.JobsListResp{Jobs: out, Groups: d.store.Groups()}

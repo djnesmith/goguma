@@ -643,7 +643,7 @@ enum Theme {
         /// 150 fitted a glyph, a sentence and two buttons. The panel now also
         /// states what setup reads, where it goes, and what needs the password,
         /// which is three more lines and the reason someone can agree to it.
-        static let popoverOfflinePanelHeight: CGFloat = 190
+        static let popoverOfflinePanelHeight: CGFloat = 222
 
         /// Sized to fit a normal machine's job list without slack.
         ///

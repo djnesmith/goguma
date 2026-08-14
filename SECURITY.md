@@ -96,6 +96,13 @@ scan at all.
 
 `goguma install` prints what it is about to do, and `--dry-run` prints it
 without doing it. The password prompt is macOS's own `sudo`, in your terminal.
+
+**It checks the helper before installing it.** Before anything runs as root,
+`codesign --verify --strict` is run against the exact binary about to be
+copied, and the identity that signed it is printed. A binary altered after it
+was signed fails that check and the install stops. This is the one line in the
+output that a tampered copy could not produce, because it is macOS reading the
+bytes rather than goguma describing itself.
 The app opens Terminal for this rather than asking inside a window of its own,
 because a program asking for your password in its own text field is the shape
 of a phishing prompt, and it is a habit worth not teaching.
@@ -103,6 +110,33 @@ of a phishing prompt, and it is a habit worth not teaching.
 `goguma uninstall` removes the daemon, the helper and the binaries. Your
 jobs, config and run history are kept, so reinstalling picks up where you left
 off. Add `--purge` to delete those too.
+
+## Who made this
+
+One person wrote goguma. Every commit in the repository is under the same
+name, from the first one to the current one, and there is no organisation
+behind it and nobody else with push access.
+
+The Mac app is signed with a Developer ID that Apple issued to me by name.
+That is checkable without trusting anything on this page:
+
+```sh
+codesign -dvvv /Applications/goguma.app
+```
+
+The authority chain reads `Developer ID Application: Juhyun Nam (735JVWA424)`,
+then Apple's own certification authority, then the Apple Root CA. Apple
+verified who I am before issuing that certificate, and the signature breaks if
+a single byte of the app changes after I sign it. A build that was tampered
+with on the way to you does not open.
+
+<!-- Jun: replace this paragraph with your own words. Who you are, what you
+     work on, why you built this. Two or three sentences is plenty. Keep it
+     specific and checkable: this section is worth exactly as much as the
+     things in it someone could go and confirm. -->
+
+I read anything sent to me about this, and you can find me on
+[LinkedIn](https://www.linkedin.com/in/jun-nam-4ba16b326/).
 
 ## Reporting something
 

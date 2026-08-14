@@ -240,10 +240,27 @@ final class StatusStore {
         guard let count = surfaces[surface] else { return }
         if count <= 1 {
             surfaces.removeValue(forKey: surface)
+            // The popover has just closed having shown whatever notices were
+            // pending, so they have been seen.
+            //
+            // On close rather than on open: acking as it appears would clear
+            // the notice the same second it rendered, and the next poll a
+            // second later would erase it while the user was still reading.
+            if surface == .popover, hasDismissibleNotice {
+                Task { try? await client.ackNotices() }
+            }
         } else {
             surfaces[surface] = count - 1
         }
         startPolling(immediately: false)
+    }
+
+    /// Whether anything pending is the kind that gets dismissed by being read.
+    ///
+    /// Checked so the common case, a popover opened to look at the next wake,
+    /// does not send a message on every close.
+    private var hasDismissibleNotice: Bool {
+        warnings.contains { $0.kind == .retired }
     }
 
     private var hasVisibleSurface: Bool { !surfaces.isEmpty }

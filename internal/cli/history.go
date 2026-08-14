@@ -80,7 +80,7 @@ func printHistory(r *render.Renderer, resp ipc.HistoryResp) {
 	r.KeyValue([][2]string{
 		{"runs", fmt.Sprintf("%d recorded", st.Runs)},
 		{"typical", st.Typical.String() + r.Muted("  (median)")},
-		{"p95", st.P95.String()},
+		{"slow run", st.P95.String() + r.Muted("  (all but the slowest)")},
 		{"ceiling", ceilingNote(r, st)},
 		{"trend", r.Accent(spark)},
 	})

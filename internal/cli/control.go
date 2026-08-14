@@ -113,7 +113,7 @@ Settings:
   default_ceiling          ceiling for a job with no history yet (default 5m)
   min_ceiling              floor for the learned ceiling (default 30s)
   max_ceiling              cap for the learned ceiling (default 2h)
-  ceiling_multiplier       applied to the p95 of recent runs (default 1.2)
+  ceiling_multiplier       headroom on the slow-run figure (default 1.2, so +20%)
   history_window           how many recent runs the estimator considers
   min_runs_for_estimate    runs needed before the learned ceiling is used
   thermal_cutout_c         force-release above this temperature, 70-95
@@ -125,7 +125,8 @@ Settings:
   webhook_url              POST target for problem events
   notify_on_missed_job     notify when a job is never detected
   use_wake_or_power_on     also power on a machine that is shut down
-  min_import_interval      shortest schedule 'import' will propose
+  min_import_interval      shortest schedule worth a wake. 0 (the default)
+                           covers everything, however often it fires
   auto_adopt               schedulers watched for new jobs. 'all' restores the
                            default (everything adoptable), 'off' disables it,
                            or name sources comma-separated.`

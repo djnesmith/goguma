@@ -66,12 +66,30 @@ func TestNoScheduleIsExcluded(t *testing.T) {
 	}
 }
 
-func TestHighFrequencyIsExcluded(t *testing.T) {
-	// Waking every five minutes costs far more battery than the job saves,
-	// and it will run on the next natural wake regardless.
+func TestFrequentJobsAreKeptByDefault(t *testing.T) {
+	// No frequency floor now. A five-minute job is expensive to wake for, and
+	// that is the user's call to make with the cost in front of them rather
+	// than the scanner's to make by never mentioning the job.
 	c, kept := evalOne(t, Entry{Name: "poller", Schedule: "*/5 * * * *"})
-	if kept || c.Reason != ReasonTooFrequent {
-		t.Errorf("expected exclusion as too frequent, got kept=%v reason=%q", kept, c.Reason)
+	if !kept {
+		t.Errorf("a frequent job was filtered out with no floor set: reason=%q", c.Reason)
+	}
+}
+
+func TestAFrequencyFloorStillExcludesWhenSet(t *testing.T) {
+	// The knob still works for anyone who wants it back, and the comparison
+	// stays inclusive: a job at exactly the limit is excluded, because a
+	// 30-minute job against a 30-minute floor is 48 wakes a day.
+	opts := DefaultOptions()
+	opts.MinInterval = 30 * time.Minute
+
+	entries := []Entry{{Name: "poller", Source: SourceCrontab, Schedule: "*/30 * * * *"}}
+	keep, filtered := Evaluate(entries, nil, time.Now(), opts)
+	if len(keep) != 0 {
+		t.Errorf("a 30m job survived a 30m floor")
+	}
+	if len(filtered) != 1 || filtered[0].Reason != ReasonTooFrequent {
+		t.Errorf("filtered = %+v, want one entry reasoned too frequent", filtered)
 	}
 }
 

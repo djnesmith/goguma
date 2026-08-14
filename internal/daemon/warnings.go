@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/junnam586/goguma/internal/config"
 	"github.com/junnam586/goguma/internal/ipc"
@@ -161,6 +162,36 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 				Fix: fmt.Sprintf("goguma edit %s --max-runtime <duration>", job.ID),
 			})
 		}
+	}
+
+	// Jobs that vanished from the scheduler that created them.
+	//
+	// Said out loud rather than left to be noticed. Adoption is silent by
+	// design, which is right while jobs are appearing; the same silence when
+	// one disappears means the list quietly gets shorter and the machine
+	// quietly stops waking for something, and the user finds out by counting
+	// rows. There is no fix to offer: the job is gone from its source, which
+	// is usually deliberate. This is a notice, not a problem.
+	if gone := d.recentRetirements(time.Now()); len(gone) > 0 {
+		names := make([]string, 0, 3)
+		for _, r := range gone {
+			if len(names) == 3 {
+				break
+			}
+			names = append(names, r.Name)
+		}
+		list := strings.Join(names, ", ")
+		if len(gone) > len(names) {
+			list += ", …"
+		}
+		out = append(out, model.Warning{
+			Kind: model.WarnRetired,
+			Message: fmt.Sprintf(
+				"%s %s gone from the scheduler that created %s, so goguma stopped "+
+					"waking for %s (%s)",
+				pluralJobs(len(gone)), verbIs(len(gone)), objectThem(len(gone)),
+				objectThem(len(gone)), list),
+		})
 	}
 
 	// Jobs being woken for, but on a fixed window rather than their real

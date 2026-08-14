@@ -116,9 +116,20 @@ type Config struct {
 	AutoAdoptInterval model.Duration `json:"auto_adopt_interval"`
 
 	// MinImportInterval is the shortest schedule `import` will propose
-	// adopting. Anything firing more often than this does not need a wake:
-	// it will run on the next natural wake anyway, and waking for it would
-	// cost far more battery than the job saves.
+	// adopting. Anything firing more often than this is skipped on the
+	// grounds that it will run on the next natural wake anyway.
+	//
+	// Zero by default: no schedule is too frequent to cover. The hour that
+	// used to be here decided on the user's behalf that their every-30-minutes
+	// monitoring check was not worth waking for, which is a judgement about
+	// their work rather than about sleep, and it was made silently at the one
+	// moment they were being shown what goguma had found.
+	//
+	// The battery is defended by the mechanisms that measure it rather than by
+	// this guess: a wake is refused below the cutout plus the job's own
+	// measured drain, and `list` prints what the registered set costs per
+	// firing. Someone who registers a five-minute job sees the cost and can
+	// raise this themselves.
 	MinImportInterval model.Duration `json:"min_import_interval"`
 
 	// EventLogMaxBytes triggers rotation of events.jsonl.
@@ -146,7 +157,7 @@ func Default() Config {
 		CutoutRearmMarginPct: 5,
 		NotifyOnMissedJob:    true,
 		AutoAdoptInterval:    model.Duration(2 * time.Minute),
-		MinImportInterval:    model.Duration(time.Hour),
+		MinImportInterval:    0,
 		EventLogMaxBytes:     10 << 20,
 	}
 }
@@ -180,7 +191,19 @@ func (c *Config) Normalize() []string {
 	clampDur("tick_interval", &c.TickInterval, time.Second, 5*time.Minute, d.TickInterval)
 	clampDur("poll_interval", &c.PollInterval, 250*time.Millisecond, time.Minute, d.PollInterval)
 	clampDur("wake_reassert_interval", &c.WakeReassertInterval, 10*time.Second, 10*time.Minute, d.WakeReassertInterval)
-	clampDur("min_import_interval", &c.MinImportInterval, 0, 24*time.Hour, d.MinImportInterval)
+	// Not clampDur: that reads zero as "absent" and substitutes the default,
+	// which is right for every other duration here (a zero wake buffer is not
+	// a choice anyone makes) and wrong for this one, where zero is the
+	// meaningful value meaning "no schedule is too frequent". Without this,
+	// `config set min_import_interval 0s` reported success and changed
+	// nothing.
+	if c.MinImportInterval.D() < 0 {
+		fixed = append(fixed, "min_import_interval cannot be negative; using 0")
+		c.MinImportInterval = 0
+	} else if c.MinImportInterval.D() > 24*time.Hour {
+		fixed = append(fixed, "min_import_interval is above the 24h maximum; using 24h")
+		c.MinImportInterval = model.Duration(24 * time.Hour)
+	}
 	clampDur("auto_adopt_interval", &c.AutoAdoptInterval, 30*time.Second, time.Hour, d.AutoAdoptInterval)
 
 	if c.MinCeiling > c.MaxCeiling {

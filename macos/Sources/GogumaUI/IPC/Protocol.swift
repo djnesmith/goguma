@@ -46,6 +46,9 @@ enum DaemonOp: String, Sendable {
     case resume
     /// Re-read every watched scheduler now and adopt or retire accordingly.
     case sync
+    /// Marks one-off notices as seen. Sent when a surface that displayed them
+    /// goes away, never when one appears.
+    case ackNotices = "notices.ack"
     case matchTest = "match.test"
 }
 
@@ -159,12 +162,11 @@ enum DaemonError: Error, LocalizedError, Sendable, Equatable {
         // current situation as the thing they should go and do.
         case .notInstalled:
             Onboarding.canSelfInstall
-                ? "Takes a few seconds. macOS will ask for your password."
+                ? ""
                 : "Run `goguma install` in Terminal to set it up."
         case .notRunning:
             Onboarding.canSelfInstall
-                ? "Takes a few seconds. macOS will ask for your password, which is "
-                    + "what lets goguma wake a sleeping Mac."
+                ? ""
                 : "Run `goguma install` in Terminal to set it up. It asks for your Mac "
                     + "login password, which macOS needs to install the part that can wake "
                     + "a sleeping Mac."

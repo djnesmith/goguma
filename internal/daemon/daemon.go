@@ -73,6 +73,16 @@ type Daemon struct {
 	// declined to take, kept so they can be reported rather than forgotten.
 	uncovered []scan.Candidate
 
+	// retired names jobs dropped because they vanished from their source,
+	// with when it happened, so the next person to open the app is told
+	// rather than left to notice a shorter list.
+	//
+	// Held in memory and time-boxed rather than acknowledged. There is no
+	// "seen" signal to hang it on: the app polls constantly for the menu bar
+	// glyph, so opening the popover is indistinguishable from not opening it.
+	// The permanent record is the event log; this is the notice.
+	retired []retiredJob
+
 	// observers are the schedulers on this machine that keep their own run
 	// records, keyed by source name. Resolved once at startup: which providers
 	// exist does not change while the daemon runs.

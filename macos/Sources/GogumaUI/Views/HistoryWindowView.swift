@@ -114,7 +114,8 @@ struct HistoryWindowView: View {
     }
 
     /// Whether this job's runtime is measured at all. Wake-only jobs are never
-    /// observed, so `typical` and `p95` are structurally empty and showing them
+    /// observed, so `typical` and the slow-run figure are structurally empty
+    /// and showing them
     /// as blank statistics implies data that is merely missing.
     private var isObservable: Bool {
         response?.job.detection.isObservable ?? true
@@ -131,7 +132,8 @@ struct HistoryWindowView: View {
                     tint: Theme.Colors.textPrimary
                 )
                 statBlock(
-                    "p95", stats.p95.displayOrNil ?? Format.empty, tint: Theme.Colors.textPrimary
+                    "Slow run", stats.p95.displayOrNil ?? Format.empty,
+                    tint: Theme.Colors.textPrimary
                 )
                 statBlock(
                     "Ceiling", stats.ceiling.displayOrNil ?? Format.empty,

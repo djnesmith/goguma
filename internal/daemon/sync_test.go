@@ -326,14 +326,21 @@ func TestUpdateRetiresAJobThatBecameTooFrequent(t *testing.T) {
 	}
 	d.adoptNew([]scan.Candidate{candidate("briefing", "hermes", false)}, []string{"hermes"})
 
-	// The user moved the job from daily to every 10 minutes. Adoption would
-	// have refused this schedule outright (ReasonTooFrequent), so the update
-	// path must not smuggle it in: 144 wakes a day is the battery drain the
-	// import policy exists to prevent. The adoption decision is revisited
-	// and the job retired; it will still run on natural wakes.
+	// The user moved the job from daily to every 10 minutes, on a config that
+	// does set a frequency floor. Adoption would refuse that schedule, so the
+	// update path must not smuggle it in: the two must agree about what is
+	// adoptable, or a job can enter by being edited rather than by being
+	// found. It still runs on natural wakes; it just stops earning a wake of
+	// its own.
+	//
+	// The floor is set explicitly here because the default is now zero. That
+	// is the point of the test: it checks the two paths agree, not what the
+	// shipped threshold happens to be.
+	cfg := config.Default()
+	cfg.MinImportInterval = model.Duration(time.Hour)
 	d.updateChanged([]scan.Entry{{
 		Name: "briefing", Source: "hermes", Schedule: "every 10m",
-	}}, []string{"hermes"}, config.Default())
+	}}, []string{"hermes"}, cfg)
 
 	if _, ok := d.store.Job("briefing"); ok {
 		t.Error("a schedule adoption would refuse was accepted through the update path")

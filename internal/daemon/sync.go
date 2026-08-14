@@ -198,6 +198,51 @@ func (d *Daemon) adoptNew(candidates []scan.Candidate, sources []string) (adopte
 	return adopted
 }
 
+// retiredJob is one dropped job, kept only long enough to be reported.
+type retiredJob struct {
+	Name string
+	At   time.Time
+}
+
+// retiredNoticeWindow is how long a retirement is worth mentioning to someone
+// who never opens the app.
+//
+// A backstop, not the mechanism. With the menu bar app installed the notice is
+// cleared the moment the popover that showed it closes, which is the honest
+// answer to "has this been seen". This window exists for a CLI-only machine,
+// where nothing can report having displayed anything.
+//
+// A day. Long enough that someone running `status` in the course of an
+// ordinary day still catches it, and short enough that nobody is told the same
+// thing on a second morning.
+const retiredNoticeWindow = 24 * time.Hour
+
+// ackNotices drops every pending one-off notice.
+//
+// The time window below is a backstop for someone who only ever uses the CLI.
+// With the app installed this is what actually clears them, the moment the
+// popover that showed them closes.
+func (d *Daemon) ackNotices() {
+	d.mu.Lock()
+	d.retired = nil
+	d.mu.Unlock()
+}
+
+// recentRetirements returns the notices still inside the window, pruning the
+// rest as it goes.
+func (d *Daemon) recentRetirements(now time.Time) []retiredJob {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	kept := d.retired[:0]
+	for _, r := range d.retired {
+		if now.Sub(r.At) < retiredNoticeWindow {
+			kept = append(kept, r)
+		}
+	}
+	d.retired = kept
+	return slices.Clone(kept)
+}
+
 // adoptionSiblings is every other command a suggested pattern must not match:
 // the rest of this scan, plus everything already registered.
 //
@@ -347,6 +392,13 @@ func (d *Daemon) retireVanished(entries []scan.Entry, coverage []scan.Coverage, 
 			continue
 		}
 		d.releaseJob(j.ID)
+		d.mu.Lock()
+		d.retired = append(d.retired, retiredJob{Name: j.Name, At: time.Now()})
+		d.mu.Unlock()
+		d.event(store.Event{
+			Kind: store.EventJobRetired, JobID: j.ID, JobName: j.Name,
+			Message: "no longer in " + j.Source + "; goguma stopped waking for it",
+		})
 		d.log.Info("retired a job that no longer exists in its source",
 			"job", j.ID, "source", j.Source)
 		retired++

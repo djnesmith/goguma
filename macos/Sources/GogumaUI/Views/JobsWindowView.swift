@@ -72,7 +72,10 @@ struct JobsWindowView: View {
             } else {
                 searchField
                 ThemeHairline()
+                columnHeader
                 jobList
+                ThemeHairline()
+                overnightCost
                 ThemeHairline()
                 detailPane
             }
@@ -249,6 +252,130 @@ struct JobsWindowView: View {
         let trouble = store.jobs.filter { $0.worstSeverity != nil }.count
         if trouble > 0 { parts.append(Format.count(trouble, "needs attention", plural: "need attention")) }
         return parts.joined(separator: " · ")
+    }
+
+    // MARK: - Column header
+
+    /// Names the columns, because three of them are bare numbers.
+    ///
+    /// The list had none: a row read "4x daily / 8h 39m / 1.2%" with nothing
+    /// saying that the middle figure is when it next runs rather than how long
+    /// it takes, or that the last one is a night's battery rather than a
+    /// percentage of anything else. The name column is deliberately unlabelled;
+    /// a column of job names does not need to be told it is one.
+    ///
+    /// Widths are the row's own, so the two line up. Any change to a column
+    /// here has to be made in `JobRow` as well; they are matched by hand
+    /// because the row's leading controls are not a column and cannot share a
+    /// layout with one.
+    private var columnHeader: some View {
+        HStack(spacing: Theme.Space.sm) {
+            Spacer(minLength: 0)
+
+            Text("Schedule")
+                .frame(width: 116, alignment: .leading)
+            Text("Next run")
+                .frame(width: 84, alignment: .trailing)
+            Text("Per run")
+                .frame(width: 72, alignment: .trailing)
+                .help("Battery one firing of this job costs, averaged over the runs "
+                    + "that happened on battery.")
+            Text("Per sleep*")
+                .frame(width: 80, alignment: .trailing)
+                .help("Battery this job is projected to cost across a night asleep.")
+            Color.clear.frame(width: Theme.IconSize.hero, height: 1)
+        }
+        .font(Theme.Typography.sectionLabel)
+        .foregroundStyle(Theme.Colors.textTertiary)
+        .lineLimit(1)
+        .padding(.horizontal, Theme.Space.md)
+        .padding(.vertical, Theme.Space.xs)
+    }
+
+    // MARK: - Overnight cost
+
+    /// What the enabled set costs a sleeping Mac over eight hours, and which
+    /// jobs make up that number.
+    ///
+    /// A total on its own is a fact nobody can act on. The point of this row is
+    /// the breakdown beside it: "4.8%" tells you the morning will be worse, and
+    /// "3.9% of it is the uptime check" tells you what to do about it. Ordered
+    /// by cost so the answer is the first thing read.
+    ///
+    /// Only jobs measured on battery appear. A job that has never run on
+    /// battery has no evidence behind it, and folding a guess into a total
+    /// makes the whole number a guess.
+    @ViewBuilder
+    private var overnightCost: some View {
+        let measured = store.jobs
+            .filter { $0.job.enabled && $0.hasMeasuredCost && $0.nightlyBatteryPct > 0 }
+            .sorted { $0.nightlyBatteryPct > $1.nightlyBatteryPct }
+        let total = measured.reduce(0) { $0 + $1.nightlyBatteryPct }
+
+        // The footnote is tied to the column, not to the total.
+        //
+        // It used to live inside this block, so on a machine with nothing
+        // measured yet the header still said "Per sleep*" and the asterisk
+        // pointed at nothing at all.
+        VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+            if !measured.isEmpty {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
+                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                    Text("Overnight")
+                        .font(Theme.Typography.sectionLabel)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Text(String(format: "%.1f%%", total))
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(
+                            total >= 10 ? Theme.Colors.warning : Theme.Colors.textPrimary
+                        )
+                }
+                .fixedSize()
+                .help("What these jobs are projected to take out of the battery across "
+                    + "eight hours asleep, from what each has actually cost on battery.")
+
+                // The breakdown. Truncated rather than scrolled: the top few
+                // are the whole answer, and the rest is a long tail of jobs
+                // that are not why the battery moved.
+                Text(breakdown(measured))
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Theme.Space.md)
+            .padding(.top, Theme.Space.sm)
+            }
+
+            // What the asterisk in the column heading points at.
+            //
+            // Eight hours is a choice, and a number whose basis is not stated
+            // is a number nobody can argue with. It sits here rather than in a
+            // tooltip because a reader comparing two figures should not have to
+            // hover to find out what they are figures of.
+            Text("* Per sleep assumes 8 hours asleep, from what each job has "
+                + "actually cost on battery.")
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .padding(.horizontal, Theme.Space.md)
+                .padding(.bottom, Theme.Space.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func breakdown(_ jobs: [JobView]) -> String {
+        let shown = jobs.prefix(3).map {
+            "\($0.job.displayName) " + String(format: "%.1f%%", $0.nightlyBatteryPct)
+        }
+        var text = shown.joined(separator: " · ")
+        if jobs.count > shown.count {
+            let rest = jobs.dropFirst(shown.count).reduce(0) { $0 + $1.nightlyBatteryPct }
+            text += " · " + Format.count(jobs.count - shown.count, "other")
+                + " " + String(format: "%.1f%%", rest)
+        }
+        return text
     }
 
     // MARK: - List
@@ -512,12 +639,6 @@ struct JobsWindowView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    if !view.ceilingReason.isEmpty {
-                        Text(Format.noWidow(view.ceilingReason))
-                            .font(Theme.Typography.caption)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
                 }
                 .padding(Theme.Space.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -596,8 +717,14 @@ struct JobsWindowView: View {
 
             if view.hasMeasuredRuntime {
                 stat("Typical", view.stats.typical.displayOrNil ?? Format.empty)
-                stat("p95", view.stats.p95.displayOrNil ?? Format.empty)
-                stat("Ceiling", view.stats.ceiling.displayOrNil ?? Format.empty)
+                stat(
+                    "Slow run", view.stats.p95.displayOrNil ?? Format.empty,
+                    help: "How long all but the slowest run took. The window is built\nfrom this rather than the maximum, so one stall does not widen every run after it."
+                )
+                stat(
+                    "Ceiling", view.stats.ceiling.displayOrNil ?? Format.empty,
+                    note: view.ceilingReason
+                )
                 stat(
                     "Failures", "\(view.stats.failures)",
                     tint: view.stats.failures > 0 ? Theme.Colors.danger : nil
@@ -609,7 +736,8 @@ struct JobsWindowView: View {
             } else {
                 stat(
                     "Hold window", view.stats.ceiling.displayOrNil ?? Format.empty,
-                    help: "How long the Mac is kept awake for this job."
+                    help: "How long the Mac is kept awake for this job.",
+                    note: view.ceilingReason
                 )
             }
 
@@ -627,7 +755,8 @@ struct JobsWindowView: View {
     }
 
     private func stat(
-        _ label: String, _ value: String, tint: Color? = nil, help: String? = nil
+        _ label: String, _ value: String, tint: Color? = nil, help: String? = nil,
+        note: String? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.xxs) {
             Text(label)
@@ -637,6 +766,18 @@ struct JobsWindowView: View {
                 .font(Theme.Typography.body)
                 .foregroundStyle(tint ?? Theme.Colors.textPrimary)
                 .lineLimit(1)
+            // Under the number it explains.
+            //
+            // The ceiling's reason used to be a line below the whole row, which
+            // put "p95 of 5 runs ×1.2" beneath the schedule, two columns from
+            // the hold window it describes, reading as a stray note about
+            // whichever value happened to sit above it.
+            if let note, !note.isEmpty {
+                Text(note)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .lineLimit(1)
+            }
         }
         .fixedSize(horizontal: true, vertical: false)
         // A four-word column heading cannot carry its own definition, and
@@ -714,7 +855,7 @@ private struct JobRow: View {
                 .foregroundStyle(Theme.Colors.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(width: 150, alignment: .leading)
+                .frame(width: 116, alignment: .leading)
                 .help(view.scheduleText)
 
             // Monospaced and right-aligned: these are counting values that
@@ -728,14 +869,37 @@ private struct JobRow: View {
                              : Theme.Typography.tabularSmall)
                 .foregroundStyle(countdownTint)
                 .lineLimit(1)
-                .frame(width: 96, alignment: .trailing)
+                .frame(width: 84, alignment: .trailing)
 
-            if view.hasMeasuredRuntime {
-                DurationSparkline(runs: view.stats.recent)
-                    .opacity(view.job.enabled ? 1 : 0.4)
-            } else {
-                Color.clear.frame(width: Theme.Chart.sparklineSize.width, height: 1)
-            }
+            // What this job costs a sleeping Mac overnight.
+            //
+            // Per night rather than per run, because per run is not the
+            // comparison anyone needs: a 2% job that fires once and a 0.4% job
+            // that fires sixteen times are the same number in a "per run"
+            // column and eight times apart in what they do to a battery.
+            Text(view.perRunCostText)
+                .font(Theme.Typography.tabularSmall)
+                .foregroundStyle(
+                    view.hasMeasuredCost ? Theme.Colors.textSecondary : Theme.Colors.textTertiary
+                )
+                .lineLimit(1)
+                .frame(width: 72, alignment: .trailing)
+                .help(view.hasMeasuredCost
+                    ? "One firing costs this much battery."
+                    : "This job has not run on battery yet.")
+
+            Text(view.nightlyCostText)
+                .font(Theme.Typography.tabularSmall)
+                .foregroundStyle(
+                    view.nightlyCostIsHeavy
+                        ? Theme.Colors.warning
+                        : (view.hasMeasuredCost
+                            ? Theme.Colors.textSecondary
+                            : Theme.Colors.textTertiary)
+                )
+                .lineLimit(1)
+                .frame(width: 80, alignment: .trailing)
+                .help(view.nightlyCostHelp)
 
             // A fixed-width slot, so a row with a warning does not shift every
             // column to its left relative to the rows without one.

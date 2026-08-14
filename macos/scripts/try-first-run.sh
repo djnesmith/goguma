@@ -14,6 +14,9 @@
 set -euo pipefail
 
 APP="${1:-/Applications/goguma.app}"
+# How long to leave the rehearsal copy up. Nothing in the product depends on
+# this; it is only how long you get to look before the real app comes back.
+LOOK="${LOOK_SECONDS:-30}"
 [ -d "$APP" ] || { echo "no app at $APP"; exit 1; }
 
 SANDBOX="$(mktemp -d /tmp/goguma-first-run.XXXXXX)"
@@ -32,11 +35,13 @@ echo
 echo "  Expect: no window for about a second, then the popover opens by itself"
 echo "          under the menu bar potato, saying goguma isn't running."
 echo
+echo "  Looking for ${LOOK}s. Set LOOK_SECONDS to change that."
+echo
 GOGUMA_STATE_DIR="$SANDBOX" "$APP/Contents/MacOS/goguma" &
 APP_PID=$!
 
-sleep 12
-echo "Done looking? Closing the rehearsal copy."
+sleep "$LOOK"
+echo "Time is up. Closing the rehearsal copy."
 kill "$APP_PID" 2>/dev/null || true
 wait "$APP_PID" 2>/dev/null || true
 

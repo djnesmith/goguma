@@ -143,6 +143,7 @@ enum WarningKind: String, LenientRawEnum {
     case scheduleParse = "schedule_parse"
     case commandChanged = "command_changed"
     case uncovered
+    case retired
     case unknown
 
     static var unknownCase: WarningKind { .unknown }
@@ -156,7 +157,11 @@ enum WarningKind: String, LenientRawEnum {
         // failure. Decoding it as `.unknown` demoted it below every other
         // warning and off the popover's visible rows.
         case .neverDetected, .wakeFailed, .scheduleParse, .uncovered: true
-        case .helperDown, .ceilingHits, .commandChanged, .unknown: false
+        // `retired` is news, not a fault: a job left its scheduler, which is
+        // usually because someone deleted it on purpose. It has to be seen,
+        // which is why it is a warning at all, but tinting it as critical
+        // would put a red mark on a normal Tuesday.
+        case .helperDown, .ceilingHits, .commandChanged, .retired, .unknown: false
         }
     }
 }
@@ -807,7 +812,50 @@ struct JobView: Codable, Sendable, Hashable, Identifiable {
     var ceilingReason: String
     var holding: Bool
 
+    /// Firings across an unattended night, and what they are projected to
+    /// cost. Reported by the daemon, which has the schedule parser; zero cost
+    /// means never measured on battery rather than free.
+    var firesPerNight: Int
+    var nightlyBatteryPct: Double
+
     var id: String { job.id }
+
+    /// Whether there is a real measurement behind the projection.
+    var hasMeasuredCost: Bool { stats.batteryPerRun > 0 }
+
+    /// What one firing costs, or a dash where nothing has been measured.
+    var perRunCostText: String {
+        guard hasMeasuredCost else { return Format.empty }
+        return stats.batteryPerRun < 0.1
+            ? "<0.1%"
+            : String(format: "%.1f%%", stats.batteryPerRun)
+    }
+
+    /// The overnight cost, or a dash where nothing has been measured.
+    ///
+    /// Never "0.0%". A job that has not yet run on battery costs an unknown
+    /// amount, and printing zero for it would put the cheapest-looking number
+    /// in the column against the job nobody has evidence about.
+    var nightlyCostText: String {
+        guard hasMeasuredCost, nightlyBatteryPct > 0 else { return Format.empty }
+        return nightlyBatteryPct < 0.1
+            ? "<0.1%"
+            : String(format: "%.1f%%", nightlyBatteryPct)
+    }
+
+    /// Whether this job's overnight cost is large enough to point at.
+    ///
+    /// 5% of a battery to get through one night is where this stops being
+    /// rounding and starts being a morning with less charge.
+    var nightlyCostIsHeavy: Bool { hasMeasuredCost && nightlyBatteryPct >= 5 }
+
+    var nightlyCostHelp: String {
+        guard hasMeasuredCost else {
+            return "This job has not run on battery yet, so there is nothing measured to project."
+        }
+        return "\(firesPerNight) firings across 8 hours asleep, at "
+            + String(format: "%.1f%%", stats.batteryPerRun) + " each."
+    }
 
     enum CodingKeys: String, CodingKey {
         case job
@@ -818,6 +866,8 @@ struct JobView: Codable, Sendable, Hashable, Identifiable {
         case scheduleError = "schedule_error"
         case stats
         case ceilingReason = "ceiling_reason"
+        case firesPerNight = "fires_per_night"
+        case nightlyBatteryPct = "nightly_battery_pct"
         case holding
     }
 
@@ -831,6 +881,8 @@ struct JobView: Codable, Sendable, Hashable, Identifiable {
         scheduleError = c.value(.scheduleError, "")
         stats = c.value(.stats, Stats())
         ceilingReason = c.value(.ceilingReason, "")
+        firesPerNight = c.value(.firesPerNight, 0)
+        nightlyBatteryPct = c.value(.nightlyBatteryPct, 0)
         holding = c.value(.holding, false)
     }
 

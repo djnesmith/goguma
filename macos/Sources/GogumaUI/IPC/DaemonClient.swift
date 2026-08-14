@@ -201,6 +201,12 @@ extension DaemonClient {
         try await send(.resume)
     }
 
+    /// Marks one-off notices as seen, so they are not repeated on the next
+    /// launch. Sent when a surface that showed them closes.
+    func ackNotices() async throws {
+        try await send(.ackNotices)
+    }
+
     /// Evaluates a pattern against the live process table, so the add sheet can
     /// say "that matches nothing" at configuration time rather than silently
     /// failing at 3am.

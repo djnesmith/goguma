@@ -85,15 +85,18 @@ enum MenuBarIcon {
             base = Theme.Colors.sweetPotato
                 ? SweetPotatoMark.image(size: Theme.StatusItem.glyphSize, asleep: false)
                 : MenuBarMark.image(size: Theme.StatusItem.glyphSize, asleep: false)
+        // The mark, in every state.
+        //
+        // These three used to swap it for an SF Symbol, so a Mac whose daemon
+        // was not running showed a stock system glyph where the app's own mark
+        // belongs, and the icon a user looks for to find goguma was the one
+        // thing missing exactly when they needed to open it. The menu bar says
+        // *which app*, not *what it is doing*; the popover behind it says the
+        // rest, in words, with colour.
         case .paused, .cutout, .disconnected:
-            base = NSImage(
-                systemSymbolName: state.iconName,
-                accessibilityDescription: state.label
-            )?.withSymbolConfiguration(
-                NSImage.SymbolConfiguration(
-                    pointSize: Theme.StatusItem.glyphSize, weight: .regular
-                )
-            ) ?? NSImage()
+            base = Theme.Colors.sweetPotato
+                ? SweetPotatoMark.image(size: Theme.StatusItem.glyphSize, asleep: true)
+                : MenuBarMark.image(size: Theme.StatusItem.glyphSize, asleep: true)
         }
 
         // The emoji is already the finished artwork: drawing a tint over it
@@ -101,10 +104,12 @@ enum MenuBarIcon {
         // full-colour sweet potato arrived in the menu bar as a flat purple
         // blob. The same mistake as `.renderingMode(.template)` in the popover
         // header, in a second place.
-        if Theme.Colors.sweetPotato, case .idle = state {
-            return base
-        }
-        if Theme.Colors.sweetPotato, case .holding = state {
+        // The emoji is finished artwork and carries its own palette, so it is
+        // never tinted. Painting a state colour over it with `.sourceAtop`
+        // repaints every pixel it covers, which is how a full-colour sweet
+        // potato once arrived in the menu bar as a flat purple blob. Now that
+        // every state draws the mark, that applies to every state.
+        if Theme.Colors.sweetPotato {
             return base
         }
 

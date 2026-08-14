@@ -22,6 +22,10 @@ type Plan struct {
 	Steps []Step
 }
 
+// HelperSource resolves the helper binary this install would copy, so the
+// caller can inspect it before anything runs as root.
+func HelperSource() (string, error) { return findBinary("goguma-helper") }
+
 // Step is one action, with whether it needs elevation.
 type Step struct {
 	Description string
@@ -33,6 +37,14 @@ type Step struct {
 	Path string
 	Run  func() error
 }
+
+// VerifyHelper reports what the operating system says about the helper binary
+// this install would place as root.
+//
+// Exported because the decision belongs to the caller: the CLI prints the
+// identity and refuses on a bad signature, which is a policy choice rather
+// than something a plan builder should make on its own.
+func VerifyHelper(path string) (Signature, error) { return checkSignature(path) }
 
 // Artifacts lists every path an install creates.
 func Artifacts(l paths.Layout) []string {

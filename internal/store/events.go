@@ -28,6 +28,9 @@ const (
 	EventDaemonStart   EventKind = "daemon_start"
 	EventDaemonStop    EventKind = "daemon_stop"
 	EventHelperState   EventKind = "helper_state"
+	// EventJobRetired: a job goguma had adopted vanished from the scheduler
+	// that created it, so goguma stopped waking for it.
+	EventJobRetired EventKind = "job_retired"
 )
 
 // Event is one line of events.jsonl, the audit trail for every wake, hold,

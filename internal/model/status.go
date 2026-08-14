@@ -133,6 +133,15 @@ const (
 	// not waking for. Silence here is the worst failure it has: the user
 	// installed a tool to stop missing jobs and is still missing them.
 	WarnUncovered WarningKind = "uncovered"
+	// WarnRetired: a job goguma was waking for no longer exists in the
+	// scheduler that created it, so it has been dropped.
+	//
+	// Worth saying out loud rather than leaving to be noticed. Adoption is
+	// silent by design, which is right when jobs are appearing; the same
+	// silence applied to a job disappearing means the list quietly gets
+	// shorter and the machine quietly stops waking for something, and the
+	// user finds out by counting rows.
+	WarnRetired WarningKind = "retired"
 )
 
 // Warning is a user-actionable problem. Each carries a Fix string that is
