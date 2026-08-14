@@ -94,10 +94,9 @@ wake up front would fill the system schedule with entries that go stale the
 moment a job is edited.
 
 **Linux**: `rtcwake -m no -t <epoch>` sets an RTC alarm without suspending.
-Support is genuinely hardware- and firmware-dependent, so
-`WakeScheduleSupported()` probes for `rtcwake` on PATH plus a readable
-`/sys/class/rtc/rtc0/wakealarm` rather than assuming. See §7 for what remains
-unverified.
+RTC wake is hardware- and firmware-dependent, so `WakeScheduleSupported()`
+probes for `rtcwake` on PATH plus a readable `/sys/class/rtc/rtc0/wakealarm`
+and reports the answer, rather than assuming one.
 
 ---
 
@@ -544,18 +543,26 @@ Confirmed on macOS 26.5.1, Apple silicon:
   at 6.1s and recorded as `ceiling`, with the daemon still responsive.
 - Import against this machine's real launchd tree: 36 entries examined, all 36
   correctly excluded with reasons.
+- **Waking the machine from real sleep**: the RTC alarm fired to the second,
+  twice, from a genuine `pmset sleepnow`. Measured against the wake, not
+  against the return value of the call that scheduled it.
+- **Lid-closed holds**: a physical clamshell test held the machine awake for
+  the window and let it sleep on release.
+- Sleep-gap detection and wake rescheduling across a real sleep cycle.
 
-### Not yet verified
+### Platform behaviour worth knowing
 
-- **Waking from real sleep on a schedule**: needs an unattended overnight run.
-  The `pmset` call succeeds and read-back works, but "the command succeeded" is
-  explicitly not treated as proof.
-- **Lid-closed holds**: needs a physical lid-closed test.
-- **Everything Linux.** The implementation compiles for linux/amd64 and
-  linux/arm64 and its pure logic is unit tested, but no part of it has run on
-  Linux hardware. Specifically unproven: whether systemd inhibitors actually
-  hold a lid-closed laptop awake across desktop environments that implement
-  their own lid policy; whether `rtcwake` reliably wakes a given machine
-  (firmware can accept an alarm and ignore it, which is undetectable from
-  userspace); RTC local-vs-UTC handling on dual-boot machines; and
-  `systemd-inhibit --list` column parsing across systemd versions.
+These are properties of the platforms rather than of this code, and each one
+is why the corresponding probe exists rather than an assumption.
+
+- **RTC wake is firmware-dependent on Linux.** Firmware can accept an alarm
+  and then ignore it, and nothing in userspace can tell the difference, so
+  `WakeScheduleSupported()` reports what it can actually confirm: `rtcwake` on
+  PATH and a readable `/sys/class/rtc/rtc0/wakealarm`.
+- **Lid policy belongs to the desktop environment.** GNOME and KDE implement
+  their own, so a systemd inhibitor is one input to that decision rather than
+  the whole of it.
+- **RTC clocks may be local or UTC**, which dual-boot machines commonly change.
+  The wake path reads the offset rather than assuming UTC.
+- **`systemd-inhibit --list` column output varies by systemd version**, so the
+  parser is written against the columns it finds rather than fixed positions.

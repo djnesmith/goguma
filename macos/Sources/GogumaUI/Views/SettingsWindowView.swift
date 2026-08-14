@@ -252,10 +252,10 @@ struct SettingsWindowView: View {
                 )
                 .disabled(store.config == nil)
                 .help(
-                    "goguma watches schedulers that run their own jobs and registers new "
-                        + "ones as they appear. Crontab and launchd entries are never adopted "
-                        + "automatically; covering those means editing a command line, which "
-                        + "is your decision. Use `goguma import` for them."
+                    "goguma watches every scheduler on this Mac and registers new jobs as "
+                        + "they appear, including crontab and launchd. It never edits your "
+                        + "crontab to do it, so a job whose process it cannot recognise gets "
+                        + "a fixed window rather than exact timing."
                 )
             }
 
@@ -340,18 +340,6 @@ struct SettingsWindowView: View {
             // It is the same threshold restated with the rearm margin added, so
             // it belongs under the control that governs it, in caption grey,
             // where nobody will try to drag it.
-            if let floor = derivedWakeFloor {
-                unlabelledRow {
-                    Text("Won\u{2019}t wake at all under \(floor)")
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                        .help(
-                            "The cutout plus the rearm margin. Waking the Mac at exactly the "
-                                + "release threshold would spend charge and then immediately "
-                                + "give up."
-                        )
-                }
-            }
         }
     }
 
@@ -383,7 +371,15 @@ struct SettingsWindowView: View {
                 .frame(maxWidth: .infinity)
 
                 Text(format(value.wrappedValue))
-                    .font(Theme.Typography.tabularSmall)
+                    // The row's own type, not the tabular one.
+                    //
+                    // `tabularSmall` is 11pt monospaced, which exists for
+                    // digits that change in place a second at a time. These
+                    // change only while a thumb is being dragged, and next to
+                    // a 13pt proportional label the monospace read as code
+                    // rather than as the value of the setting above it.
+                    // `.monospacedDigit()` below still holds the width steady.
+                    .font(Theme.Typography.rowLabel)
                     .foregroundStyle(Theme.Colors.textPrimary)
                     // Beside the thumb, not at the window's edge. It was pinned
                     // far right with the whole track between it and its label,
@@ -396,10 +392,6 @@ struct SettingsWindowView: View {
         .help(help)
     }
 
-    private var derivedWakeFloor: String? {
-        guard let config = store.config, config.cutoutRearmMarginPct > 0 else { return nil }
-        return "\(config.wakeFloorPct)%"
-    }
 
     // MARK: - Alerts
 
@@ -499,6 +491,48 @@ struct SettingsWindowView: View {
                 .padding(.bottom, Theme.Space.xs)
                 .gridCellColumns(2)
             }
+
+            // The bounds on the learned ceiling, and the headroom above the
+            // battery cutout.
+            //
+            // These were settable from `goguma config` and nowhere in the app,
+            // so the two surfaces disagreed about what was configurable at all.
+            // They are here rather than in Timing because they bound a value
+            // goguma works out for itself, which is a different kind of
+            // decision from "how early to wake".
+            settingsRow("Never hold less than") {
+                DurationPicker(
+                    presets: [15, 30, 60, 120].map { WGDuration(seconds: $0) },
+                    current: store.config?.minCeiling ?? .zero
+                ) { apply("min_ceiling", $0.wireString) }
+            }
+            .help(
+                "A floor under the learned window. A job measured faster than this still "
+                    + "gets this much, so a brief stall does not end the hold early."
+            )
+
+            settingsRow("Never hold more than") {
+                DurationPicker(
+                    presets: [1800, 3600, 7200, 14400].map { WGDuration(seconds: $0) },
+                    current: store.config?.maxCeiling ?? .zero
+                ) { apply("max_ceiling", $0.wireString) }
+            }
+            .help(
+                "The cap that ends a hung job's hold. However long a job has taken "
+                    + "before, it never holds sleep off for longer than this."
+            )
+
+            settingsRow("Battery headroom") {
+                PercentPicker(
+                    presets: [1, 5, 10, 20],
+                    current: store.config?.cutoutRearmMarginPct ?? 0
+                ) { apply("cutout_rearm_margin_pct", String($0)) }
+            }
+            .help(
+                "How far above the cutout the battery must recover before holds resume, "
+                    + "so a machine sitting on the threshold does not release and re-take "
+                    + "a hold repeatedly."
+            )
         }
     }
 
@@ -524,8 +558,17 @@ struct SettingsWindowView: View {
     /// pane. It is now one line that answers the only question worth asking at a
     /// glance (is this thing connected) with the full dump a click away for
     /// the rare moment it matters.
+    /// Whether the app is talking to the daemon, and nothing else.
+    ///
+    /// It used to also carry a "Copy Diagnostics" button and report the helper
+    /// separately. Both were built for filing a bug rather than for using the
+    /// app: the helper is an implementation detail with no action attached, and
+    /// a copy button for socket paths and protocol versions is a developer tool
+    /// sitting permanently in a settings pane. Between them they wedged the
+    /// transient action message into whatever width was left, which is what
+    /// made the row read as unevenly spaced. `goguma doctor` prints all of it.
     private var statusBar: some View {
-        HStack(spacing: Theme.Space.sm) {
+        HStack(spacing: Theme.Space.xs) {
             Image(systemName: connectionIcon)
                 .font(Theme.Typography.iconInline)
                 .foregroundStyle(connectionTint)
@@ -535,21 +578,12 @@ struct SettingsWindowView: View {
                 .foregroundStyle(Theme.Colors.textSecondary)
                 .lineLimit(1)
 
-            Spacer(minLength: Theme.Space.md)
+            Spacer(minLength: Theme.Space.sm)
 
             if let message = store.actionMessage {
                 ActionMessageView(message: message)
-                    .frame(maxWidth: 220)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-
-            Button("Copy Diagnostics") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(diagnostics, forType: .string)
-                store.note("Diagnostics copied.")
-            }
-            .controlSize(.small)
-            .help("Copies background service and helper versions, the socket path, and protocol "
-                + "versions, the details a bug report needs.")
         }
         .padding(.horizontal, Theme.Space.md)
         .padding(.vertical, Theme.Space.sm)
@@ -559,11 +593,7 @@ struct SettingsWindowView: View {
 
     private var connectionSummary: String {
         switch store.connection {
-        case .connected:
-            let helper = (store.status?.helperConnected ?? false)
-                ? "helper connected"
-                : "helper not connected"
-            return "Connected · \(helper)"
+        case .connected: return "Connected"
         case .connecting: return "Connecting…"
         case .unreachable: return "goguma isn't running"
         case .mismatch: return "Version mismatch"
@@ -589,31 +619,6 @@ struct SettingsWindowView: View {
         case .unreachable: Theme.Colors.textSecondary
         case .mismatch, .failing: Theme.Colors.warning
         }
-    }
-
-    private var diagnostics: String {
-        var lines = [
-            "goguma diagnostics",
-            "background service: \(connectionSummary)",
-            "background service version: \(Format.orEmpty(store.status?.daemonVersion))",
-            "helper: \(helperValue)",
-            "sleep blocked: \((store.status?.sleepBlocked ?? false) ? "yes" : "no")",
-            "protocol: \(WGProtocol.version)",
-            "socket: \(WGProtocol.socketPath)",
-        ]
-        if let status = store.status {
-            lines.append("status schema: \(status.schemaVersion)")
-        }
-        if let updated = store.lastUpdated {
-            lines.append("last updated: \(Format.ago(updated, from: store.now))")
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    private var helperValue: String {
-        guard let status = store.status else { return Format.empty }
-        guard status.helperConnected else { return "not connected" }
-        return status.helperVersion.isEmpty ? "connected" : "connected (\(status.helperVersion))"
     }
 
     // MARK: - Applying

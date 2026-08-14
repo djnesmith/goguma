@@ -29,6 +29,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // when to tint the battery reading as a problem, and waiting for the
         // user to open Settings first would leave that quietly wrong.
         Task { await store.loadConfig() }
+
+        presentFirstRunIfNeeded()
+    }
+
+    /// Opens the popover once, on the first launch that finds no daemon.
+    ///
+    /// This is an `LSUIElement` app: no Dock icon, no window, no app switcher
+    /// entry. Double-clicking it in Applications therefore produced no visible
+    /// response at all beyond a new glyph appearing among a row of menu bar
+    /// icons. Someone who has just dragged an app across and opened it is
+    /// entitled to think it failed, and the one thing they need to do next was
+    /// behind a click they had no reason to make.
+    ///
+    /// Only when there is genuinely something to do. A launch that finds a
+    /// working daemon opens nothing, because a menu bar app that presents
+    /// itself unbidden every login is a worse offence than a quiet one.
+    private func presentFirstRunIfNeeded() {
+        guard Onboarding.canSelfInstall, !Onboarding.hasPresentedFirstRun else { return }
+
+        // After the first poll, not immediately: the store starts in
+        // `.connecting`, so asking now reports "not running" on every launch
+        // including the ones where it is running perfectly well.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            guard let self, self.store.connection.blocksContent else { return }
+            Onboarding.hasPresentedFirstRun = true
+            self.menuBar?.showWindow()
+        }
     }
 
     private func installMenuBarItem() {

@@ -112,7 +112,14 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 	case ipc.OpConfigGet:
 		d.mu.RLock()
 		defer d.mu.RUnlock()
-		return ipc.ConfigResp{Config: d.cfg, Warnings: d.cfgWarn}, nil
+		return ipc.ConfigResp{
+			Config:   d.cfg,
+			Warnings: d.cfgWarn,
+			// -1 is "never measured on battery", which is the baseline every
+			// job starts at and the only floor a client can state without
+			// knowing which job it is talking about.
+			WakeFloorBasePct: wakeFloor(d.cfg, -1),
+		}, nil
 
 	case ipc.OpConfigSet:
 		var req ipc.ConfigSetReq

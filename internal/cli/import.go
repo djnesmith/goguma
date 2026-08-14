@@ -22,10 +22,15 @@ import (
 var cmdImport = &Command{
 	Name:    "import",
 	Summary: "find scheduled jobs on this machine worth waking for",
-	Usage: `goguma import [--all] [--dry-run] [--yes]
+	Usage: `goguma import [--all] [--register] [--yes]
 
 Scans your crontab, launchd agents, and systemd timers, then shows only the
 entries that would actually be missed while the machine sleeps.
+
+Reports by default and changes nothing. The daemon already adopts what it
+finds, so the common reason to run this is to read the report: what is
+scheduled, what has been missing runs, and how often. Registering by hand is
+the exception, and it asks first.
 
 Most scheduled entries on a typical machine are excluded for structural
 reasons; they belong to the OS, they run continuously, they have no clock
@@ -38,8 +43,8 @@ been firing while this machine was asleep.
               These are reported as leads to investigate, never registered:
               a file containing cron syntax may be dormant, commented out, or
               written for a different machine.
-  --dry-run   show what would be registered without changing anything
-  --yes       accept the recommended option for every candidate`,
+  --register  ask how to cover each one, and register your answers
+  --yes       register every one with the recommended option, without asking`,
 	Run: runImport,
 }
 
@@ -47,12 +52,27 @@ func runImport(ctx *Context, args []string) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	showAll := fs.Bool("all", false, "list filtered entries too")
-	dryRun := fs.Bool("dry-run", false, "do not change anything")
-	assumeYes := fs.Bool("yes", false, "accept recommendations")
+	// Reporting is the default, and registering is opt-in.
+	//
+	// This was the other way round, with `--dry-run` to make it safe. That
+	// made the safe path the one you had to know about: a bare `import` read
+	// like a report and then started asking to change things, and the command
+	// could not be demonstrated without a flag on screen explaining that it
+	// would not do anything.
+	//
+	// Adoption settled it. The daemon covers what it finds on its own, so the
+	// reason to run this is almost always to read the report; registering by
+	// hand is the exception and now says so.
+	register := fs.Bool("register", false, "ask about each candidate and register the answers")
+	assumeYes := fs.Bool("yes", false, "register every candidate with the recommended option")
 	deep := fs.Bool("deep", false, "also search the filesystem for unknown schedulers")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	// --yes is a way of answering the questions, so it implies asking them.
+	// Without this, `import --yes` reported and exited, which reads as the
+	// flag having been ignored.
+	readOnly := !*register && !*assumeYes
 
 	r := ctx.Out
 	bg := context.Background()
@@ -130,7 +150,7 @@ func runImport(ctx *Context, args []string) error {
 	for i, c := range keep {
 		printCandidate(r, i+1, c, existing)
 
-		if *dryRun {
+		if readOnly {
 			r.Blank()
 			continue
 		}
@@ -148,8 +168,13 @@ func runImport(ctx *Context, args []string) error {
 		}
 	}
 
-	if *dryRun {
-		r.Line(r.Muted("Dry run, nothing was changed."))
+	if readOnly {
+		// Says what to do next rather than what did not happen. "Nothing was
+		// changed" answers a worry nobody has when reporting is the default.
+		if len(keep) > 0 {
+			r.Line(r.Muted("goguma is already waking for these. " +
+				"To wrap one for exact timing: goguma import --register"))
+		}
 		return nil
 	}
 	if registered > 0 {

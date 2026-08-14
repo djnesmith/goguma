@@ -107,6 +107,9 @@ goguma config set <key> <value>
 
 Settings:
   wake_buffer              how early to wake before a job fires (default 90s)
+  wake_only_hold           window for a job that cannot be watched (default 3m).
+                           Most adopted jobs use this, so it is the setting that
+                           decides what they cost.
   default_ceiling          ceiling for a job with no history yet (default 5m)
   min_ceiling              floor for the learned ceiling (default 30s)
   max_ceiling              cap for the learned ceiling (default 2h)
@@ -114,7 +117,7 @@ Settings:
   history_window           how many recent runs the estimator considers
   min_runs_for_estimate    runs needed before the learned ceiling is used
   thermal_cutout_c         force-release above this temperature, 70-95
-  low_battery_cutout_pct   release holds below this charge, 5-50 (default 20).
+  low_battery_cutout_pct   release holds below this charge, 5-50 (default 10).
                            goguma also refuses to wake the machine at all
                            until it is this plus the rearm margin, so a wake
                            cannot land straight into a release.

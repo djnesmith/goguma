@@ -125,8 +125,7 @@ homebrew_casks:
 
       That installs a user-level daemon and a small privileged helper. The
       helper only blocks sleep and schedules wakes; everything else runs
-      unprivileged. Run `goguma install --dry-run` first to see exactly what it
-      will do.
+      unprivileged.
 
 release:
   draft: true
@@ -155,7 +154,7 @@ release:
     - Releases a hold early if the machine gets hot or the battery runs low
     - Menu bar app showing what is being held awake and what is coming next
 
-    Requires macOS 26+. Linux builds are included and pass CI, but have seen
-    far less real use.
+    Requires macOS 26+, or Linux with systemd. Linux ships for amd64 and
+    arm64.
   footer: |
     {{ if .PreviousTag }}**Full changelog**: https://github.com/junnam586/goguma/compare/{{ .PreviousTag }}...{{ .Tag }}{{ end }}

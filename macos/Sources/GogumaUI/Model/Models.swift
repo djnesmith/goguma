@@ -1104,25 +1104,33 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         return autoAdopt
     }
 
-    /// Charge below which the machine will not be woken at all.
-    ///
-    /// `low_battery_cutout_pct` governs two different things: holds are
-    /// released below it, and no wake is registered below it plus the rearm
-    /// margin. Showing only the cutout would understate the second by the
-    /// margin, so the UI shows this alongside it.
-    var wakeFloorPct: Int { lowBatteryCutoutPct + cutoutRearmMarginPct }
 }
 
 struct ConfigResponse: Decodable, Sendable {
     var config: DaemonConfig
     var warnings: [String]
 
-    enum CodingKeys: String, CodingKey { case config, warnings }
+    /// Charge below which no wake is scheduled for a job whose battery cost
+    /// has never been measured.
+    ///
+    /// Reported by the daemon rather than worked out here. This used to be
+    /// `lowBatteryCutoutPct + cutoutRearmMarginPct`, which was the flat-margin
+    /// rule from before the floor started rising with a job's own measured
+    /// drain; it displayed 15% on a default config where the daemon would
+    /// actually wake at 11%. The rearm margin is a different quantity that
+    /// governs recovery after a cutout fires.
+    var wakeFloorBasePct: Int
+
+    enum CodingKeys: String, CodingKey {
+        case config, warnings
+        case wakeFloorBasePct = "wake_floor_base_pct"
+    }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         config = c.value(.config, DaemonConfig())
         warnings = c.value(.warnings, [String]())
+        wakeFloorBasePct = c.value(.wakeFloorBasePct, 0)
     }
 }
 

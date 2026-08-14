@@ -266,6 +266,19 @@ struct JobsWindowView: View {
     /// macOS also has no `listSectionSpacing`, so there is no way to tune it.
     /// A header row costs one line and is styled here rather than by AppKit.
     private var jobList: some View {
+        listBody
+            // Behind the rows, pinned to the floor of the list.
+            //
+            // Most people have a handful of jobs and this window has a 320pt
+            // minimum, so the usual state is a short list above a large blank
+            // rectangle. `IceSceneFooter` measures what is actually left and
+            // draws into it, or draws nothing when the rows fill the space.
+            .background(alignment: .bottom) {
+                IceSceneFooter(rowCount: rows.count)
+            }
+    }
+
+    private var listBody: some View {
         List(rows, selection: $selection) { item in
             switch item {
             case let .heading(name, count):

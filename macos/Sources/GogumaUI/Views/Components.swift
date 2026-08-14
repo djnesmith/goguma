@@ -14,11 +14,16 @@ struct DaemonUnavailableView: View {
     var retry: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: Theme.Space.md) {
+        VStack(spacing: compact ? Theme.Space.sm : Theme.Space.md) {
             if compact {
-                Image(systemName: iconName)
-                    .font(Theme.Typography.iconHero)
-                    .foregroundStyle(tint)
+                // Only when nothing else fills the panel. With the setup
+                // disclosure present this was a large decorative mark above
+                // three lines that each say something.
+                if !Onboarding.canSelfInstall {
+                    Image(systemName: iconName)
+                        .font(Theme.Typography.iconHero)
+                        .foregroundStyle(tint)
+                }
             } else {
                 // Nothing is happening and there is nothing to do about it from
                 // here, so the space goes to the scene rather than to a larger
@@ -28,16 +33,25 @@ struct DaemonUnavailableView: View {
                     .frame(maxWidth: .infinity)
             }
 
-            Text(Format.noWidow(error?.errorDescription ?? "goguma isn't running."))
-                .font(Theme.Typography.headline)
-                .foregroundStyle(Theme.Colors.textPrimary)
-                .multilineTextAlignment(.center)
+            // Only where nothing above has said it. `compact` is the popover,
+            // whose header carries the state line two rows up, so repeating it
+            // printed "goguma isn't running" twice on a 340pt surface.
+            if !compact {
+                Text(Format.noWidow(error?.errorDescription ?? "goguma isn't running."))
+                    .font(Theme.Typography.headline)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .multilineTextAlignment(.center)
+            }
 
             if let hint = error?.recoveryHint, !hint.isEmpty {
                 Text(Format.noWidow(hint))
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .multilineTextAlignment(.center)
+                    // Wraps rather than truncating. In the popover this sits in
+                    // a fixed 150pt panel, which trimmed the sentence to an
+                    // ellipsis mid-clause and lost the half that mattered.
+                    .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             } else if error == nil {
                 // Onboarding, not a literal: a downloaded app has no `goguma`
@@ -48,6 +62,17 @@ struct DaemonUnavailableView: View {
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
+            }
+
+            // What setup will do, before it is agreed to.
+            //
+            // Everything below the button is irreversible from the user's point
+            // of view: a root helper gets installed and a scan reads their
+            // crontab. Asking for a password first and explaining afterwards is
+            // the wrong order, and "trust me" is not a thing software gets to
+            // say about a privileged install.
+            if Onboarding.canSelfInstall {
+                SetupDisclosure()
             }
 
             HStack(spacing: Theme.Space.sm) {
@@ -63,7 +88,8 @@ struct DaemonUnavailableView: View {
                 }
             }
         }
-        .padding(Theme.Space.xl)
+        .padding(.horizontal, compact ? Theme.Space.md : Theme.Space.xl)
+        .padding(.vertical, compact ? Theme.Space.sm : Theme.Space.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -82,6 +108,42 @@ struct DaemonUnavailableView: View {
         case .protocolMismatch: return Theme.Colors.warning
         case .refused, .malformedResponse: return Theme.Colors.danger
         default: return Theme.Colors.textSecondary
+        }
+    }
+}
+
+/// The three facts someone needs before installing a background service that
+/// runs as root and reads their scheduler.
+///
+/// Deliberately not a link to a privacy policy. A policy is read by nobody at
+/// the moment of consent, and the claims here are small enough to state: what
+/// is read, where it goes, and what needs the password. Each one is checkable
+/// against the source, which is the only reason to believe any of it.
+struct SetupDisclosure: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+            // Literal symbols, not the app's semantic ones. `Theme.Icon.cutout`
+            // is a warning triangle, which turned a plain statement of what
+            // gets installed into an alert about it, and reusing the
+            // disconnected glyph for "stays on this Mac" said nothing.
+            row("calendar", "Reads your scheduled jobs, so it knows when to wake")
+            row("laptopcomputer", "Stays on this Mac. No account, no telemetry")
+            row("key", "Installs a helper that only blocks sleep and sets wake alarms")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func row(_ icon: String, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.xs) {
+            Image(systemName: icon)
+                .font(Theme.Typography.iconInline)
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
     }
 }
@@ -301,6 +363,39 @@ struct DurationPicker: View {
     }
 }
 
+/// The same control for a whole-percent setting.
+///
+/// A sibling of `DurationPicker` rather than a `Stepper` or a `Slider`,
+/// because the settings pane already reads as a column of menus and a lone
+/// slider among them looks like a different control for a different kind of
+/// value. It keeps the same "presets, plus whatever is actually set" rule, so
+/// a value chosen from the command line still shows rather than snapping to
+/// the nearest preset.
+struct PercentPicker: View {
+    let presets: [Int]
+    let current: Int
+    let onChange: (Int) -> Void
+
+    var body: some View {
+        Picker("", selection: selection) {
+            ForEach(options, id: \.self) { pct in
+                Text("\(pct)%").tag(pct)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
+    }
+
+    private var options: [Int] {
+        presets.contains(current) || current <= 0 ? presets : (presets + [current]).sorted()
+    }
+
+    private var selection: Binding<Int> {
+        Binding(get: { current }, set: onChange)
+    }
+}
+
 /// Detection mode as a compact badge.
 ///
 /// Only `pattern` is tinted as a caution, because it is the one mode that can
@@ -483,7 +578,11 @@ struct StateIcon: View {
 
     var body: some View {
         switch state {
-        case .idle, .holding:
+        // Nothing for `.disconnected` either. The words say it, the panel
+        // below explains it, and the line already carries the sweet potato;
+        // a third symbol bracketing the sentence read as a badge on an error
+        // rather than as the app's own name.
+        case .idle, .holding, .disconnected:
             EmptyView()
         case .paused, .cutout, .disconnected:
             Image(systemName: state.iconName)

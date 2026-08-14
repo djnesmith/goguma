@@ -302,3 +302,72 @@ struct IceScene: View {
         Ellipse().path(in: CGRect(x: cx - rx, y: cy - ry, width: rx * 2, height: ry * 2))
     }
 }
+
+/// The scene as a floor for a list that has not filled its window.
+///
+/// A jobs list is usually short: a handful of entries in a window with a 320pt
+/// minimum height, leaving a large blank rectangle under the last row. This
+/// fills it, and only it, drawing nothing when the rows reach the bottom.
+///
+/// **It follows the Mac's appearance rather than being pinned to night.** Night
+/// was tried first, on the reasoning that a sleeping machine is a dusk picture.
+/// It is genuinely good in dark mode, where the moonlit floe glows against a
+/// dark pane. On a light pane the same palette puts its dark water behind a
+/// pale surface and the whole scene reads as a smudge under the list. The
+/// scene already adapts, and the version drawn for each appearance is the one
+/// that belongs there.
+struct IceSceneFooter: View {
+    let rowCount: Int
+
+    /// Below this there is not enough room to read the scene, and a squashed
+    /// floe with clipped animals is worse than an honest empty space.
+    private static let minimumUsefulHeight: CGFloat = 96
+
+    /// Full height. Past this the scene stops growing and sits on the floor
+    /// rather than ballooning to fill a tall window.
+    private static let maximumHeight: CGFloat = 230
+
+    /// What one row costs, for estimating where the rows stop.
+    ///
+    /// Approximate on purpose. The exact figure comes from AppKit's own row
+    /// metrics, which are not readable from here, and being a few points out
+    /// only shifts a decorative horizon; being wrong in the safe direction
+    /// simply means the scene appears one row later than it could.
+    private static let estimatedRowHeight: CGFloat = 30
+
+    /// How far up to nudge the scene, as a fraction of its height.
+    ///
+    /// The drawing is not centred in its own canvas: the floe sits across the
+    /// lower half and the sky above it is empty, so a frame centred on the gap
+    /// still reads as bottom-heavy. This lifts the visible mass rather than the
+    /// box that contains it.
+    private static let contentBias: CGFloat = 0.10
+
+    var body: some View {
+        GeometryReader { geo in
+            let used = CGFloat(rowCount) * Self.estimatedRowHeight
+            let gap = geo.size.height - used
+            let height = min(gap, Self.maximumHeight)
+            if height >= Self.minimumUsefulHeight {
+                // Centred in the gap, not pinned to the floor of the list.
+                //
+                // Pinning was wrong whenever the gap exceeded `maximumHeight`:
+                // the scene stopped growing, stayed at the bottom edge, and
+                // left every extra point of a tall window stacked above it, so
+                // a taller window made the composition look worse rather than
+                // roomier.
+                IceScene()
+                    .frame(height: height)
+                    .frame(maxWidth: .infinity)
+                    // Decoration behind a list of controls: never a tap target,
+                    // and never announced.
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .position(
+                        x: geo.size.width / 2,
+                        y: used + gap / 2 - height * Self.contentBias
+                    )
+            }
+        }
+    }
+}

@@ -1,6 +1,6 @@
 <div align="center">
 
-# goguma
+# 🍠 goguma
 
 **Wakes your machine for scheduled jobs,<br>and lets it sleep otherwise.**
 
@@ -23,19 +23,18 @@ anywhere, because as far as the scheduler is concerned nothing went wrong. You
 find out weeks later, when you notice the digest you set up has been arriving
 on some days and not others.
 
-## Are you missing runs?
-
-`goguma import` reads what is already scheduled on your machine and reports
-which jobs have been missing runs, and how often:
-
 <div align="center">
 
-![goguma import finding jobs that have been silently missing runs](Docs/media/import.gif)
+<img src="Docs/media/menubar.png" alt="The goguma menu bar popover, showing the next wake and the jobs it is watching" width="460">
 
 </div>
 
-It asks before registering anything. Add `--dry-run` to look without being
-asked at all.
+It lives in the menu bar: what is being held awake and what for, when the next
+wake is and which job it is for, and how long each job has been taking. Keep
+the Mac awake, skip the next wake, or pause everything without ever opening a
+terminal window.
+
+[**Download goguma for macOS**](https://github.com/junnam586/goguma/releases/latest)
 
 ## Features
 
@@ -57,18 +56,8 @@ Requires macOS 26+, or Linux with systemd.
 
 [**Download goguma for macOS**](https://github.com/junnam586/goguma/releases/latest),
 drag it to Applications, and open it. It will offer to set itself up, and the
-command line tools are inside the app, so this is the whole install.
-
-<div align="center">
-
-<img src="Docs/media/menubar.png" alt="The goguma menu bar popover, showing the next wake and the jobs it is watching" width="480">
-
-</div>
-
-I'd suggest this one. The menu bar shows whether the machine is being held
-awake and what for, when the next wake is and which job it is for, and how long
-each job has been taking. Keep it awake, skip the next wake, or pause it
-entirely without opening a terminal.
+command line tools are inside the app, so this is the whole install. I'd
+suggest this one.
 
 ### Or install the CLI only
 
@@ -82,12 +71,11 @@ the `goguma` command. The app is a viewer for that daemon, so adding it later
 is just opening it, and removing it changes nothing about your jobs.
 
 `goguma install` sets up the daemon and the helper. The helper only blocks
-sleep and schedules wakes; everything else runs unprivileged. Run
-`goguma install --dry-run` first to see exactly what it will do.
+sleep and schedules wakes; everything else runs unprivileged.
 
 Also available as a release archive, via `go install`, or built from source
-with `go build ./cmd/...`. Linux builds are tested in CI but have seen far less
-real use than macOS.
+with `go build ./cmd/...`. Linux builds ship for amd64 and arm64 and pass CI
+on every commit.
 
 ## Usage
 
@@ -96,21 +84,19 @@ itself, every couple of minutes, and starts waking for what it finds. Run
 `goguma import` when you want to see what it found, or to give one of those
 jobs exact timing:
 
-```
-7 of 43 worth waking for:
+<div align="center">
 
-[1] Morning briefing: Global News
-  schedule  daily at 09:00  (0 9 * * *)
-  last run  10h 30m late  (ran Tue 19:30, scheduled for 09:00)
-```
+![goguma import reporting jobs that have been silently missing runs](Docs/media/import.gif)
+
+</div>
 
 Adopted jobs are woken for either way. Where a job's process can be picked out
 of the process table, goguma watches for it and sleeps the moment it exits.
 Where it cannot, the machine is held for a bounded window instead, which costs
-a little more battery. `import` is how you close that gap: it offers to wrap
-the job in `goguma-mark`, which reports the exact start, end and exit code.
-That needs one line of your crontab changed, and goguma will never make that
-edit on your behalf.
+a little more battery. `goguma import --register` is how you close that gap:
+it offers to wrap the job in `goguma-mark`, which reports the exact start, end
+and exit code. That needs one line of your crontab changed, and goguma will
+never make that edit on your behalf.
 
 Everything else is a click. The menu bar shows what is being held awake and
 what is coming next, the jobs window lists everything with its learned duration
@@ -140,12 +126,19 @@ start, end, and exit code, so the machine sleeps the moment the job is done:
 
 ## Safety
 
-A hold is released early if the machine gets too hot (80°C by default) or the
-battery drops below 10%, so a laptop in a bag cannot overheat or run itself
-flat. The battery floor rises for jobs measured to cost more than that, so a
-job that drains 4% never starts a run it cannot finish. If a job hangs, a
-time limit learned from its previous runs ends the hold rather than letting
-it run forever.
+A hold is released early if the CPU goes above 80°C or the battery drops
+below 10%, both configurable. So a laptop that is awake in a closed bag stops
+heating up, and one on battery does not run out of charge.
+
+The 10% floor rises for jobs that are measured to cost more than that. A job
+that has been drawing 4% per run will not start one below 14%, so it cannot
+strand the machine partway through.
+
+If a job hangs, a time limit learned from its previous runs ends the hold.
+
+goguma installs one small program that runs as root, because blocking sleep and
+setting a wake alarm both need it. [SECURITY.md](SECURITY.md) says what that
+program is allowed to do, who can reach it, and what the rest of it reads.
 
 ## FAQ
 
@@ -157,8 +150,8 @@ is awake at the time.
 Yes. The daemon re-reads every scheduler on the machine every couple of
 minutes and wakes for whatever is worth waking for, with no terminal step. It
 never edits your crontab to do it, so a job whose process it cannot recognise
-gets a bounded window rather than exact timing. `goguma import` is how you
-upgrade those.
+gets a bounded window rather than exact timing. `goguma import --register` is
+how you upgrade those.
 
 **What if I can't change a job's command?**
 goguma can watch the process table for it instead (`--detection pattern
@@ -166,9 +159,8 @@ goguma can watch the process table for it instead (`--detection pattern
 (`--detection none`).
 
 **Does it work on Linux?**
-It compiles and the logic is unit tested, but it hasn't run on real Linux
-hardware yet. macOS on Apple silicon is what's tested, and Windows is not
-supported at all.
+Yes, on a distribution with systemd. It uses `systemd-inhibit` to hold sleep
+and `rtcwake` to set the alarm. Windows is not supported.
 
 **Where's the menu bar app?**
 In the [release download](https://github.com/junnam586/goguma/releases/latest),
@@ -177,8 +169,6 @@ or build it yourself from [`macos/`](macos/) by running
 
 **Where can I read more?**
 Architecture notes are in [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md).
-Related: [Adrafinil](https://github.com/kageroumado/adrafinil) keeps a Mac
-awake while an AI coding agent is working.
 
 ## License
 

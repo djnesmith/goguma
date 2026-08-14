@@ -27,7 +27,7 @@ func callDaemon(ctx *Context, op ipc.Op, payload, out any) error {
 // loosening the bound for reads that should never take that long.
 func timeoutFor(op ipc.Op) time.Duration {
 	switch op {
-	case ipc.OpSync, ipc.OpScanImport:
+	case ipc.OpSync:
 		return 60 * time.Second
 	default:
 		return ipc.DefaultTimeout

@@ -154,15 +154,17 @@ enum DaemonError: Error, LocalizedError, Sendable, Equatable {
         // downloaded the app has it only inside the bundle, and telling them to
         // run it in Terminal is advice that cannot be followed. Onboarding knows
         // which case this is.
+        // Never "open the goguma menu and choose Set up". This text is read
+        // inside that menu, next to that button, so it described the reader's
+        // current situation as the thing they should go and do.
         case .notInstalled:
             Onboarding.canSelfInstall
-                ? "Open the goguma menu and choose Set up."
+                ? "Takes a few seconds. macOS will ask for your password."
                 : "Run `goguma install` in Terminal to set it up."
         case .notRunning:
             Onboarding.canSelfInstall
-                ? "Open the goguma menu and choose Set up. It asks for your Mac "
-                    + "login password, which macOS needs to install the part that can "
-                    + "wake a sleeping Mac."
+                ? "Takes a few seconds. macOS will ask for your password, which is "
+                    + "what lets goguma wake a sleeping Mac."
                 : "Run `goguma install` in Terminal to set it up. It asks for your Mac "
                     + "login password, which macOS needs to install the part that can wake "
                     + "a sleeping Mac."

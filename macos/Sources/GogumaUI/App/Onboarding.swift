@@ -29,6 +29,19 @@ enum Onboarding {
     /// Whether setup can be offered from inside the app.
     static var canSelfInstall: Bool { bundledCLI != nil }
 
+    /// Whether the popover has already introduced itself on a launch that
+    /// found no daemon.
+    ///
+    /// Persisted, so this happens once on the machine rather than once per
+    /// process. A failed or abandoned setup leaves the daemon absent, and
+    /// without this the app would present itself at every login forever.
+    static var hasPresentedFirstRun: Bool {
+        get { UserDefaults.standard.bool(forKey: firstRunKey) }
+        set { UserDefaults.standard.set(newValue, forKey: firstRunKey) }
+    }
+
+    private static let firstRunKey = "goguma.hasPresentedFirstRun"
+
     /// What to tell a disconnected user, which depends on how they got here.
     static var disconnectedAdvice: String {
         canSelfInstall

@@ -149,7 +149,11 @@ func (d *Daemon) setConfig(req ipc.ConfigSetReq) (ipc.ConfigResp, error) {
 	d.mu.Unlock()
 
 	d.log.Info("configuration changed", "key", key, "value", req.Value)
-	return ipc.ConfigResp{Config: next, Warnings: warnings}, nil
+	return ipc.ConfigResp{
+		Config:           next,
+		Warnings:         warnings,
+		WakeFloorBasePct: wakeFloor(next, -1),
+	}, nil
 }
 
 func setDur(dst *model.Duration, v string) error {

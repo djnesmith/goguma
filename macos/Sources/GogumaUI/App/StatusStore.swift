@@ -118,6 +118,10 @@ final class StatusStore {
     private(set) var groups: [String] = []
     private(set) var config: DaemonConfig?
     private(set) var configWarnings: [String] = []
+
+    /// The daemon's own answer for the charge below which it will not
+    /// schedule a wake. Not derived here; see `ConfigResponse`.
+    private(set) var wakeFloorBasePct: Int = 0
     private(set) var connection: ConnectionState = .connecting
     private(set) var lastUpdated: Date?
 
@@ -323,6 +327,7 @@ final class StatusStore {
             let response = try await client.config()
             config = response.config
             configWarnings = response.warnings
+            wakeFloorBasePct = response.wakeFloorBasePct
             connection = .connected
         } catch let error as DaemonError {
             apply(error)

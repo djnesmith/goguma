@@ -35,7 +35,6 @@ const (
 	OpKeepAwake  Op = "keep_awake"
 	OpPause      Op = "pause"
 	OpResume     Op = "resume"
-	OpScanImport Op = "import.scan"
 	OpTestMatch  Op = "match.test"
 	OpSync       Op = "sync"
 
@@ -141,6 +140,17 @@ type ConfigResp struct {
 	// Warnings reports values that were clamped on load, so a hand-edited
 	// config that is being partly ignored says so.
 	Warnings []string `json:"warnings,omitempty"`
+
+	// WakeFloorBasePct is the charge below which no wake is scheduled for a
+	// job whose battery cost has never been measured.
+	//
+	// Reported rather than derived by the client. It is not simply the cutout
+	// plus the rearm margin: the floor rises with a job's own measured drain,
+	// so the arithmetic lives with the daemon that applies it. The GUI showed
+	// `cutout + rearm` for a while, which was the flat-margin rule from before
+	// the drain-aware floor landed and displayed 15% where the daemon would
+	// wake at 11%.
+	WakeFloorBasePct int `json:"wake_floor_base_pct"`
 }
 
 type ConfigSetReq struct {
@@ -218,60 +228,6 @@ type MarkEndReq struct {
 // be the reason a user's job does not run.
 type MarkResp struct {
 	Known bool `json:"known"`
-}
-
-// ---- Payloads: import scanning ----
-
-type ScanImportReq struct {
-	// IncludeFiltered returns everything that was rejected, with the reason,
-	// behind `import --all`.
-	IncludeFiltered bool `json:"include_filtered"`
-}
-
-type ScanImportResp struct {
-	Candidates []ImportCandidate `json:"candidates"`
-	Filtered   []ImportCandidate `json:"filtered,omitempty"`
-
-	// Scanned is how many entries were examined in total, so the UI can say
-	// "3 of 526 worth waking for" rather than implying only 3 exist.
-	Scanned int `json:"scanned"`
-
-	// SleepCoverage is how much sleep history backed the risk estimates.
-	SleepCoverage model.Duration `json:"sleep_coverage"`
-}
-
-// ImportCandidate is one discovered scheduled entry.
-type ImportCandidate struct {
-	Name     string `json:"name"`
-	Source   string `json:"source"` // crontab | launchd | systemd
-	Schedule string `json:"schedule"`
-	Command  string `json:"command"`
-
-	// SourceFile is the crontab line or plist/unit path it came from, so the
-	// user can go look at the thing being described.
-	SourceFile string `json:"source_file,omitempty"`
-	LineNo     int    `json:"line_no,omitempty"`
-
-	ScheduleDisplay string     `json:"schedule_display,omitempty"`
-	NextFire        *time.Time `json:"next_fire,omitempty"`
-
-	// MissRisk is the measured probability this entry has been firing while
-	// the machine was asleep, the whole basis for recommending it.
-	MissRatio     float64 `json:"miss_ratio"`
-	MissedOf      string  `json:"missed_of,omitempty"` // "12 of 14 recent runs"
-	RiskLevel     string  `json:"risk_level"`
-	RiskConfident bool    `json:"risk_confident"`
-
-	// SuggestedMatch is the pattern to use if the user declines the wrapper.
-	SuggestedMatch string `json:"suggested_match,omitempty"`
-	// WrappedCommand is the rewritten line using goguma-mark.
-	WrappedCommand string `json:"wrapped_command,omitempty"`
-
-	// AlreadyAdded is true when a job with this id already exists.
-	AlreadyAdded bool `json:"already_added"`
-
-	// FilterReason is why this was excluded, populated only in Filtered.
-	FilterReason string `json:"filter_reason,omitempty"`
 }
 
 // ---- Payloads: daemon -> helper ----

@@ -476,7 +476,12 @@ enum Theme {
         static let idle = "zzz"
         static let paused = "pause.circle"
         static let cutout = "exclamationmark.triangle.fill"
-        static let disconnected = "bolt.horizontal.circle"
+        /// `bolt.horizontal.circle` before, which is the symbol macOS uses for
+        /// a network connectivity problem. Nothing here is a network: the
+        /// daemon is a local process that is either running or not, and a
+        /// connectivity glyph beside "goguma isn't running" invited the reader
+        /// to go and check their wifi.
+        static let disconnected = "powerplug"
         /// A wake withheld on purpose. Reads as "staying asleep deliberately".
         static let wakeSuppressed = "zzz"
 
@@ -635,7 +640,10 @@ enum Theme {
         static let popoverMaxScrollHeight: CGFloat = 470
         /// Height of the compact "daemon isn't running" panel in the popover.
         /// No longer caps a job list; that list no longer scrolls on its own.
-        static let popoverOfflinePanelHeight: CGFloat = 150
+        /// 150 fitted a glyph, a sentence and two buttons. The panel now also
+        /// states what setup reads, where it goes, and what needs the password,
+        /// which is three more lines and the reason someone can agree to it.
+        static let popoverOfflinePanelHeight: CGFloat = 190
 
         /// Sized to fit a normal machine's job list without slack.
         ///
