@@ -22,7 +22,11 @@ struct SettingsWindowView: View {
     @State private var thermalCutout: Double = 80
     @State private var lowBatteryCutout: Double = 20
     @State private var webhookText = ""
-    @State private var showAdvanced = false
+    /// Persisted, like the popover's jobs disclosure. Someone who opens this
+    /// once is usually coming back to it, and a disclosure that forgets makes
+    /// them find it again every launch. It also makes the expanded pane
+    /// renderable, which is how the layout crash below was reproduced.
+    @AppStorage("settings.showAdvanced") private var showAdvanced = false
 
     /// Honoured for the Advanced disclosure. See `Theme.motion(reduced:)`.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -678,6 +682,9 @@ extension Binding where Value == Double {
 /// setting the frame once per change stays out of that pass.
 private struct FitsWindowHeight: ViewModifier {
     @State private var window: NSWindow?
+    /// True while a deferred resize is in flight, so its own layout echo does
+    /// not queue another one.
+    @State private var resizing = false
 
     func body(content: Content) -> some View {
         content
@@ -692,16 +699,34 @@ private struct FitsWindowHeight: ViewModifier {
             .background(WindowReader { window = $0 })
     }
 
+    /// Resizes the window to fit the content, on the next runloop pass.
+    ///
+    /// Never synchronously. This is called from `onChange` of a
+    /// `GeometryReader`'s height, which runs *inside* SwiftUI's layout pass, and
+    /// `setFrame` there re-invalidates the constraints being computed.
+    /// AppKit detects the re-entrant update and throws, which for a menu bar
+    /// app means the whole process dies: opening the Advanced disclosure grew
+    /// the pane enough to trigger it every time, and the app vanished from the
+    /// menu bar with it.
+    ///
+    /// The `resizing` guard is for the second half of the loop. Even deferred,
+    /// a resize changes the content height, which fires `onChange` again; the
+    /// flag drops that echo rather than letting it settle over several frames.
     private func resize(to height: CGFloat) {
-        guard let window, height > 0 else { return }
-        var frame = window.frame
-        let target = height + (frame.height - window.contentLayoutRect.height)
-        guard abs(target - frame.height) > 0.5 else { return }
-        // Grow downward from the title bar rather than from the bottom edge, so
-        // the window does not appear to jump when a disclosure opens.
-        frame.origin.y += frame.height - target
-        frame.size.height = target
-        window.setFrame(frame, display: true, animate: false)
+        guard let window, height > 0, !resizing else { return }
+        resizing = true
+        DispatchQueue.main.async {
+            defer { resizing = false }
+            var frame = window.frame
+            let target = height + (frame.height - window.contentLayoutRect.height)
+            guard target.isFinite, target > 0, abs(target - frame.height) > 0.5 else { return }
+            // Grow downward from the title bar rather than from the bottom
+            // edge, so the window does not appear to jump when a disclosure
+            // opens.
+            frame.origin.y += frame.height - target
+            frame.size.height = target
+            window.setFrame(frame, display: true, animate: false)
+        }
     }
 }
 

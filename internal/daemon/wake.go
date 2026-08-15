@@ -314,9 +314,78 @@ func (d *Daemon) detectSleepGap(now time.Time) {
 	d.lastWokeAt = now
 	d.mu.Unlock()
 
+	d.recordSleptThrough(iv, now)
+
 	// The helper's block state can be reset by the kernel across sleep/wake,
 	// so re-assert immediately rather than waiting for the next timer.
 	d.helper.Repush()
+}
+
+// recordSleptThrough writes a run for every fire the machine slept through.
+//
+// This is the one failure goguma can have that looked exactly like the failure
+// it exists to prevent. When a wake is refused (low battery), cancelled, or
+// simply never registered, the fire time passes with the machine asleep, no
+// window opens, and `finishHoldLocked` never runs, so nothing is written. The
+// history ends up with a gap rather than a miss: on this machine, calendar-sync
+// had 11:00, 15:00 and 20:00 for a day and no 06:00, and the only way to
+// notice was to know the schedule and count.
+//
+// Bounded by the sleep interval on purpose. Fires before the daemon was
+// watching are not its business, and a machine that has been off for a week
+// should not produce a week of retrospective misses on first boot.
+func (d *Daemon) recordSleptThrough(iv schedule.SleepInterval, now time.Time) {
+	for _, job := range d.store.Jobs() {
+		if !job.Enabled {
+			continue
+		}
+		sched, err := schedule.ParseAt(job.Schedule, job.Location(), job.ScheduleAnchor())
+		if err != nil {
+			continue
+		}
+
+		// Only fires the job existed for. A job adopted this morning did not
+		// miss last night.
+		from := iv.Sleep
+		if job.CreatedAt.After(from) {
+			from = job.CreatedAt
+		}
+
+		d.mu.RLock()
+		served := d.served[job.ID]
+		d.mu.RUnlock()
+
+		for fire := sched.Next(from); fire.Before(iv.Wake); fire = sched.Next(fire) {
+			// Served means a window opened and closed for it, so it ran.
+			if !served.IsZero() && !fire.After(served) {
+				continue
+			}
+			if d.isSkipped(job.ID, fire) {
+				continue // the user asked for this one to be skipped
+			}
+			if d.store.HasRunAt(job.ID, fire) {
+				continue // already recorded, so this wake is a re-detection
+			}
+			run := model.Run{
+				JobID:        job.ID,
+				WindowOpened: fire,
+				Outcome:      model.OutcomeSlept,
+				Detection:    job.Detection,
+				BatteryStart: -1,
+				BatteryEnd:   -1,
+			}
+			if err := d.store.AppendRun(run); err != nil {
+				d.log.Warn("could not record a slept-through run", "job", job.ID, "err", err)
+				continue
+			}
+			d.log.Info("job was not run: the machine was asleep at its fire time",
+				"job", job.ID, "fire", fire.Format(time.RFC3339))
+			d.event(store.Event{
+				Kind: store.EventNeverDetected, JobID: job.ID, JobName: job.Name,
+				Message: "the machine was asleep at " + fire.Format("15:04") + " and was not woken",
+			})
+		}
+	}
 }
 
 // wokeForThis reports whether this window follows a goguma-initiated wake,

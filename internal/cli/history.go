@@ -182,6 +182,8 @@ func outcomeNote(run model.Run) string {
 		return "never detected"
 	case model.OutcomeCutout:
 		return "released by a safety cutout"
+	case model.OutcomeSlept:
+		return "missed · the Mac was asleep and not woken"
 	default:
 		return string(run.Outcome)
 	}

@@ -355,14 +355,45 @@ struct JobsWindowView: View {
             // is a number nobody can argue with. It sits here rather than in a
             // tooltip because a reader comparing two figures should not have to
             // hover to find out what they are figures of.
-            Text("* Per sleep assumes 8 hours asleep, from what each job has "
-                + "actually cost on battery.")
-                .font(Theme.Typography.caption)
-                .foregroundStyle(Theme.Colors.textTertiary)
-                .padding(.horizontal, Theme.Space.md)
-                .padding(.bottom, Theme.Space.sm)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // What goguma has actually done, beside what it is projected to
+            // cost. Measured, not modelled: every one of these wakes is a run
+            // that was otherwise going to be skipped. The misses sit next to
+            // them, because a scoreboard showing only wins is an advert.
+            do {
+                Text(footnoteText)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .padding(.horizontal, Theme.Space.md)
+                    .padding(.bottom, Theme.Space.sm)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+    }
+
+    /// "goguma has woken your Mac for 4 runs, and missed 1 while asleep",
+    /// or nothing at all before it has done either.
+    private var scoreboard: String? {
+        let woken = store.jobs.reduce(0) { $0 + $1.stats.woken }
+        let slept = store.jobs.reduce(0) { $0 + $1.stats.slept }
+        guard woken > 0 || slept > 0 else { return nil }
+
+        var parts: [String] = []
+        if woken > 0 {
+            parts.append("woken your Mac for \(Format.count(woken, "run")) "
+                + "that would have been missed")
+        }
+        if slept > 0 {
+            parts.append("missed \(Format.count(slept, "run")) while it was asleep")
+        }
+        return "goguma has " + parts.joined(separator: ", and ")
+    }
+
+    private var footnoteText: String {
+        let note = "* Per sleep assumes 8 hours asleep, from what each job has "
+            + "actually cost on battery."
+        guard let scoreboard else { return note }
+        return note + "  " + scoreboard
     }
 
     private func breakdown(_ jobs: [JobView]) -> String {

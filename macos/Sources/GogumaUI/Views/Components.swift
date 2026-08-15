@@ -552,6 +552,10 @@ struct OutcomeBadge: View {
         case .ceiling: Theme.Colors.warning
         case .neverDetected: Theme.Colors.danger
         case .cutout: Theme.Colors.stateCutout
+        // Warning, not danger. The job did not run, which matters, but nothing
+        // broke: goguma decided the battery was too low to wake for it, or the
+        // machine was off. Red would read as a fault to go and fix.
+        case .slept: Theme.Colors.warning
         case .unknown: Theme.Colors.textSecondary
         }
     }

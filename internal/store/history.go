@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/junnam586/goguma/internal/model"
+	"time"
 )
 
 // maxHistoryLines bounds a job's retained history. The estimator only ever
@@ -56,6 +57,29 @@ func (s *Store) Runs(jobID string) ([]model.Run, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return readRuns(s.layout.HistoryFile(jobID))
+}
+
+// HasRunAt reports whether a run is already recorded for this fire time.
+//
+// Guards against double-recording a slept-through fire. The sleep detector can
+// observe overlapping intervals across a suspend/resume cycle, and without
+// this a single missed 06:00 could be written twice and read as two misses.
+// Matched to the minute, because a fire time is a schedule instant and the
+// stored value is the same instant, not an observation of one.
+func (s *Store) HasRunAt(jobID string, fire time.Time) bool {
+	runs, err := s.Runs(jobID)
+	if err != nil {
+		return false
+	}
+	for _, r := range runs {
+		if r.WindowOpened.Truncate(time.Minute).Equal(fire.Truncate(time.Minute)) {
+			return true
+		}
+		if !r.Started.IsZero() && r.Started.Truncate(time.Minute).Equal(fire.Truncate(time.Minute)) {
+			return true
+		}
+	}
+	return false
 }
 
 func readRuns(path string) ([]model.Run, error) {

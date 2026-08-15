@@ -88,6 +88,9 @@ enum RunOutcome: String, LenientRawEnum {
     case ceiling
     case neverDetected = "never_detected"
     case cutout
+    /// The fire time passed with the Mac asleep and no window opened, so the
+    /// job did not run. Recorded rather than left as a gap in the list.
+    case slept
     case unknown
 
     static var unknownCase: RunOutcome { .unknown }
@@ -99,6 +102,7 @@ enum RunOutcome: String, LenientRawEnum {
         case .ceiling: "Hit ceiling"
         case .neverDetected: "Never detected"
         case .cutout: "Cutout"
+        case .slept: "Missed"
         case .unknown: "Unknown"
         }
     }
@@ -110,6 +114,7 @@ enum RunOutcome: String, LenientRawEnum {
         case .ceiling: Theme.Icon.outcomeCeiling
         case .neverDetected: Theme.Icon.outcomeNeverDetected
         case .cutout: Theme.Icon.outcomeCutout
+        case .slept: Theme.Icon.outcomeNeverDetected
         case .unknown: Theme.Icon.outcomeUnknown
         }
     }
@@ -428,6 +433,10 @@ struct Stats: Codable, Sendable, Hashable {
     var ceiling: WGDuration
     var coldStart: Bool
     var batteryPerRun: Double
+    /// Runs that happened because goguma woke the Mac, and fire times that
+    /// passed with it asleep. The tool's own scoreboard.
+    var woken: Int
+    var slept: Int
     var lastRun: Run?
     var failures: Int
     var ceilingHits: Int
@@ -442,6 +451,8 @@ struct Stats: Codable, Sendable, Hashable {
         ceiling = .zero
         coldStart = false
         batteryPerRun = 0
+        woken = 0
+        slept = 0
         lastRun = nil
         failures = 0
         ceilingHits = 0
@@ -454,6 +465,7 @@ struct Stats: Codable, Sendable, Hashable {
         case runs, typical, p95, ceiling
         case coldStart = "cold_start"
         case batteryPerRun = "battery_per_run"
+        case woken, slept
         case lastRun = "last_run"
         case failures
         case ceilingHits = "ceiling_hits"
@@ -470,6 +482,8 @@ struct Stats: Codable, Sendable, Hashable {
         ceiling = c.value(.ceiling, WGDuration.zero)
         coldStart = c.value(.coldStart, false)
         batteryPerRun = c.value(.batteryPerRun, 0)
+        woken = c.value(.woken, 0)
+        slept = c.value(.slept, 0)
         lastRun = c.optional(.lastRun)
         failures = c.value(.failures, 0)
         ceilingHits = c.value(.ceilingHits, 0)
@@ -486,6 +500,8 @@ struct Stats: Codable, Sendable, Hashable {
         try c.encode(ceiling, forKey: .ceiling)
         try c.encode(coldStart, forKey: .coldStart)
         try c.encode(batteryPerRun, forKey: .batteryPerRun)
+        try c.encode(woken, forKey: .woken)
+        try c.encode(slept, forKey: .slept)
         try c.encodeIfPresent(lastRun, forKey: .lastRun)
         try c.encode(failures, forKey: .failures)
         try c.encode(ceilingHits, forKey: .ceilingHits)
@@ -929,7 +945,11 @@ struct JobView: Codable, Sendable, Hashable, Identifiable {
         guard let last = stats.lastRun else { return .neverRun }
         switch last.outcome {
         case .ok: return .succeeded
-        case .failed, .neverDetected, .cutout: return .failed
+        // `slept` sits with the failures, and it is the only one here that is
+        // not the job's fault: the Mac was asleep at its fire time and goguma
+        // did not wake it. That is still a run that did not happen, which is
+        // exactly what this dot is for.
+        case .failed, .neverDetected, .cutout, .slept: return .failed
         case .ceiling: return .succeeded
         case .unknown: return .neverRun
         }

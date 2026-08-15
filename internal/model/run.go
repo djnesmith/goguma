@@ -33,6 +33,15 @@ const (
 	// OutcomeCutout: a thermal or low-battery safety cutout force-released
 	// the hold mid-job. Not the job's fault; excluded from the estimator.
 	OutcomeCutout Outcome = "cutout"
+
+	// OutcomeSlept: the fire time passed while the machine was asleep and no
+	// window was opened for it, so the job did not run.
+	//
+	// Recorded because its absence was the same silence goguma exists to
+	// prevent. A run goguma declined to wake for left no trace at all: the
+	// history simply had a gap where a run should be, discoverable only by
+	// knowing the schedule and counting rows.
+	OutcomeSlept Outcome = "slept"
 )
 
 // TrainsEstimator reports whether a run's duration reflects a real completed
@@ -103,6 +112,13 @@ type Run struct {
 type Stats struct {
 	JobID string `json:"job_id"`
 	Runs  int    `json:"runs"`
+
+	// Woken is how many of those runs happened because goguma woke the
+	// machine, and Slept how many fire times passed with it asleep and no
+	// wake. Together they are the tool's own scoreboard: what it saved, and
+	// what it let through.
+	Woken int `json:"woken"`
+	Slept int `json:"slept"`
 
 	// Typical is the median completed runtime, what the user should expect.
 	Typical Duration `json:"typical"`

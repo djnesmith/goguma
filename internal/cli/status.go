@@ -240,6 +240,9 @@ func describeRun(r *render.Renderer, run *model.Run) string {
 	case model.OutcomeCutout:
 		mark = r.Warn(sym.Warn)
 		note = "was released early by a safety cutout"
+	case model.OutcomeSlept:
+		mark = r.Warn(sym.Warn)
+		note = "was missed · the Mac was asleep and was not woken for it"
 	default:
 		mark, note = sym.Bullet, string(run.Outcome)
 	}

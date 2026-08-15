@@ -259,6 +259,11 @@ func Summarize(job *model.Job, runs []model.Run, cfg config.Config) model.Stats 
 			st.CeilingHits++
 		case model.OutcomeNeverDetected:
 			st.NeverSeen++
+		case model.OutcomeSlept:
+			st.Slept++
+		}
+		if r.WokeMachine {
+			st.Woken++
 		}
 		// What the job actually cost, from two real battery readings rather
 		// than a duration standing in for one. Only runs on battery can be

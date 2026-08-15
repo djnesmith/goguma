@@ -130,8 +130,11 @@ func printJobs(r *render.Renderer, resp ipc.JobsListResp, explain bool) {
 	// "what do these jobs cost me each time", not "how much have they ever
 	// used", which only ever climbs.
 	var perRound float64
+	var woken, slept int
 	for _, v := range jobs {
 		perRound += v.Stats.BatteryPerRun
+		woken += v.Stats.Woken
+		slept += v.Stats.Slept
 	}
 	if perRound > 0 {
 		r.Blank()
@@ -139,6 +142,34 @@ func printJobs(r *render.Renderer, resp ipc.JobsListResp, explain bool) {
 			"about %s of battery each time these jobs run",
 			model.Percent(perRound))))
 	}
+
+	// What goguma has actually done, measured rather than modelled.
+	//
+	// A count of runs it woke the machine for is the only honest claim the
+	// tool can make about its own worth: every one of them is a run that was
+	// going to be skipped. Printed alongside the misses, because a scoreboard
+	// that only shows the wins is an advertisement.
+	if woken > 0 || slept > 0 {
+		if perRound <= 0 {
+			r.Blank()
+		}
+		parts := []string{}
+		if woken > 0 {
+			parts = append(parts, fmt.Sprintf("woken for %s that would have been missed",
+				pluralRuns(woken)))
+		}
+		if slept > 0 {
+			parts = append(parts, fmt.Sprintf("%s missed while asleep", pluralRuns(slept)))
+		}
+		r.Printf("  %s\n", r.Muted("goguma has "+strings.Join(parts, ", ")))
+	}
+}
+
+func pluralRuns(n int) string {
+	if n == 1 {
+		return "1 run"
+	}
+	return fmt.Sprintf("%d runs", n)
 }
 
 // listSections orders the blocks of the list: every group name in use, sorted,
