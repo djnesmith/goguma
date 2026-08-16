@@ -289,7 +289,13 @@ struct JobsWindowView: View {
         .foregroundStyle(Theme.Colors.textTertiary)
         .lineLimit(1)
         .padding(.horizontal, Theme.Space.md)
-        .padding(.vertical, Theme.Space.xs)
+        // Tight under the headings.
+        //
+        // Equal padding above and below left a band of empty surface between
+        // the headings and the first row, so the headings floated rather than
+        // sitting on the column they name.
+        .padding(.top, Theme.Space.xs)
+        .padding(.bottom, Theme.Space.xxs)
     }
 
     // MARK: - Overnight cost
@@ -317,57 +323,64 @@ struct JobsWindowView: View {
         // It used to live inside this block, so on a machine with nothing
         // measured yet the header still said "Per sleep*" and the asterisk
         // pointed at nothing at all.
+        // Two lines, not three.
+        //
+        // "Overnight" and its value were stacked, which made the label a line
+        // of its own carrying one word in a third font, and put the breakdown
+        // beside a two-line block so the row had a hole in it. The label, the
+        // number and the breakdown are one sentence about one thing, so they
+        // sit on one line, and the footnote takes the second.
         VStack(alignment: .leading, spacing: Theme.Space.xxs) {
             if !measured.isEmpty {
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
-                VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                // One size, one shape, differing only in weight and colour.
+                //
+                // This line carried three type treatments in a row: an 11pt
+                // tertiary label, a 13pt monospaced-digit value, and an 11pt
+                // secondary sentence. Three fonts across four words reads as a
+                // layout accident rather than as emphasis, and the mixed
+                // baselines made the row look crooked. Everything is caption
+                // size now; the total is the only thing set heavier, because
+                // it is the only thing worth reading first.
+                HStack(spacing: Theme.Space.xs) {
                     Text("Overnight")
-                        .font(Theme.Typography.sectionLabel)
                         .foregroundStyle(Theme.Colors.textTertiary)
+
                     Text(String(format: "%.1f%%", total))
-                        .font(Theme.Typography.body)
+                        .fontWeight(.medium)
                         .foregroundStyle(
                             total >= 10 ? Theme.Colors.warning : Theme.Colors.textPrimary
                         )
+
+                    if !measured.isEmpty {
+                        Text("·")
+                            .foregroundStyle(Theme.Colors.divider)
+                        Text(breakdown(measured))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+
+                    Spacer(minLength: 0)
                 }
-                .fixedSize()
+                .font(Theme.Typography.caption)
+                .padding(.horizontal, Theme.Space.md)
+                .padding(.top, Theme.Space.sm)
                 .help("What these jobs are projected to take out of the battery across "
                     + "eight hours asleep, from what each has actually cost on battery.")
-
-                // The breakdown. Truncated rather than scrolled: the top few
-                // are the whole answer, and the rest is a long tail of jobs
-                // that are not why the battery moved.
-                Text(breakdown(measured))
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, Theme.Space.md)
-            .padding(.top, Theme.Space.sm)
             }
 
-            // What the asterisk in the column heading points at.
-            //
-            // Eight hours is a choice, and a number whose basis is not stated
-            // is a number nobody can argue with. It sits here rather than in a
-            // tooltip because a reader comparing two figures should not have to
-            // hover to find out what they are figures of.
-            // What goguma has actually done, beside what it is projected to
-            // cost. Measured, not modelled: every one of these wakes is a run
-            // that was otherwise going to be skipped. The misses sit next to
-            // them, because a scoreboard showing only wins is an advert.
-            do {
-                Text(footnoteText)
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                    .padding(.horizontal, Theme.Space.md)
-                    .padding(.bottom, Theme.Space.sm)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            // What the asterisk in the column heading points at, and what
+            // goguma has actually done. Eight hours is a choice, and a number
+            // whose basis is not stated is a number nobody can argue with.
+            Text(footnoteText)
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, Theme.Space.md)
+                .padding(.top, measured.isEmpty ? Theme.Space.sm : 0)
+                .padding(.bottom, Theme.Space.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -378,15 +391,16 @@ struct JobsWindowView: View {
         let slept = store.jobs.reduce(0) { $0 + $1.stats.slept }
         guard woken > 0 || slept > 0 else { return nil }
 
-        var parts: [String] = []
+        // Saved leads, the same way the popover and `goguma list` now do.
+        // What someone wants from this line is how much they got back.
         if woken > 0 {
-            parts.append("woken your Mac for \(Format.count(woken, "run")) "
-                + "that would have been missed")
+            var line = "\(Format.count(woken, "run")) saved with goguma"
+            if slept > 0 {
+                line += ", \(Format.count(slept, "run")) still missed while asleep"
+            }
+            return line
         }
-        if slept > 0 {
-            parts.append("missed \(Format.count(slept, "run")) while it was asleep")
-        }
-        return "goguma has " + parts.joined(separator: ", and ")
+        return "\(Format.count(slept, "run")) missed while asleep so far"
     }
 
     private var footnoteText: String {
@@ -457,6 +471,11 @@ struct JobsWindowView: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+        // `List` inserts its own top inset, which sat under the column
+        // headings as a second gap on top of the one the headings already
+        // had. The headings are not part of the list, so the list must not
+        // reserve room as if they were.
+        .contentMargins(.top, 0, for: .scrollContent)
         // The selected row is drawn in the system accent by default, which is
         // whatever blue the user has set in System Settings, a saturated slab
         // that has nothing to do with this palette and shouts far louder than

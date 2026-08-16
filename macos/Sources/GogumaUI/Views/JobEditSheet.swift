@@ -29,10 +29,9 @@ struct JobEditSheet: View {
     var onSaved: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var draft: Job
-    @State private var maxRuntimeText: String
-    @State private var wakeBufferText: String
     @State private var matchResult: MatchTestResponse?
     @State private var matchError: String?
     @State private var isTesting = false
@@ -56,6 +55,9 @@ struct JobEditSheet: View {
     ) ?? Date()
     @State private var weekdays: Set<Int> = [1, 2, 3, 4, 5]
     @State private var everyHours = 6
+    @State private var everyMinutes = 15
+    @State private var dayOfMonth = 1
+    @State private var showAdvanced = false
 
     @State private var isSaving = false
     @State private var testTask: Task<Void, Never>?
@@ -77,12 +79,8 @@ struct JobEditSheet: View {
             // it the moment there is a command distinctive enough to match.
             fresh.detection = .wakeOnly
             _draft = State(initialValue: fresh)
-            _maxRuntimeText = State(initialValue: "")
-            _wakeBufferText = State(initialValue: "")
         case let .edit(job):
             _draft = State(initialValue: job)
-            _maxRuntimeText = State(initialValue: job.maxRuntime.isZero ? "" : job.maxRuntime.wireString)
-            _wakeBufferText = State(initialValue: job.wakeBuffer.isZero ? "" : job.wakeBuffer.wireString)
             // Seed the alarm controls from the job's real schedule. Leaving
             // them at their defaults meant the sheet displayed a fabricated
             // "daily at 9:00" for a job firing at 18:00, and touching any
@@ -94,6 +92,8 @@ struct JobEditSheet: View {
                 _timeOfDay = State(initialValue: seed.time)
                 _weekdays = State(initialValue: seed.weekdays)
                 _everyHours = State(initialValue: seed.everyHours)
+                _everyMinutes = State(initialValue: seed.everyMinutes)
+                _dayOfMonth = State(initialValue: seed.dayOfMonth)
             }
         }
     }
@@ -104,165 +104,27 @@ struct JobEditSheet: View {
                 .font(Theme.Typography.title)
                 .foregroundStyle(Theme.Colors.textPrimary)
 
-            // The app's own row weight, not the system default.
+            // One Grid for the whole sheet, not a Form.
             //
-            // A `Form`'s field labels inherit the environment font, so without
-            // this the sheet rendered its labels in a different weight from
-            // every list and settings row in the app, same size, different
-            // face, which reads as a different application.
-            Form {
-                Section {
-                    TextField("Name", text: $draft.name)
-                        .focused($focusedField, equals: .name)
-                        .disabled(mode.isEdit)
-                        .help(
-                            mode.isEdit
-                                ? "A job's name is its identity on disk and in IPC, so it can't be changed here."
-                                : "Used as the job's id. Lower-cased and hyphenated."
-                        )
-
-                    // An alarm, not an expression.
-                    //
-                    // "Custom…" used to reveal a cron field, which is the
-                    // thing the presets existed to avoid: anyone who fell off
-                    // the preset list landed on `0 9 * * *` with no way to
-                    // reason about it. These are the controls a person already
-                    // knows from setting an alarm: how often, at what time, on
-                    // which days. The cron expression is generated from them
-                    // and never shown.
-                    Picker("Repeat", selection: $repeat_) {
-                        ForEach(ScheduleBuilder.Repeat.allCases, id: \.self) { option in
-                            Text(option.label).tag(option)
-                        }
-                    }
-
-                    if repeat_.usesTime {
-                        DatePicker(
-                            "At", selection: $timeOfDay, displayedComponents: .hourAndMinute
-                        )
-                    }
-
-                    if repeat_ == .weekly {
-                        WeekdayPicker(selected: $weekdays)
-                    }
-
-                    if repeat_ == .everyNHours {
-                        Picker("Every", selection: $everyHours) {
-                            ForEach([2, 3, 4, 6, 8, 12], id: \.self) { n in
-                                Text("\(n) hours").tag(n)
-                            }
-                        }
-                    }
-
-                    Picker("Time zone", selection: $draft.tz) {
-                        Text("Local time").tag("")
-                        Divider()
-                        // City first, region after.
-                        //
-                        // macOS menus jump to the first item matching what you
-                        // type, but every identifier begins with a continent,
-                        // so typing "Tokyo" matched nothing and the only way
-                        // to a city was scrolling four hundred rows. "Tokyo,
-                        // Asia" puts the word people actually know first.
-                        ForEach(Self.timeZoneIdentifiers, id: \.identifier) { zone in
-                            Text(zone.label).tag(zone.identifier)
-                        }
-                    }
-
-                }
-
-                Section {
-                    // What goguma will do, stated, not a choice to make.
-                    //
-                    // Mark / Pattern / Wake only is a question about *how*
-                    // goguma watches a process, which requires knowing that
-                    // it watches processes at all, what a match pattern is,
-                    // and which applies to your job. `import` already reasons
-                    // this out and recommends; asking it cold on this sheet
-                    // pushed an implementation detail onto whoever knows least.
-                    //
-                    // It is derived from the command instead, and can still be
-                    // overridden below for anyone who knows they want to.
-                    Text(detectionSummary)
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if draft.detection == .pattern {
-                        patternField
-                    }
-
-                    if draft.detection == .wakeOnly {
-                        Text(Format.noWidow(wakeOnlyWindowNote))
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                } header: {
-                    SectionLabel(text: "Detection")
-                }
-
-                Section {
-                    // Optional, and only ever read back to the user: goguma
-                    // never executes a job, so this is a label for the detail
-                    // pane and a hint for pattern suggestion. It sat second in
-                    // the first section, which implied it was required.
-                    TextField(
-                        "Command",
-                        text: $draft.command,
-                        prompt: Text("optional, shown in the job's details")
-                    )
-                    .font(Theme.Typography.code)
-                    .help("Shown in the job's details. goguma never runs it.")
-
-                    Picker("Watch for", selection: $draft.detection) {
-                        ForEach(DetectionMode.selectable, id: \.self) { mode in
-                            Text(mode.label).tag(mode)
-                        }
-                    }
-                    .help("goguma picks this from the command. Change it only if "
-                        + "you know the job behaves differently.")
-
-                    TextField(
-                        "Max runtime",
-                        text: $maxRuntimeText,
-                        prompt: Text("optional, goguma learns it")
-                    )
-                    .help("Overrides the learned ceiling, e.g. 90s, 5m, 1h30m.")
-
-                    TextField(
-                        "Wake buffer",
-                        text: $wakeBufferText,
-                        prompt: Text("optional, uses the global default")
-                    )
-                    .help("How early to wake the Mac before this job fires.")
-
-                    // Only when editing. A job being added is being added
-                    // because the user wants it, and offering to create it
-                    // switched off is a question nobody arrives with.
-                    if mode.isEdit {
-                        Toggle("Enabled", isOn: $draft.enabled)
-                    }
-                } header: {
-                    SectionLabel(text: "Advanced")
-                } footer: {
-                    if let durationProblem {
-                        Text(durationProblem)
-                            .font(Theme.Typography.caption)
-                            .foregroundStyle(Theme.Colors.danger)
-                    }
-                }
+            // A Form sizes its label gutter from the rows it can currently
+            // see, so opening Advanced measured four new labels, widened the
+            // gutter, and slid Name, Repeat, At and Time zone sideways. The
+            // disclosure was redrawing the page above it. One grid measures
+            // the column once, from every label including the hidden ones, so
+            // opening Advanced does exactly one thing: reveal rows.
+            //
+            // It is also how the Settings pane is built, so the two surfaces
+            // now share an alignment instead of each having their own.
+            Grid(
+                alignment: .leadingFirstTextBaseline,
+                horizontalSpacing: Theme.Space.sm,
+                verticalSpacing: Theme.Space.sm
+            ) {
+                scheduleSection
+                detectionSection
+                advancedSection
             }
-            // `.columns`, not `.grouped`.
-            //
-            // The grouped style draws its own opaque white cards, so this
-            // sheet arrived as a stack of System Settings panels floating on
-            // the app's surface, the single loudest reason it did not look
-            // like the rest of goguma. Columns keeps the aligned label
-            // gutter and inherits the surface underneath it.
-            .formStyle(.columns)
             .font(Theme.Typography.rowLabel)
-            .scrollContentBackground(.hidden)
 
             if let saveError {
                 Text(saveError)
@@ -296,25 +158,300 @@ struct JobEditSheet: View {
         .onChange(of: timeOfDay) { _, _ in rebuildSchedule() }
         .onChange(of: weekdays) { _, _ in rebuildSchedule() }
         .onChange(of: everyHours) { _, _ in rebuildSchedule() }
+        .onChange(of: everyMinutes) { _, _ in rebuildSchedule() }
+        .onChange(of: dayOfMonth) { _, _ in rebuildSchedule() }
         .frame(width: Theme.Surface.editSheetWidth)
         .themeSurface()
         .onDisappear { testTask?.cancel() }
     }
 
-    /// Names the actual window length so the cost of choosing wake-only is a
-    /// number, not an abstraction. Falls back to prose when config hasn't
-    /// loaded yet rather than guessing at the default.
-    private var wakeOnlyWindowNote: String {
-        let source = maxRuntimeText.isEmpty
-            ? store.config?.wakeOnlyHold
-            : WGDuration.parse(maxRuntimeText).map { WGDuration(seconds: $0) }
-        guard let window = source, !window.isZero else {
-            return "The window length comes from `wake_only_hold` in Settings."
+    // MARK: - Rows
+
+    /// A labelled row on the sheet's single grid.
+    ///
+    /// Labels are trailing-aligned, the Mac convention for a sheet where every
+    /// row has one, and the column is as wide as the widest label in the whole
+    /// sheet, not the widest currently visible.
+    @ViewBuilder
+    private func row(_ label: String, @ViewBuilder _ control: () -> some View) -> some View {
+        GridRow {
+            Text(label)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .lineLimit(1)
+                .frame(width: Self.labelWidth, alignment: .trailing)
+            control()
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        return maxRuntimeText.isEmpty
-            ? "The Mac will stay awake for \(window.displayString) each run, from the `wake_only_hold` "
-                + "setting. Set a max runtime below to override it for this job."
-            : "The Mac will stay awake for \(window.displayString) each run."
+    }
+
+    /// The label column, fixed.
+    ///
+    /// Wide enough for the longest label the sheet can ever show, and the same
+    /// whatever is on screen. A measured column moved every row sideways when
+    /// Advanced opened, and a zero-height reservation row does not work: a
+    /// view framed to zero height reports zero width, so the grid measured
+    /// nothing at all.
+    ///
+    /// The number matters. Every label is right-aligned against this, so one
+    /// long label sets how far from the left margin the entire sheet begins:
+    /// at 152, sized for "How goguma watches it", "Name" sat a third of the
+    /// way across the sheet and the whole form read as floating in the middle.
+    /// Labels are kept short enough to hold this at 108, which fits the
+    /// longest of them ("How it's watched") without truncating and still
+    /// starts the form 44pt further left than the old measured column did.
+    private static let labelWidth: CGFloat = 108
+
+    // MARK: - When it runs
+
+    @ViewBuilder
+    private var scheduleSection: some View {
+        row("Name") {
+            TextField("", text: $draft.name)
+                .labelsHidden()
+                // A job name is two or three words. Filling the sheet's whole
+                // width implied a sentence was wanted.
+                .frame(width: 220)
+                .focused($focusedField, equals: .name)
+                .disabled(mode.isEdit)
+                .help(
+                    mode.isEdit
+                        ? "A job's name is its identity on disk and in IPC, so it can't be changed here."
+                        : "Used as the job's id. Lower-cased and hyphenated."
+                )
+        }
+
+        // An alarm, not an expression.
+        //
+        // "Custom…" used to reveal a cron field, which is the thing the
+        // presets existed to avoid: anyone who fell off the preset list landed
+        // on `0 9 * * *` with no way to reason about it. These are the controls
+        // a person already knows from setting an alarm.
+        row("Repeat") {
+            Picker("", selection: $repeat_) {
+                ForEach(ScheduleBuilder.Repeat.allCases, id: \.self) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+
+        scheduleDetail
+
+        row("Time zone") {
+            Picker("", selection: $draft.tz) {
+                Text("Local time").tag("")
+                Divider()
+                ForEach(Self.timeZoneChoices, id: \.identifier) { zone in
+                    Text(zone.label).tag(zone.identifier)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+    }
+
+    /// The controls that only apply to one kind of repeat.
+    @ViewBuilder
+    private var scheduleDetail: some View {
+        if repeat_ == .weekly {
+            row("On") { WeekdayPicker(selected: $weekdays) }
+        }
+
+        if repeat_ == .monthly {
+            row("Day") {
+                Picker("", selection: $dayOfMonth) {
+                    ForEach(1...28, id: \.self) { day in
+                        Text(Self.ordinal(day)).tag(day)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help("Capped at the 28th, the last day every month has.")
+            }
+        }
+
+        if repeat_ == .everyNHours {
+            row("Every") {
+                Picker("", selection: $everyHours) {
+                    ForEach(ScheduleBuilder.hourChoices, id: \.self) { n in
+                        Text(n == 1 ? "hour" : "\(n) hours").tag(n)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
+
+        if repeat_ == .everyNMinutes {
+            row("Every") {
+                Picker("", selection: $everyMinutes) {
+                    ForEach(ScheduleBuilder.minuteChoices, id: \.self) { n in
+                        Text(n == 1 ? "minute" : "\(n) minutes").tag(n)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
+
+        if repeat_.usesTime {
+            row("At") { ClockPicker(date: $timeOfDay) }
+        }
+    }
+
+    // MARK: - What goguma will do
+
+    /// One line, in the label column like everything else.
+    @ViewBuilder
+    private var detectionSection: some View {
+        row("While it runs") {
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                Text(detectionLine)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if draft.detection == .pattern {
+                    patternField
+                }
+            }
+        }
+    }
+
+    /// What goguma will do, in one sentence.
+    private var detectionLine: String {
+        switch draft.detection {
+        case .mark:
+            return "Waits for the job to report that it has finished."
+        case .pattern:
+            return draft.match.isEmpty
+                ? "Watches for the job's process, and lets the Mac sleep when it exits."
+                : "Watches for `\(draft.match)`, and lets the Mac sleep when it exits."
+        case .wakeOnly, .unknown:
+            // `.unknown` is a mode a newer daemon knows and this app does not.
+            // Describing it as the fixed window is the safe reading: that is
+            // what any unrecognised mode degrades to here.
+            guard let window = wakeOnlyWindow else {
+                return "Can't tell when this job finishes, so it stays awake for a set time."
+            }
+            return "Can't tell when this job finishes, so it stays awake "
+                + "\(window.displayString) each run."
+        }
+    }
+
+    /// The window this job will actually hold, or nil before config loads.
+    private var wakeOnlyWindow: WGDuration? {
+        let source = draft.maxRuntime.isZero ? store.config?.wakeOnlyHold : draft.maxRuntime
+        guard let source, !source.isZero else { return nil }
+        return source
+    }
+
+    // MARK: - Advanced
+
+    /// The word is the control, and opening it only adds rows.
+    @ViewBuilder
+    private var advancedSection: some View {
+        GridRow {
+            Button {
+                withAnimation(Theme.motion(reduced: reduceMotion)) { showAdvanced.toggle() }
+            } label: {
+                HStack(spacing: Theme.Space.xxs) {
+                    Spacer(minLength: 0)
+                    Image(systemName: Theme.Icon.disclosure)
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .rotationEffect(.degrees(showAdvanced ? 90 : 0))
+                    Text("Advanced")
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                }
+                // The word and its chevron, both clickable. A disclosure whose
+                // label does nothing is a disclosure people report as broken.
+                .contentShape(.rect)
+                .frame(width: Self.labelWidth, alignment: .trailing)
+            }
+            .buttonStyle(.plain)
+
+            Color.clear.frame(height: 1)
+        }
+
+        if showAdvanced {
+            advancedFields
+        }
+    }
+
+    @ViewBuilder
+    private var advancedFields: some View {
+        // Optional, and only ever read back to the user: goguma never executes
+        // a job, so this is a label for the detail pane and a hint for pattern
+        // suggestion.
+        row("Command") {
+            TextField("", text: $draft.command, prompt: Text("optional, shown in the job's details"))
+                .labelsHidden()
+                // The sheet's own type, not monospace.
+                //
+                // A code font here made this one row look like a terminal
+                // dropped into a settings sheet, at a different size and
+                // colour from the field directly above it.
+                .frame(width: 260)
+                .help("Shown in the job's details. goguma never runs it.")
+        }
+
+        row("How it's watched") {
+            Picker("", selection: $draft.detection) {
+                ForEach(DetectionMode.selectable, id: \.self) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .help("goguma picks this from the command. Change it only if you know "
+                + "the job behaves differently.")
+        }
+
+        // Menus, not text fields. These took typed durations ("90s", "1h30m"),
+        // a format the sheet never taught, and a mistyped one is a job held
+        // for the wrong length.
+        row("Stay awake for") {
+            DurationPicker(
+                presets: [60, 120, 300, 600, 1800, 3600].map { WGDuration(seconds: $0) },
+                current: draft.maxRuntime,
+                includeZeroAs: "Whatever goguma learns"
+            ) { draft.maxRuntime = $0 }
+                .help("How long to hold sleep off for this job, instead of the length "
+                    + "goguma works out from its history.")
+        }
+
+        row("Wake early") {
+            DurationPicker(
+                presets: [30, 60, 90, 120, 300].map { WGDuration(seconds: $0) },
+                current: draft.wakeBuffer,
+                includeZeroAs: "Same as every other job"
+            ) { draft.wakeBuffer = $0 }
+                .help("How far before its time to wake the Mac, so it is ready when the job fires.")
+        }
+
+        // Only when editing. A job being added is being added because the user
+        // wants it, and offering to create it switched off is a question
+        // nobody arrives with.
+        if mode.isEdit {
+            row("Enabled") {
+                Toggle("", isOn: $draft.enabled).labelsHidden()
+            }
+        }
+    }
+
+    /// "1st", "2nd", "3rd" …
+    static func ordinal(_ n: Int) -> String {
+        let suffix: String
+        switch (n % 10, n % 100) {
+        case (1, 11), (2, 12), (3, 13): suffix = "th"
+        case (1, _): suffix = "st"
+        case (2, _): suffix = "nd"
+        case (3, _): suffix = "rd"
+        default: suffix = "th"
+        }
+        return "\(n)\(suffix)"
     }
 
     // MARK: - Pattern field
@@ -425,15 +562,13 @@ struct JobEditSheet: View {
 
     // MARK: - Validation and saving
 
-    private var durationProblem: String? {
-        if !maxRuntimeText.isEmpty, WGDuration.parse(maxRuntimeText) == nil {
-            return "Max runtime isn't a duration. Try 90s, 5m, or 1h30m."
-        }
-        if !wakeBufferText.isEmpty, WGDuration.parse(wakeBufferText) == nil {
-            return "Wake buffer isn't a duration. Try 90s, 5m, or 1h30m."
-        }
-        return nil
-    }
+    /// Nothing to check any more.
+    ///
+    /// This parsed two typed duration fields and reported "not a duration".
+    /// Both are menus now, so an invalid value cannot be produced, and a
+    /// validator for a state that cannot occur is a claim the sheet has to
+    /// keep true forever for no benefit.
+    private var durationProblem: String? { nil }
 
     private var isValid: Bool {
         guard !draft.name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
@@ -451,8 +586,6 @@ struct JobEditSheet: View {
         // a newly added job validates on the first hop rather than bouncing.
         if job.id.isEmpty { job.id = Job.slug(from: job.name) }
         if job.source.isEmpty { job.source = "manual" }
-        job.maxRuntime = WGDuration(seconds: WGDuration.parse(maxRuntimeText) ?? 0)
-        job.wakeBuffer = WGDuration(seconds: WGDuration.parse(wakeBufferText) ?? 0)
         if job.detection != .pattern { job.match = "" }
 
         isSaving = true
@@ -478,27 +611,71 @@ struct JobEditSheet: View {
         }
     }
 
-    /// A time zone as the menu shows it: city first, sorted by city.
+    /// A time zone as the menu shows it.
     struct ZoneChoice {
         let identifier: String
         let label: String
     }
 
-    private static let timeZoneIdentifiers: [ZoneChoice] = TimeZone.knownTimeZoneIdentifiers
-        .map { identifier in
-            let parts = identifier.split(separator: "/")
-            guard parts.count > 1 else { return ZoneChoice(identifier: identifier, label: identifier) }
-            let city = parts.last!.replacingOccurrences(of: "_", with: " ")
-            let region = parts.dropLast().joined(separator: "/")
-                .replacingOccurrences(of: "_", with: " ")
-            return ZoneChoice(identifier: identifier, label: "\(city), \(region)")
-        }
-        .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+    /// The time zones, rather than every place on earth.
+    ///
+    /// This was `TimeZone.knownTimeZoneIdentifiers`, which is around six
+    /// hundred rows: every city Apple ships, most of which share an offset and
+    /// exist only to record a historical difference. Scrolling six hundred
+    /// rows to find your own is not a choice, it is a search, and rebuilding
+    /// that menu on every state change is most of why changing Repeat felt
+    /// slow.
+    ///
+    /// Real identifiers rather than fixed offsets, because an offset is not a
+    /// time zone: "GMT-5" is New York in winter and Bogotá all year, and
+    /// storing the wrong one moves a job by an hour for half of it. One
+    /// canonical zone per region people actually schedule against, and the
+    /// offset shown beside it so it can be picked by offset when the city is
+    /// unfamiliar.
+    private static let zoneIdentifiers = [
+        "Pacific/Midway", "Pacific/Honolulu", "America/Anchorage",
+        "America/Los_Angeles", "America/Denver", "America/Chicago",
+        "America/New_York", "America/Halifax", "America/Sao_Paulo",
+        "Atlantic/Azores", "UTC", "Europe/London", "Europe/Paris",
+        "Europe/Athens", "Europe/Moscow", "Asia/Dubai", "Asia/Karachi",
+        "Asia/Kolkata", "Asia/Dhaka", "Asia/Bangkok", "Asia/Singapore",
+        "Asia/Shanghai", "Asia/Tokyo", "Australia/Adelaide", "Australia/Sydney",
+        "Pacific/Auckland",
+    ]
 
+    static let timeZoneChoices: [ZoneChoice] = zoneIdentifiers
+        .compactMap { identifier -> (ZoneChoice, Int)? in
+            guard let zone = TimeZone(identifier: identifier) else { return nil }
+            let offset = zone.secondsFromGMT()
+            let city = identifier.split(separator: "/").last
+                .map { $0.replacingOccurrences(of: "_", with: " ") } ?? identifier
+            return (ZoneChoice(identifier: identifier, label: "\(city)  \(gmtLabel(offset))"), offset)
+        }
+        // By offset, so the menu reads as a line around the world rather than
+        // as an alphabetical list of unrelated cities.
+        .sorted { $0.1 < $1.1 }
+        .map(\.0)
+
+    private static func gmtLabel(_ seconds: Int) -> String {
+        if seconds == 0 { return "GMT" }
+        let sign = seconds < 0 ? "-" : "+"
+        let total = abs(seconds) / 60
+        let hours = total / 60, minutes = total % 60
+        return minutes == 0
+            ? "GMT\(sign)\(hours)"
+            : String(format: "GMT%@%d:%02d", sign, hours, minutes)
+    }
+
+    /// "at 15 minutes past", for a repeat with no hour of its own.
+    static func pastTheHour(_ date: Date) -> String {
+        let minute = Calendar.current.component(.minute, from: date)
+        return minute == 0 ? "on the hour" : "at \(minute) minutes past"
+    }
 
     private func rebuildSchedule() {
         draft.schedule = ScheduleBuilder.expression(
-            repeating: repeat_, at: timeOfDay, weekdays: weekdays, everyHours: everyHours
+            repeating: repeat_, at: timeOfDay, weekdays: weekdays,
+            everyHours: everyHours, everyMinutes: everyMinutes, dayOfMonth: dayOfMonth
         )
     }
 

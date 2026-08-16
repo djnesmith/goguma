@@ -19,6 +19,16 @@ import SwiftUI
 struct SettingsWindowView: View {
     @Bindable var store: StatusStore
 
+    /// Non-zero while the user is holding a control or a write is in flight.
+    /// Polls do not overwrite the fields during that.
+    @State private var editing = 0
+    /// Which text field has the caret, if any.
+    ///
+    /// Owned by the pane rather than by each field, because "click anywhere
+    /// else to finish typing" is a decision about the whole pane. With the
+    /// focus held privately inside the field, there was nothing else for the
+    /// caret to move to and clicking away left it stuck in the box.
+    @FocusState private var focus: FieldFocus?
     @State private var thermalCutout: Double = 80
     @State private var lowBatteryCutout: Double = 20
     @State private var webhookText = ""
@@ -76,18 +86,42 @@ struct SettingsWindowView: View {
                     sectionRule
                     alertsSection
                     sectionRule
+                    updatesSection
+                    sectionRule
                     advancedSection
                     if !store.configWarnings.isEmpty { warningsSection }
                 }
-                // Held while a config.set round trip is in flight, matching
-                // every button in the app. Without it a second toggle during
-                // the flight hit the store's isPerformingAction guard, was
-                // silently dropped, and then visually snapped back when the
-                // refresh landed.
-                .disabled(store.isPerformingAction)
+                // Config writes no longer take this path.
+                //
+                // This was here because `perform` drops a second call made
+                // while the first is in flight, so a fast second toggle was
+                // silently discarded and then contradicted by the refresh.
+                // Disabling the pane prevented that by making the whole window
+                // grey out and come back on every slider release, a full-page
+                // flash to guard one row. `store.writeConfig` is sequential
+                // and never dropped, so nothing needs to be frozen.
+                // Clicking the pane finishes typing.
+                //
+                // A text field on macOS keeps first responder until something
+                // else takes it, and the rest of this pane is sliders,
+                // checkboxes and pop-ups, none of which accept the caret. So
+                // clicking away from the box left it focused with the caret
+                // still blinking in it, and there was no way out but Return.
+                // This is the surface the click lands on when it misses a
+                // control, which is exactly when the caret should be given up.
+                .contentShape(.rect)
+                // Simultaneous, so it can never win a click a control wanted.
+                // A plain `onTapGesture` here competes with the sliders and
+                // checkboxes underneath it; this runs alongside them, which
+                // also means clicking any other control finishes the edit,
+                // which is what clicking another control means.
+                .simultaneousGesture(TapGesture().onEnded { focus = nil })
                 .padding(.horizontal, Theme.Space.md)
                 .padding(.top, Theme.Space.sm)
-                .padding(.bottom, Theme.Space.md)
+                // A collapsed disclosure is its own bottom margin: it carries
+                // the padding that makes it a hit target, and adding a full
+                // pane margin under that is what made the gap conspicuous.
+                .padding(.bottom, showAdvanced ? Theme.Space.md : Theme.Space.xs)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -205,8 +239,17 @@ struct SettingsWindowView: View {
     // MARK: - Timing
 
     private var timingSection: some View {
-        settingsSection("Timing", "How long the Mac stays awake around a job.") {
-            settingsRow("Wake it this early") {
+        settingsSection("Timing", "When the Mac wakes up for a job, and how long it stays up.") {
+            // Labels a person can act on without knowing how goguma works.
+            //
+            // These were "Wake it this early", "Stay awake at least" and "Stay
+            // awake for unwatched". The first is missing what it is early
+            // *for*, the second never says at least *what*, and the third
+            // turns on "unwatched", which is a word this app invented for a
+            // job whose process it cannot recognise. Each one now names the
+            // job it applies to, because that is the only thing separating
+            // three otherwise identical durations.
+            settingsRow("Wake up before a job") {
                 DurationPicker(
                     presets: [30, 60, 90, 120, 300].map { WGDuration(seconds: $0) },
                     current: store.config?.wakeBuffer ?? .zero
@@ -217,27 +260,27 @@ struct SettingsWindowView: View {
                     + "rather than still mounting disks when the job fires."
             )
 
-            settingsRow("Stay awake at least") {
+            settingsRow("Stay awake for a new job") {
                 DurationPicker(
                     presets: [60, 120, 300, 600, 1800].map { WGDuration(seconds: $0) },
                     current: store.config?.defaultCeiling ?? .zero
                 ) { apply("default_ceiling", $0.wireString) }
             }
             .help(
-                "How long to hold sleep off for a job with no history yet. Once a job "
-                    + "has run a few times this is replaced by a learned value."
+                "How long to stay awake for a job goguma has not timed yet. After a "
+                    + "few runs it knows how long that job takes and uses that instead."
             )
 
-            settingsRow("Stay awake for unwatched") {
+            settingsRow("Stay awake for a job it cannot watch") {
                 DurationPicker(
                     presets: [60, 120, 180, 300, 600].map { WGDuration(seconds: $0) },
                     current: store.config?.wakeOnlyHold ?? .zero
                 ) { apply("wake_only_hold", $0.wireString) }
             }
             .help(
-                "Wake-only jobs cannot be observed, so their window is a fixed length "
-                    + "rather than a learned one. Most adopted jobs use this, which makes it "
-                    + "the setting that decides what they cost."
+                "Some jobs run in a way goguma cannot recognise, so it cannot tell when "
+                    + "they finish and stays awake for a fixed stretch instead. Most jobs "
+                    + "it finds by itself are like this, so this is what they cost."
             )
         }
     }
@@ -245,7 +288,23 @@ struct SettingsWindowView: View {
     // MARK: - Automatic adoption
 
     private var adoptionSection: some View {
-        settingsSection("Finding jobs", "goguma can pick up jobs other apps create, so you don\u{2019}t have to add them.") {
+        settingsSection(
+            "Finding jobs",
+            // Names only what there is a reader for.
+            //
+            // This said "Claude, ChatGPT, hermes, crontab and launchd". There
+            // are three providers: crontab, launchd and hermes. Claude and
+            // ChatGPT have no reader, so the sentence was true only if those
+            // apps happen to schedule through launchd, and false if they
+            // schedule inside themselves. Naming a source goguma cannot read
+            // is the one claim a settings pane must not make.
+            //
+            // The second sentence is the way out: any app can be added with
+            // `goguma scheduler add`, so the honest version says what is
+            // covered and how to cover the rest.
+            "goguma finds jobs from crontab, launchd and hermes by itself. "
+                + "Other apps can be added with the goguma scheduler command."
+        ) {
             unlabelledRow {
                 Toggle(
                     "Pick up new jobs on their own",
@@ -263,25 +322,29 @@ struct SettingsWindowView: View {
                 )
             }
 
-            // Answer first, action after it.
+            // A sentence and a button, spanning the pane.
             //
-            // The button used to lead, which left it stranded between the
-            // label and the status text, reading as though it had been
-            // centred in the row rather than aligned to the control column.
-            // "Status: watching everything adoptable [Check Now]" is the
-            // sentence; the button is what you do about it.
-            settingsRow("Status") {
+            // This was a labelled row, and the label column is sized by "Stay
+            // awake for unwatched" while the label here is one short word. That
+            // left "Status" alone against a wide gap with its own value marooned
+            // on the far side of it, which is the spacing that read as broken.
+            // Nothing about this is a label-and-control pair, so it stops
+            // pretending to be one.
+            unlabelledRow {
                 HStack(spacing: Theme.Space.sm) {
                     Text(adoptionStateText)
                         .font(Theme.Typography.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Button("Check Now") {
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // Beside the sentence it belongs to, not pinned to the
+                    // far edge with the width of the pane between them.
+                    Button("Update now") {
                         store.performReporting { try await $0.sync().summary }
                     }
                     .controlSize(.small)
                     .disabled(store.isPerformingAction)
+                    Spacer(minLength: 0)
                 }
             }
 
@@ -292,11 +355,11 @@ struct SettingsWindowView: View {
 
     private var adoptionStateText: String {
         guard let config = store.config else { return "" }
-        if !config.isAutoAdoptEnabled { return "off" }
+        if !config.isAutoAdoptEnabled { return "Not looking for new jobs." }
         if let watched = config.watchedSources {
-            return "watching \(watched.joined(separator: ", "))"
+            return "Watching \(watched.joined(separator: ", "))."
         }
-        return "watching everything adoptable"
+        return "Watching every scheduler on this Mac."
     }
 
     private func setAutoAdopt(enabled: Bool) {
@@ -318,23 +381,33 @@ struct SettingsWindowView: View {
     // MARK: - Safety
 
     private var safetySection: some View {
-        settingsSection("Safety", "With the lid shut, goguma lets the Mac sleep rather than cook it or flatten its battery.") {
+        settingsSection(
+            "Safety",
+            "goguma lets the Mac sleep rather than let it overheat or run out of battery."
+        ) {
             sliderRow(
                 title: "Let it sleep if hotter than",
                 value: $thermalCutout,
                 range: Self.thermalRange,
-                format: { String(format: "%.0f°C", $0) },
-                help: "Above this CPU temperature with the lid closed, every hold is "
-                    + "force-released. Holding a bagged laptop awake without this is unsafe."
+                // 5°C. The range is 70 to 95, so the track shows six stops and
+                // the values people actually pick are on them.
+                step: 5,
+                unit: "°C",
+                focusID: .thermal,
+                help: "Above this CPU temperature, every hold is released and the Mac "
+                    + "sleeps normally, so a laptop in a bag does not overheat."
             ) { apply("thermal_cutout_c", String(Int(thermalCutout))) }
 
             sliderRow(
                 title: "Let it sleep if battery under",
                 value: $lowBatteryCutout,
                 range: Self.batteryRange,
-                format: { "\(Int($0))%" },
-                help: "Below this charge on battery with the lid closed, holds are released "
-                    + "so normal sleep takes over with charge to spare."
+                // 5%. The range is 5 to 50, which is ten stops.
+                step: 5,
+                unit: "%",
+                focusID: .battery,
+                help: "Below this charge, holds are released and the Mac sleeps normally, "
+                    + "so it does not run out of battery while you are away from it."
             ) { apply("low_battery_cutout_pct", String(Int(lowBatteryCutout))) }
 
             // A consequence of the slider above, not a setting of its own.
@@ -351,53 +424,108 @@ struct SettingsWindowView: View {
         title: String,
         value: Binding<Double>,
         range: ClosedRange<Double>,
-        format: @escaping (Double) -> String,
+        step: Double,
+        unit: String,
+        focusID: FieldFocus,
         help: String,
         commit: @escaping () -> Void
     ) -> some View {
         settingsRow(title) {
             HStack(spacing: Theme.Space.sm) {
-                // No tick marks, and no `step:`.
+                // Snapped to `step`, with the ticks drawn.
                 //
-                // Passing a step makes AppKit draw a tick for every stop, which
-                // at 1°C over a 25° range is 26 dots under the track, read as
-                // texture, not as scale, and the two sliders stacked together
-                // looked like hatching. Apple's own guidance is that ticks are
-                // for when someone needs to understand the scale or land on a
-                // specific value; these are thresholds nobody sets precisely,
-                // and the exact number is already shown beside the thumb.
-                //
-                // Whole numbers still reach the daemon: the binding rounds, so
-                // the value is integral without the track advertising it.
-                Slider(value: value.rounded, in: range) { editing in
-                    if !editing { commit() }
+                // A 1-unit step over a 25-unit range draws 26 dots that read as
+                // hatching rather than as a scale. The answer is a coarser
+                // step: at 5 the track shows six stops, the thumb lands on
+                // them, and the round numbers people actually choose stop
+                // needing a steady hand. Anything between the stops is still
+                // reachable by typing it into the field beside the track.
+                Slider(value: value.rounded, in: range, step: step) { held in
+                    // Counted, not just committed on release. A poll landing
+                    // mid-drag used to reload the field under the cursor,
+                    // which reset the thumb and cancelled the gesture.
+                    if held {
+                        editing += 1
+                    } else {
+                        editing -= 1
+                        commit()
+                    }
                 }
-                .frame(maxWidth: .infinity)
+                // Not `maxWidth: .infinity`. The track took every point the row
+                // had, which pushed the number to the far edge of the window
+                // with the whole slider between it and the thumb it belongs to.
+                .frame(width: 200)
 
-                Text(format(value.wrappedValue))
-                    // The row's own type, not the tabular one.
-                    //
-                    // `tabularSmall` is 11pt monospaced, which exists for
-                    // digits that change in place a second at a time. These
-                    // change only while a thumb is being dragged, and next to
-                    // a 13pt proportional label the monospace read as code
-                    // rather than as the value of the setting above it.
-                    // `.monospacedDigit()` below still holds the width steady.
-                    .font(Theme.Typography.rowLabel)
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    // Beside the thumb, not at the window's edge. It was pinned
-                    // far right with the whole track between it and its label,
-                    // so reading "what is this set to" meant crossing the pane.
-                    // Fixed width so the track does not shift as digits change.
-                    .frame(width: 46, alignment: .trailing)
-                    .monospacedDigit()
+                ThresholdField(
+                    value: value,
+                    editing: $editing,
+                    focus: $focus,
+                    id: focusID,
+                    range: range,
+                    unit: unit,
+                    commit: commit
+                )
+
+                Spacer(minLength: 0)
             }
         }
         .help(help)
     }
 
-
     // MARK: - Alerts
+
+    /// Hearing about problems goguma cannot tell you about itself.
+    ///
+    /// A bug that only appears on hardware the author does not own reaches
+    /// people who then have no way to find out: goguma quietly stops waking
+    /// the Mac, and nothing says a fix exists.
+    ///
+    /// Built like Alerts and Finding jobs rather than as prose. It had a
+    /// caption promising goguma "can tell you when a problem is found" above a
+    /// row that offered no way to switch that on, because a build with no
+    /// signing key cannot verify a notice and hides the control. A section
+    /// whose description is of a thing the pane does not offer is worse than
+    /// no section, and its caption-then-text rhythm did not match any other
+    /// group here.
+    private var updatesSection: some View {
+        settingsSection("Staying up to date", nil) {
+            // Only when this build can actually verify a notice.
+            if store.advisoriesAvailable {
+                unlabelledRow {
+                    Toggle("Tell me when a problem is found", isOn: Binding(
+                        get: { store.config?.advisoryChecks ?? false },
+                        set: { apply("advisory_checks", $0 ? "on" : "off") }
+                    ))
+                    .toggleStyle(.checkbox)
+                    .help("Fetches a small signed file from getgoguma.com once a day. It "
+                        + "sends nothing about you or your jobs: no account, no identifier, "
+                        + "not even the version you are running. What comes back can show a "
+                        + "message and cannot change any setting.")
+                }
+            }
+
+            // The same shape as "Watching every scheduler on this Mac. [Update
+            // now]" two sections up: a sentence, then the action beside it.
+            unlabelledRow {
+                HStack(spacing: Theme.Space.sm) {
+                    Text(store.advisoriesAvailable
+                        ? "Or by email, when there is something to say."
+                        : "Get an email when something breaks or gets fixed.")
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Sign up") {
+                        if let url = URL(string: "https://getgoguma.com/updates") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .controlSize(.small)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
 
     private var alertsSection: some View {
         settingsSection("Alerts", nil) {
@@ -464,7 +592,14 @@ struct SettingsWindowView: View {
                 }
                 // The row's whole width and a real height: a hit area that
                 // matches what the eye reads as the control.
-                .frame(maxWidth: .infinity, minHeight: Theme.IconSize.row + Theme.Space.sm)
+                //
+                // Padding rather than a minHeight. The grid aligns rows on the
+                // first text baseline, so a minHeight taller than the label
+                // hung entirely below it: 1.5pt above "Advanced" and 15 below,
+                // which collapsed is the last thing in the pane and read as a
+                // band of empty surface above the status bar.
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.Space.sm)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -489,7 +624,12 @@ struct SettingsWindowView: View {
 
                     TextField("", text: $webhookText, prompt: Text("https://…"))
                         .textFieldStyle(.roundedBorder)
-                        .onSubmit { apply("webhook_url", webhookText) }
+                        .tint(Theme.Colors.accent)
+                        .focused($focus, equals: .webhook)
+                        .onSubmit {
+                            apply("webhook_url", webhookText)
+                            focus = nil
+                        }
                         .help("Press Return to apply.")
                 }
                 .padding(.bottom, Theme.Space.xs)
@@ -634,7 +774,12 @@ struct SettingsWindowView: View {
     /// commits on Return and the sliders on release, both of which require the
     /// user. The pickers write on selection, which is also unambiguous.
     private func loadFields() {
-        guard let config = store.config else { return }
+        // Not while the user is in the middle of something.
+        //
+        // The pane re-reads config on every poll, and the poll landing during
+        // a drag reset the slider under the cursor and cancelled the gesture,
+        // which is most of why it was hard to move at all.
+        guard editing == 0, let config = store.config else { return }
         webhookText = config.webhookURL
         // A webhook that is already set should be visible rather than hidden
         // behind a collapsed disclosure, or it looks like it was lost.
@@ -649,12 +794,15 @@ struct SettingsWindowView: View {
     }
 
     private func apply(_ key: String, _ value: String) {
-        store.perform("Saved.") { client in
-            try await client.setConfig(key: key, value: value)
-        }
-        // Re-read so a clamped value is reflected rather than the chosen one.
+        editing += 1
         Task { @MainActor in
-            await store.loadConfig()
+            // Write, then re-read, in that order and in one task. These were
+            // two: a detached write and a second task that re-read. The read
+            // raced the write and usually won, so a slider released on 25 was
+            // written as 25 and redrawn at the value it had before, which
+            // reads as the setting refusing to take.
+            await store.writeConfig(key: key, value: value)
+            editing -= 1
             loadFields()
         }
     }
@@ -671,6 +819,130 @@ extension Binding where Value == Double {
             get: { wrappedValue },
             set: { wrappedValue = $0.rounded() }
         )
+    }
+
+    /// A whole-number binding that refuses anything outside `range`.
+    ///
+    /// For the field beside a slider. Someone typing a temperature into a box
+    /// can type 900, and the honest response is not an error dialog but the
+    /// box showing what the setting is: the value clamps, and the field
+    /// redraws with the number that was actually stored.
+    func clamped(to range: ClosedRange<Double>) -> Binding<Double> {
+        Binding<Double>(
+            get: { wrappedValue },
+            set: { wrappedValue = Swift.min(Swift.max($0.rounded(), range.lowerBound), range.upperBound) }
+        )
+    }
+}
+
+/// Which of the pane's text fields holds the caret.
+enum FieldFocus: Hashable {
+    case thermal
+    case battery
+    case webhook
+}
+
+/// The number beside a threshold slider, typed rather than dragged.
+///
+/// A slider says "roughly here", which is the right control for a temperature
+/// nobody has an opinion about and the wrong one for someone who wants 82. The
+/// field takes any value in the slider's range and turns down the rest by
+/// snapping back to what is set, rather than by raising a complaint about it.
+///
+/// Drawn on the theme's own surface rather than with `.roundedBorder`. That
+/// style paints an opaque system white which, on the arctic purple pane, was a
+/// bright rectangle sitting in a window that has no other white in it.
+private struct ThresholdField: View {
+    @Binding var value: Double
+    /// Held above zero while this field has focus, so a poll landing mid-type
+    /// does not reload the number out from under the caret.
+    @Binding var editing: Int
+    var focus: FocusState<FieldFocus?>.Binding
+    let id: FieldFocus
+    let range: ClosedRange<Double>
+    let unit: String
+    let commit: () -> Void
+
+    /// Fixed, and the same for every row.
+    ///
+    /// Both boxes were sized by their contents, so "80°C" and "5%" were
+    /// different widths sitting at different distances from their tracks, and
+    /// the number moved sideways as digits came and went. The number column
+    /// fits the widest value either range can produce, and the pair is then
+    /// centred in a box wide enough for the longer of the two units, so every
+    /// row's box is identical and its contents sit in the middle of it.
+    ///
+    /// The unit is not given a column of its own. "°C" and "%" are genuinely
+    /// different widths, and padding the narrower one out to match left "20 %"
+    /// looking like it had drifted left inside its box.
+    private static let numberWidth: CGFloat = 24
+    private static let contentWidth: CGFloat = 46
+
+    private var isFocused: Bool { focus.wrappedValue == id }
+
+    var body: some View {
+        // The unit sits inside the box with the number, not outside it.
+        //
+        // Outside, "80" and "°C" were two separate objects with a gap between
+        // them, and the reader has to put them back together to get a
+        // temperature. One box, one value.
+        HStack(spacing: 1) {
+            TextField(
+                "",
+                value: $value.clamped(to: range),
+                format: .number.precision(.fractionLength(0))
+            )
+            .textFieldStyle(.plain)
+            .multilineTextAlignment(.trailing)
+            .frame(width: Self.numberWidth)
+            // The caret and the selection, in the app's own colour.
+            //
+            // Untinted they are the system blue, which is the one hue this
+            // theme never uses, so typing put a blinking blue bar in the
+            // middle of a purple pane.
+            .tint(Theme.Colors.accent)
+            .focused(focus, equals: id)
+            .onSubmit {
+                commit()
+                // Return finishes the edit and gives up the caret. Leaving it
+                // in the box means the next Return does nothing visible.
+                focus.wrappedValue = nil
+            }
+
+            Text(unit)
+                .foregroundStyle(Theme.Colors.textSecondary)
+        }
+        .font(Theme.Typography.rowLabel)
+        .monospacedDigit()
+        .frame(width: Self.contentWidth)
+        .onChange(of: isFocused) { _, nowFocused in
+            // Clicking away is as much a "done" as pressing Return, and losing
+            // the value because it was finished the wrong way reads as the
+            // setting not working.
+            if nowFocused {
+                editing += 1
+            } else {
+                editing -= 1
+                commit()
+            }
+        }
+        .padding(.horizontal, Theme.Space.xs)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.badge, style: .continuous)
+                .fill(Theme.Colors.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.badge, style: .continuous)
+                .strokeBorder(
+                    isFocused ? Theme.Colors.accent : Theme.Colors.divider,
+                    lineWidth: Theme.Stroke.hairline
+                )
+        )
+        .contentShape(.rect)
+        // The whole box is the target, not just the glyphs. Clicking the unit
+        // or the padding used to land on the pane behind it and do nothing.
+        .onTapGesture { focus.wrappedValue = id }
     }
 }
 

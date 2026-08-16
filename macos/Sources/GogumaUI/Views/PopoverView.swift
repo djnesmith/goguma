@@ -169,6 +169,27 @@ struct PopoverView: View {
                                         + Theme.Typography.Size.emphasised
                                         * Theme.Typography.capHeightRatio
                                 }
+
+                            // How much is riding on it.
+                            //
+                            // "on watch" says goguma is doing its job and
+                            // nothing about the size of that job, so a Mac
+                            // covering nine schedules read exactly like one
+                            // covering none. The count is the whole reason the
+                            // state matters, and it belongs on the line that
+                            // states it rather than a card below.
+                            //
+                            // In caption grey at caption size, so it reads as
+                            // the scale of the state rather than competing with
+                            // it. Hidden when there is nothing to count, which
+                            // is a different situation and already has its own
+                            // wording.
+                            if let scale = watchCount {
+                                Text(scale)
+                                    .font(Theme.Typography.caption)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .fixedSize()
+                            }
                         }
 
                         if let detail = subheadline {
@@ -245,10 +266,64 @@ struct PopoverView: View {
                 // "nothing to wake for" on a Mac with nine jobs reads as a
                 // fault rather than as a daemon that has not looked yet.
                 "starting up"
+            } else if !store.wakeSuppressed.isEmpty {
+                // Its own headline, and a short one.
+                //
+                // This fell through to "nothing to wake for", which is both
+                // wrong and too long: there are jobs, and the wake is being
+                // withheld on purpose. At 20pt it wrapped to two lines, and
+                // because the mark and the runs-saved count trail the first
+                // line, the result read "nothing to 🍠 · 3 runs saved with
+                // goguma / wake for".
+                "wake held back"
             } else {
                 store.nextWake == nil ? "nothing to wake for" : "on watch"
             }
         }
+    }
+
+    /// What the current state is worth, in the plainest number available.
+    ///
+    /// Two different claims, and which one is true depends on how long goguma
+    /// has been running:
+    ///
+    /// - Once it has woken the Mac for anything, that count is the only honest
+    ///   thing the tool can say about its own worth. Every one of those runs
+    ///   was going to be skipped. `goguma list` reports the same number as
+    ///   "woken for N runs that would have been missed"; this is the short
+    ///   form of that sentence, not a second metric.
+    /// - Before then there is no score, so it falls back to how much is
+    ///   riding on it. "on watch" says goguma is doing its job and nothing
+    ///   about the size of that job, so a Mac covering nine schedules read
+    ///   exactly like one covering none.
+    ///
+    /// Only while idle. Holding already names the job in the headline and
+    /// counts the rest in the subheadline; paused and disconnected are about
+    /// goguma rather than about the jobs; a cutout is about the machine.
+    private var watchCount: String? {
+        guard store.state == .idle, store.status?.starting != true else { return nil }
+        // Not while a wake is being withheld. The headline there is reporting
+        // something the user may want to act on, and trailing it with a count
+        // of past wins both lengthens the line past one row and answers a
+        // question nobody is asking at that moment.
+        guard store.wakeSuppressed.isEmpty else { return nil }
+        let saved = store.jobs.reduce(0) { $0 + $1.stats.woken }
+        if saved > 0 {
+            // "with goguma" only where the line has room for it.
+            //
+            // Beside "on watch" the whole thing fits on one row and the
+            // attribution is worth having. Beside "nothing to wake for" it
+            // pushes the headline onto a second line, and because this count
+            // trails the *first* line the result reads as one scrambled
+            // sentence. The word "goguma" is directly above it either way.
+            let long = store.nextWake == nil
+            return long
+                ? "· \(Format.count(saved, "run")) saved"
+                : "· \(Format.count(saved, "run")) saved with goguma"
+        }
+        let watching = store.jobs.filter(\.job.enabled).count
+        guard watching > 0 else { return nil }
+        return "· \(Format.count(watching, "job"))"
     }
 
     private var subheadline: String? {
@@ -320,8 +395,11 @@ struct PopoverView: View {
             // it is thirty words about thresholds. Returning it here printed
             // the identical paragraph twice, a few points apart, on a 340pt
             // surface. The header says the situation, the card says why.
+            // Nothing. The card immediately below carries the daemon's own
+            // sentence, so "Nothing is scheduled. See below for why." was a
+            // line whose entire content was a pointer to the next line.
             if !store.wakeSuppressed.isEmpty {
-                return "Nothing is scheduled. See below for why."
+                return nil
             }
             return store.jobs.isEmpty ? "No jobs registered yet." : nil
         }
@@ -361,18 +439,18 @@ struct PopoverView: View {
             )
             .themeCard()
         } else if !store.wakeSuppressed.isEmpty {
-            VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                HStack(spacing: Theme.Space.sm) {
-                    Image(systemName: Theme.Icon.wakeSuppressed)
-                        .font(Theme.Typography.iconInline)
-                        .foregroundStyle(Theme.Colors.stateSuppressed)
-                        .frame(width: Theme.IconSize.row)
-                        .accessibilityHidden(true)
-                    Text("Next wake held back")
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                    Spacer(minLength: 0)
-                }
+            // The reason, beside its icon, and nothing else.
+            //
+            // This had a "Next wake held back" row above the reason, which is
+            // now the headline four points higher up. Three restatements of
+            // one fact stacked vertically, and the row's own height plus the
+            // stack's spacing is where the card's excess whitespace came from.
+            HStack(alignment: .top, spacing: Theme.Space.sm) {
+                Image(systemName: Theme.Icon.wakeSuppressed)
+                    .font(Theme.Typography.iconInline)
+                    .foregroundStyle(Theme.Colors.stateSuppressed)
+                    .frame(width: Theme.IconSize.row)
+                    .accessibilityHidden(true)
                 // Verbatim: the daemon already writes this as user-facing prose,
                 // and paraphrasing would lose the specific numbers that make it
                 // make sense.
@@ -380,10 +458,33 @@ struct PopoverView: View {
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
             }
             .themeCard()
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Next wake held back. \(store.wakeSuppressed)")
+        } else if !store.noWakeReason.isEmpty {
+            // A reason, not just an absence.
+            //
+            // "none scheduled" reads identically whether there are no jobs, all
+            // of them are switched off, or a schedule cannot be parsed, and
+            // those need three different things done about them. The daemon
+            // knows which it is, so it says.
+            HStack(alignment: .top, spacing: Theme.Space.sm) {
+                Image(systemName: Theme.Icon.nextWake)
+                    .font(Theme.Typography.iconInline)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .frame(width: Theme.IconSize.row)
+                    .accessibilityHidden(true)
+                Text(Format.noWidow(store.noWakeReason))
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .themeCard()
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("No wake scheduled. \(store.noWakeReason)")
         } else {
             KeyValueRow(
                 label: "Next wake",

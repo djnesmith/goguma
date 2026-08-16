@@ -12,8 +12,26 @@ import SwiftUI
 final class WindowCoordinator: NSObject, NSWindowDelegate {
     private let store: StatusStore
 
-    private var jobsWindow: NSWindow?
-    private var settingsWindow: NSWindow?
+    /// One window, two pages.
+    ///
+    /// Jobs and Settings are the two things the popover's footer opens, and
+    /// they used to be two independent windows: opening one while the other
+    /// was up left the user with a second window on top of the first, and
+    /// going back and forth accumulated windows they then had to close. They
+    /// are pages of the same window now, retargeted the way the history
+    /// inspector already was.
+    private var mainWindow: NSWindow?
+    private var mainHost: NSHostingController<MainWindowView>?
+    private var mainPage: MainPage?
+    /// The size Jobs was left at, so switching to Settings and back does not
+    /// throw away a window the user had sized to their list.
+    private var jobsSize: CGSize?
+    /// True for a prewarmed window that has never been on screen, so it is
+    /// centred on the screen the user is actually looking at when it first is.
+    private var needsPlacing = false
+    /// Height of the window's title bar, measured once. See `retarget`.
+    private var chromeHeight: CGFloat?
+
     private var historyWindow: NSWindow?
     private var historyHost: NSHostingController<HistoryWindowView>?
 
@@ -24,35 +42,142 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     // MARK: - Windows
 
-    func showJobs() {
-        if let jobsWindow {
-            front(jobsWindow)
-            return
-        }
-        let window = makeWindow(
-            title: "goguma Jobs",
-            size: Theme.Surface.jobsWindowSize,
-            minSize: Theme.Surface.jobsWindowMinSize,
-            content: JobsWindowView(store: store, coordinator: self)
+    /// Builds the main window without showing it.
+    ///
+    /// Constructing the NSWindow and its hosting controller lays out the whole
+    /// SwiftUI tree synchronously, which measured 234ms the first time. Paid on
+    /// the click, that is the pause between pressing Jobs and seeing Jobs. Paid
+    /// shortly after launch, nobody is waiting for it.
+    ///
+    /// Idempotent, and safe to call when a window already exists.
+    func prewarm() {
+        guard mainWindow == nil else { return }
+        let page = MainPage.jobs
+        let host = NSHostingController(
+            rootView: MainWindowView(store: store, coordinator: self, page: page)
         )
-        jobsWindow = window
-        front(window)
+        host.sizingOptions = .standardBounds
+        mainWindow = makeWindow(
+            title: page.title,
+            size: size(for: page),
+            minSize: page.minSize,
+            resizable: page.resizable,
+            hosting: host
+        )
+        mainHost = host
+        mainPage = page
+        // Not yet placed: it was centred on whichever screen was active at
+        // launch, and the person may be looking at another one by the time
+        // they open it.
+        needsPlacing = true
     }
 
-    func showSettings() {
-        if let settingsWindow {
-            front(settingsWindow)
+    func showJobs() { show(.jobs) }
+
+    func showSettings() { show(.settings) }
+
+    private func show(_ page: MainPage) {
+        let view = MainWindowView(store: store, coordinator: self, page: page)
+        guard let mainWindow, let mainHost else {
+            let host = NSHostingController(rootView: view)
+            host.sizingOptions = .standardBounds
+            let window = makeWindow(
+                title: page.title,
+                size: size(for: page),
+                minSize: page.minSize,
+                resizable: page.resizable,
+                hosting: host
+            )
+            mainHost = host
+            self.mainWindow = window
+            mainPage = page
+            front(window)
             return
         }
-        let window = makeWindow(
-            title: "goguma Settings",
-            size: Theme.Surface.settingsWindowSize,
-            minSize: nil,
-            resizable: false,
-            content: SettingsWindowView(store: store)
-        )
-        settingsWindow = window
-        front(window)
+        if needsPlacing {
+            needsPlacing = false
+            mainWindow.center(on: activeScreen)
+        }
+        if mainPage != page {
+            if mainPage == .jobs {
+                jobsSize = CGSize(
+                    width: mainWindow.frame.width,
+                    height: mainWindow.frame.height - (chromeHeight ?? 0)
+                )
+            }
+            mainHost.rootView = view
+            retarget(mainWindow, to: page)
+        }
+        front(mainWindow)
+    }
+
+    /// Re-dresses the window for a page: title, resizability, and size.
+    ///
+    /// The order matters. A minimum size left over from Jobs would refuse the
+    /// Settings width, and a resizable mask left on would let the fixed-width
+    /// pane be dragged, so both are reset before the frame is set.
+    private func retarget(_ window: NSWindow, to page: MainPage) {
+        mainPage = page
+        window.title = page.title
+
+        var style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable]
+        if page.resizable { style.insert(.resizable) }
+        window.styleMask = style
+        window.contentMinSize = page.minSize ?? .zero
+
+        // Anchored by the top edge and the horizontal centre.
+        //
+        // Setting the content size alone pins the bottom-left corner, so a
+        // page 380pt narrower shrinks away from its right edge and a page
+        // 200pt shorter drops its title bar down the screen. Both leave the
+        // window sitting somewhere the user did not put it: switching from
+        // Jobs to Settings left the smaller pane hanging off to the left of
+        // where the window had been. Holding the centre and the top means the
+        // window changes size around the place it already occupied.
+        var target = size(for: page)
+        var frame = window.frame
+        if page.sizesItsOwnHeight {
+            // Keep what is there; the pane corrects it after it measures.
+            target.height = frame.height - (chromeHeight ?? 0)
+        }
+        // The title bar's height, measured once.
+        //
+        // `contentLayoutRect` is the whole cost of switching page: reading it
+        // forces AppKit to lay out the SwiftUI tree that was just installed,
+        // synchronously, before this function can continue. It measured 380ms
+        // on the Settings pane, every single time. The chrome is a constant
+        // for a given style mask, so it is worth measuring once and never
+        // asking again.
+        let chrome = chromeHeight ?? {
+            let h = frame.height - window.contentLayoutRect.height
+            chromeHeight = h
+            return h
+        }()
+        let midX = frame.midX
+        frame.origin.y += frame.height - (target.height + chrome)
+        frame.size = NSSize(width: target.width, height: target.height + chrome)
+        frame.origin.x = midX - target.width / 2
+        // `display: false`.
+        //
+        // Passing true makes AppKit lay out and redraw the hosted SwiftUI
+        // content synchronously inside setFrame, which measured 189ms on the
+        // Jobs to Settings switch: the whole cost of changing page was one
+        // argument. The window is redrawn on the next display cycle either
+        // way, and the frame is set before it is ordered front, so nothing is
+        // ever seen at the old size.
+        window.setFrame(frame, display: false, animate: false)
+        // Back onto the screen if centring pushed it off the edge, which it
+        // can when the window was already up against one.
+        if let visible = window.screen?.visibleFrame, !visible.contains(frame) {
+            window.setFrame(frame.nudged(into: visible), display: false, animate: false)
+        }
+    }
+
+    private func size(for page: MainPage) -> CGSize {
+        switch page {
+        case .jobs: jobsSize ?? Theme.Surface.jobsWindowSize
+        case .settings: Theme.Surface.settingsWindowSize
+        }
     }
 
     /// One history window, retargeted rather than duplicated: opening history
@@ -176,15 +301,24 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard let closing = notification.object as? NSWindow else { return }
-        if closing === jobsWindow { jobsWindow = nil }
-        if closing === settingsWindow { settingsWindow = nil }
+        if closing === mainWindow {
+            if mainPage == .jobs {
+                jobsSize = CGSize(
+                    width: closing.frame.width,
+                    height: closing.frame.height - (chromeHeight ?? 0)
+                )
+            }
+            mainWindow = nil
+            mainHost = nil
+            mainPage = nil
+        }
         if closing === historyWindow {
             historyWindow = nil
             historyHost = nil
         }
         // Drop back to a menu-bar-only app once the last window is gone, so
         // goguma doesn't sit in the Dock doing nothing.
-        if jobsWindow == nil, settingsWindow == nil, historyWindow == nil {
+        if mainWindow == nil, historyWindow == nil {
             NSApp.setActivationPolicy(.accessory)
         }
     }
@@ -192,7 +326,76 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     /// True when any real window is open. The delegate uses this to decide
     /// whether a re-open needs to present something.
     var hasOpenWindow: Bool {
-        jobsWindow != nil || settingsWindow != nil || historyWindow != nil
+        mainWindow != nil || historyWindow != nil
+    }
+}
+
+/// Which page the main window is showing.
+enum MainPage {
+    case jobs
+    case settings
+
+    var title: String {
+        switch self {
+        case .jobs: "goguma Jobs"
+        case .settings: "goguma Settings"
+        }
+    }
+
+    /// Settings is a fixed-width pane that sizes its own height to its content
+    /// (see `FitsWindowHeight`), so letting it be dragged only ever produces a
+    /// column of empty surface.
+    var resizable: Bool {
+        switch self {
+        case .jobs: true
+        case .settings: false
+        }
+    }
+
+    var minSize: CGSize? {
+        switch self {
+        case .jobs: Theme.Surface.jobsWindowMinSize
+        case .settings: nil
+        }
+    }
+
+    /// Whether the page sets its own height once it has measured its content.
+    ///
+    /// Settings does, through `FitsWindowHeight`. Setting a height here as
+    /// well means the window is laid out twice on every switch: once at the
+    /// guessed height, and again at the real one a moment later. Each pass is
+    /// a full SwiftUI layout of the pane, and that pane is the expensive one.
+    var sizesItsOwnHeight: Bool {
+        switch self {
+        case .jobs: false
+        case .settings: true
+        }
+    }
+}
+
+/// The main window's content, which is whichever page is showing.
+struct MainWindowView: View {
+    let store: StatusStore
+    let coordinator: WindowCoordinator
+    let page: MainPage
+
+    var body: some View {
+        switch page {
+        case .jobs:
+            JobsWindowView(store: store, coordinator: coordinator)
+        case .settings:
+            SettingsWindowView(store: store)
+        }
+    }
+}
+
+private extension NSRect {
+    /// Slides a frame back inside `bounds` without resizing it.
+    func nudged(into bounds: NSRect) -> NSRect {
+        var r = self
+        r.origin.x = Swift.min(Swift.max(r.origin.x, bounds.minX), bounds.maxX - r.width)
+        r.origin.y = Swift.min(Swift.max(r.origin.y, bounds.minY), bounds.maxY - r.height)
+        return r
     }
 }
 

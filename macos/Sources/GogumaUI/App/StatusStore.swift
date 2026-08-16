@@ -122,6 +122,8 @@ final class StatusStore {
     /// The daemon's own answer for the charge below which it will not
     /// schedule a wake. Not derived here; see `ConfigResponse`.
     private(set) var wakeFloorBasePct: Int = 0
+    /// Whether the daemon can verify an advisory feed at all.
+    private(set) var advisoriesAvailable = false
     private(set) var connection: ConnectionState = .connecting
     private(set) var lastUpdated: Date?
 
@@ -160,6 +162,12 @@ final class StatusStore {
     var wakeSuppressed: String {
         guard let status, !connection.blocksContent else { return "" }
         return status.wakeSuppressed
+    }
+
+    /// Why nothing is scheduled, when the reason is not the battery.
+    var noWakeReason: String {
+        guard let status, !connection.blocksContent else { return "" }
+        return status.noWakeReason
     }
 
     /// Warnings worth putting in front of the user, most severe first.
@@ -345,6 +353,7 @@ final class StatusStore {
             config = response.config
             configWarnings = response.warnings
             wakeFloorBasePct = response.wakeFloorBasePct
+            advisoriesAvailable = response.advisoriesAvailable
             connection = .connected
         } catch let error as DaemonError {
             apply(error)
@@ -410,6 +419,38 @@ final class StatusStore {
             await refresh()
             isPerformingAction = false
         }
+    }
+
+    /// Writes one config key and re-reads the result, in that order.
+    ///
+    /// Deliberately not `perform`. That one is fire-and-forget, sets
+    /// `isPerformingAction` for the duration, and drops any second call that
+    /// arrives while the first is in flight, all of which are right for a
+    /// button and wrong for a setting:
+    ///
+    /// - The caller has to re-read afterwards to reflect a clamped value, and
+    ///   with a detached write that read raced the write and won, so a slider
+    ///   released on 25 was set to 25 and then immediately redrawn at its old
+    ///   value. It looked like the setting refused to take.
+    /// - The whole pane is disabled while an action is in flight, so adjusting
+    ///   one slider greyed out and un-greyed the entire window.
+    /// - Two adjustments in quick succession meant the second was discarded
+    ///   without a word, and then contradicted by the re-read.
+    ///
+    /// Sequential, scoped to nothing, and never dropped.
+    @discardableResult
+    func writeConfig(key: String, value: String) async -> Bool {
+        do {
+            try await client.setConfig(key: key, value: value)
+        } catch let error as DaemonError {
+            actionMessage = ActionMessage(text: error.localizedDescription, isError: true)
+            return false
+        } catch {
+            actionMessage = ActionMessage(text: String(describing: error), isError: true)
+            return false
+        }
+        await loadConfig()
+        return true
     }
 
     func clearActionMessage() {

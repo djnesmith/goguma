@@ -192,7 +192,7 @@ struct SetupDisclosure: View {
                 .frame(maxWidth: .infinity, alignment: .center)
 
             row("calendar", "Reads your scheduled jobs to know when to wake")
-            row("laptopcomputer", "Stays on this Mac. No account, no telemetry")
+            row("laptopcomputer", "Your jobs stay on this Mac. No account, no tracking")
             // Last, because it is the consequence of the line above the list.
             row("key", "Installs a small helper for it, hence the password")
 
@@ -424,10 +424,23 @@ struct KeyValueRow: View {
 struct DurationPicker: View {
     let presets: [WGDuration]
     let current: WGDuration
+    /// What zero means, when zero is a real choice.
+    ///
+    /// A per-job override has a meaningful "unset": the job takes whatever the
+    /// global setting or the learned value says. Without a row for it, a menu
+    /// of durations offers no way back to the default once one is picked.
+    var includeZeroAs: String?
     let onChange: (WGDuration) -> Void
 
     var body: some View {
         Picker("", selection: selection) {
+            if let includeZeroAs {
+                // `.tag(0.0)`, not `.tag(0)`. The selection is a Double, and
+                // an Int tag matches nothing, which SwiftUI renders as a menu
+                // with no title at all rather than as an error.
+                Text(includeZeroAs).tag(0.0)
+                Divider()
+            }
             ForEach(options, id: \.seconds) { option in
                 Text(option.displayString).tag(option.seconds)
             }

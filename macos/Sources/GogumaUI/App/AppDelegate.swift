@@ -24,6 +24,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installMenuBarItem()
         store.startPolling()
 
+        // Build the main window now, so the first click on Jobs or Settings
+        // does not pay for it. See WindowCoordinator.prewarm.
+        let warm = coordinator
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { warm.prewarm() }
+
         // One-off config read at launch. Settings is the only surface that
         // edits config, but the popover needs `low_battery_cutout_pct` to know
         // when to tint the battery reading as a problem, and waiting for the

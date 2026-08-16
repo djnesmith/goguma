@@ -25,11 +25,18 @@ enum DetectionMode: String, LenientRawEnum {
 
     static var unknownCase: DetectionMode { .unknown }
 
+    /// What goguma does, not what the mechanism is called.
+    ///
+    /// These were "Mark", "Pattern" and "Wake only", which name the three
+    /// implementations and describe none of them. Reading "Pattern" tells you
+    /// nothing unless you already know goguma scans the process table, and
+    /// nobody adding a job knows that. The wire values are unchanged; only
+    /// what a person sees is.
     var label: String {
         switch self {
-        case .mark: "Mark"
-        case .pattern: "Pattern"
-        case .wakeOnly: "Wake only"
+        case .mark: "The job reports when it finishes"
+        case .pattern: "Watch for the job's process"
+        case .wakeOnly: "Stay awake for a set time"
         case .unknown: "Unknown"
         }
     }
@@ -690,6 +697,8 @@ struct DaemonStatus: Codable, Sendable, Hashable {
     /// battery is too low for waking to be worth it. Already user-facing prose,
     /// so it is rendered verbatim.
     var wakeSuppressed: String
+    /// Why nothing is scheduled, when the reason is not the battery.
+    var noWakeReason = ""
 
     /// When a manual keep-awake window ends, if one is open.
     var keepAwakeUntil: WGDate?
@@ -720,6 +729,7 @@ struct DaemonStatus: Codable, Sendable, Hashable {
         case wakeScheduled = "wake_scheduled"
         case wakeError = "wake_error"
         case wakeSuppressed = "wake_suppressed"
+        case noWakeReason = "no_wake_reason"
         case helperConnected = "helper_connected"
         case helperVersion = "helper_version"
         case sleepBlocked = "sleep_blocked"
@@ -741,6 +751,7 @@ struct DaemonStatus: Codable, Sendable, Hashable {
         wakeScheduled = c.value(.wakeScheduled, false)
         wakeError = c.value(.wakeError, "")
         wakeSuppressed = c.value(.wakeSuppressed, "")
+        noWakeReason = c.value(.noWakeReason, "")
         keepAwakeUntil = c.optional(.keepAwakeUntil)
         helperConnected = c.value(.helperConnected, false)
         helperVersion = c.value(.helperVersion, "")
@@ -1086,6 +1097,8 @@ struct DaemonConfig: Codable, Sendable, Hashable {
     var useWakeOrPowerOn: Bool
     var webhookURL: String
     var notifyOnMissedJob: Bool
+    /// Whether goguma fetches its signed notice feed once a day.
+    var advisoryChecks: Bool
 
     /// Scheduler sources watched for automatic adoption.
     ///
@@ -1116,6 +1129,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         useWakeOrPowerOn = false
         webhookURL = ""
         notifyOnMissedJob = false
+        advisoryChecks = false
         autoAdopt = nil
         autoAdoptInterval = .zero
     }
@@ -1136,6 +1150,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         case useWakeOrPowerOn = "use_wake_or_power_on"
         case webhookURL = "webhook_url"
         case notifyOnMissedJob = "notify_on_missed_job"
+        case advisoryChecks = "advisory_checks"
         case autoAdopt = "auto_adopt"
         case autoAdoptInterval = "auto_adopt_interval"
     }
@@ -1157,6 +1172,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         useWakeOrPowerOn = c.value(.useWakeOrPowerOn, false)
         webhookURL = c.value(.webhookURL, "")
         notifyOnMissedJob = c.value(.notifyOnMissedJob, false)
+        advisoryChecks = c.value(.advisoryChecks, false)
         // `optional` yields nil for both absent and JSON null, and `.some([])`
         // for an empty array, exactly the distinction this field needs.
         autoAdopt = c.optional(.autoAdopt, as: [String].self)
@@ -1192,10 +1208,13 @@ struct ConfigResponse: Decodable, Sendable {
     /// actually wake at 11%. The rearm margin is a different quantity that
     /// governs recovery after a cutout fires.
     var wakeFloorBasePct: Int
+    /// Whether the daemon was built with a signing key and can verify a feed.
+    var advisoriesAvailable = false
 
     enum CodingKeys: String, CodingKey {
         case config, warnings
         case wakeFloorBasePct = "wake_floor_base_pct"
+        case advisoriesAvailable = "advisories_available"
     }
 
     init(from decoder: any Decoder) throws {
@@ -1203,6 +1222,7 @@ struct ConfigResponse: Decodable, Sendable {
         config = c.value(.config, DaemonConfig())
         warnings = c.value(.warnings, [String]())
         wakeFloorBasePct = c.value(.wakeFloorBasePct, 0)
+        advisoriesAvailable = c.value(.advisoriesAvailable, false)
     }
 }
 
