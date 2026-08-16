@@ -360,10 +360,20 @@ func MissedSummary(r schedule.MissRisk) string {
 	if !r.Confident {
 		return "not enough history to tell yet"
 	}
+	// "would have been", not "were".
+	//
+	// This replays a schedule against sleep history, so it counts fires that
+	// landed while the Mac was asleep whether or not goguma existed yet, and
+	// on a fresh install almost none of them did. Phrased as "6 of the last 14
+	// runs were missed" it read as goguma's own scoreboard, and sat in the
+	// same product as `goguma list` reporting "0 missed while asleep" from the
+	// runs it has actually seen. Two true numbers that flatly contradicted
+	// each other, because only one of them was ever about goguma.
 	if r.Missed == 0 {
-		return "none of the last " + itoa(r.Fires) + " runs were missed"
+		return "none of the last " + itoa(r.Fires) + " runs would have been missed"
 	}
-	return itoa(r.Missed) + " of the last " + itoa(r.Fires) + " runs were missed"
+	return itoa(r.Missed) + " of the last " + itoa(r.Fires) +
+		" runs would have been missed without goguma"
 }
 
 func itoa(n int) string {

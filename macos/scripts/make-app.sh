@@ -36,10 +36,26 @@ SIGN_ID="${SIGN_ID:--}"
 
 cd "$ROOT"
 
-echo "Building the app ($CONFIG)…"
-swift build -c "$CONFIG"
+# Universal, unless UNIVERSAL=0.
+#
+# A plain `swift build` produces a binary for the machine doing the building,
+# and release builds run on Apple silicon, so the downloadable app was arm64
+# only: an Intel Mac could install it and it would refuse to launch, with no
+# explanation anyone could act on. The Homebrew path was fine (goreleaser
+# already ships both architectures), which made this invisible to anyone
+# testing with brew.
+UNIVERSAL="${UNIVERSAL:-1}"
+if [[ "$UNIVERSAL" == "1" ]]; then
+    ARCH_ARGS=(--arch arm64 --arch x86_64)
+    echo "Building the app ($CONFIG, universal)…"
+else
+    ARCH_ARGS=()
+    echo "Building the app ($CONFIG, this machine only)…"
+fi
 
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/GogumaUI"
+swift build -c "$CONFIG" "${ARCH_ARGS[@]}"
+
+BIN="$(swift build -c "$CONFIG" "${ARCH_ARGS[@]}" --show-bin-path)/GogumaUI"
 if [[ ! -x "$BIN" ]]; then
     echo "error: built binary not found at $BIN" >&2
     exit 1
@@ -52,9 +68,43 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 cp "$ROOT/assets/goguma.icns" "$APP/Contents/Resources/goguma.icns"
 
+# The four Go binaries, matching the app's architectures.
+#
+# These ride inside the bundle so the app can set itself up with no CLI
+# present. An arm64-only set inside a universal app is the same failure one
+# layer down: the app launches on Intel and every command it runs dies.
+#
+# Named one by one rather than ./cmd/..., which also builds goguma-advisory.
+# That one is the maintainer tool that generates and signs the notice feed, it
+# is deliberately absent from .goreleaser.yaml, and it has no business inside a
+# user's copy of the app.
+TOOLS=(./cmd/goguma ./cmd/goguma-daemon ./cmd/goguma-helper ./cmd/goguma-mark)
+
+# Kept in step with .goreleaser.yaml on purpose. The app bundles its own daemon,
+# so if only the Homebrew build carried the advisory key then whether you got
+# notices would depend on which of the two identical-looking install routes you
+# took. Empty is the supported default and is what every release has shipped.
+LDFLAGS="-X main.version=$VERSION"
+LDFLAGS+=" -X github.com/junnam586/goguma/internal/advisory.publicKeyB64=${GOGUMA_ADVISORY_PUBKEY:-}"
+
 echo "Building the command line tools…"
-(cd "$REPO" && go build -ldflags "-X main.version=$VERSION" \
-    -o "$APP/Contents/Resources/bin/" ./cmd/...)
+BINDIR="$APP/Contents/Resources/bin"
+if [[ "$UNIVERSAL" == "1" ]]; then
+    for arch in arm64 amd64; do
+        (cd "$REPO" && GOOS=darwin GOARCH="$arch" CGO_ENABLED=1 \
+            CC="clang -arch $( [[ $arch == arm64 ]] && echo arm64 || echo x86_64 )" \
+            go build -ldflags "$LDFLAGS" \
+            -o "$BINDIR/$arch/" "${TOOLS[@]}")
+    done
+    for tool in "$BINDIR"/arm64/*; do
+        name="$(basename "$tool")"
+        lipo -create "$BINDIR/arm64/$name" "$BINDIR/amd64/$name" -output "$BINDIR/$name"
+    done
+    rm -rf "$BINDIR/arm64" "$BINDIR/amd64"
+else
+    (cd "$REPO" && go build -ldflags "$LDFLAGS" \
+        -o "$BINDIR/" "${TOOLS[@]}")
+fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -69,7 +119,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key>           <string>APPL</string>
     <key>CFBundleShortVersionString</key>    <string>$VERSION</string>
     <key>CFBundleVersion</key>               <string>$VERSION</string>
-    <key>LSMinimumSystemVersion</key>        <string>26.0</string>
+    <!-- Must match Package.swift's platforms setting. A bundle claiming a
+         higher minimum than the code needs is refused by Finder on Macs that
+         would have run it perfectly well. -->
+    <key>LSMinimumSystemVersion</key>        <string>14.0</string>
     <!-- Menu bar app: no Dock icon, no app switcher entry. The delegate also
          sets this at runtime so a loose binary behaves the same way. -->
     <key>LSUIElement</key>                   <true/>

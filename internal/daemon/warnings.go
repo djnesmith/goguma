@@ -228,6 +228,19 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 		})
 	}
 
+	// Notices from goguma itself, last.
+	//
+	// Everything above is a fault on this machine and comes first; a released
+	// fix or a known bug is worth saying but must never push a broken helper
+	// down the list.
+	for _, n := range d.advisoryWarnings() {
+		out = append(out, model.Warning{
+			Kind:    model.WarnAdvisory,
+			Message: n.Message,
+			Fix:     n.Fix,
+		})
+	}
+
 	d.mu.Lock()
 	d.warnings = out
 	d.mu.Unlock()

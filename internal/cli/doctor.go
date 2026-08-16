@@ -49,21 +49,21 @@ func runDoctor(ctx *Context, args []string) error {
 	r := ctx.Out
 	var checks []check
 
-	// The chain, in the order it has to work: binaries exist, daemon runs,
+	// The chain, in the order it has to work: binaries exist, the service runs,
 	// helper answers, wake registers, jobs are detected.
 	checks = append(checks, checkBinaries(ctx)...)
 
 	st, statusErr := fetchStatus(ctx)
 	if statusErr != nil {
 		checks = append(checks, check{
-			name:   "daemon",
+			name:   "background service",
 			status: checkFail,
 			detail: "not running, so nothing is being scheduled",
 			fix:    "goguma install",
 		})
 	} else {
 		checks = append(checks, check{
-			name: "daemon", status: checkOK,
+			name: "background service", status: checkOK,
 			detail: fmt.Sprintf("running, version %s", st.DaemonVersion),
 		})
 		checks = append(checks, checkHelper(st))

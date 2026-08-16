@@ -153,15 +153,22 @@ func printJobs(r *render.Renderer, resp ipc.JobsListResp, explain bool) {
 		if perRound <= 0 {
 			r.Blank()
 		}
-		parts := []string{}
+		// Saved leads. Missed follows, and only when there are any.
+		//
+		// The scoreboard used to read "woken for 2 runs that would have been
+		// missed", which spends its first four words on the mechanism and buries
+		// the number. What someone wants from this line is how much they got
+		// back, so that is the subject of the sentence.
 		if woken > 0 {
-			parts = append(parts, fmt.Sprintf("woken for %s that would have been missed",
-				pluralRuns(woken)))
+			line := fmt.Sprintf("%s saved with goguma", pluralRuns(woken))
+			if slept > 0 {
+				line += fmt.Sprintf(", %s still missed while asleep", pluralRuns(slept))
+			}
+			r.Printf("  %s\n", r.Muted(line))
+		} else if slept > 0 {
+			r.Printf("  %s\n", r.Muted(fmt.Sprintf("%s missed while asleep so far",
+				pluralRuns(slept))))
 		}
-		if slept > 0 {
-			parts = append(parts, fmt.Sprintf("%s missed while asleep", pluralRuns(slept)))
-		}
-		r.Printf("  %s\n", r.Muted("goguma has "+strings.Join(parts, ", ")))
 	}
 }
 

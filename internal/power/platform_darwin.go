@@ -166,7 +166,19 @@ func (p *darwinPlatform) battery() (pct int, onAC bool, ok bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if time.Since(p.battAt) < 30*time.Second && !p.battAt.IsZero() {
+	// Shorter than the daemon's tick, so every tick sees the real state.
+	//
+	// This was 30 seconds, which is three ticks: unplugging the charger left
+	// goguma believing it was still on AC for up to 40 seconds, so a wake that
+	// should have been withheld stayed scheduled and the popover kept saying
+	// everything was fine. Plugging in had the same lag in reverse. The user
+	// is standing there watching it, and a power source is exactly the input
+	// they expect to be reflected at once.
+	//
+	// The cache is still worth having: `pmset -g batt` is a subprocess, and
+	// several callers read state within one tick. At 5s each tick spawns it
+	// once, which is about 20ms a tick.
+	if time.Since(p.battAt) < 5*time.Second && !p.battAt.IsZero() {
 		return p.battPct, p.battOnAC, p.battPct >= 0
 	}
 

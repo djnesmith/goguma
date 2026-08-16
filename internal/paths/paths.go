@@ -62,11 +62,19 @@ func (l Layout) DaemonSocket() string { return filepath.Join(l.StateDir, "daemon
 // CrontabBackup is written before `import` ever rewrites a crontab line.
 func (l Layout) CrontabBackup() string { return filepath.Join(l.StateDir, "crontab.backup") }
 
+// SchedulersDir holds manifests describing apps that run their own schedules.
+//
+// A scheduler living inside an application is invisible to crontab and
+// launchd, and there are far more such applications than goguma will ever
+// have hand-written readers for. A manifest here teaches it about one without
+// a new release; see scan.Manifest.
+func (l Layout) SchedulersDir() string { return filepath.Join(l.StateDir, "schedulers") }
+
 // EnsureDirs creates the state tree. Mode 0o700 throughout: jobs.json holds
 // the user's command lines and the socket accepts privileged-ish requests,
 // so neither should be group- or world-readable.
 func (l Layout) EnsureDirs() error {
-	for _, d := range []string{l.StateDir, l.LogDir, l.HistoryDir()} {
+	for _, d := range []string{l.StateDir, l.LogDir, l.HistoryDir(), l.SchedulersDir()} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return err
 		}

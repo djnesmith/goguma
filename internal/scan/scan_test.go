@@ -221,8 +221,14 @@ func TestMissedSummaryWording(t *testing.T) {
 	}{
 		{schedule.MissRisk{}, "no recent runs to measure"},
 		{schedule.MissRisk{Fires: 2, Missed: 1}, "not enough history to tell yet"},
-		{schedule.MissRisk{Fires: 14, Missed: 0, Confident: true}, "none of the last 14 runs were missed"},
-		{schedule.MissRisk{Fires: 14, Missed: 12, Confident: true}, "12 of the last 14 runs were missed"},
+		// Conditional, not past tense. This counts fires that landed during
+		// sleep whether goguma was installed or not, so stating it as fact
+		// contradicted `goguma list`, which reports what goguma has actually
+		// let through and is usually zero.
+		{schedule.MissRisk{Fires: 14, Missed: 0, Confident: true},
+			"none of the last 14 runs would have been missed"},
+		{schedule.MissRisk{Fires: 14, Missed: 12, Confident: true},
+			"12 of the last 14 runs would have been missed without goguma"},
 	}
 	for _, tc := range tests {
 		if got := MissedSummary(tc.risk); got != tc.want {

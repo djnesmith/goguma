@@ -42,6 +42,11 @@ type Status struct {
 	// safeguard is never reported as a broken scheduler.
 	WakeSuppressed string `json:"wake_suppressed,omitempty"`
 
+	// NoWakeReason says why nothing is scheduled, when the reason is not the
+	// battery: no jobs, all of them off, or no readable schedule. Empty when a
+	// wake exists or when the absence is transient.
+	NoWakeReason string `json:"no_wake_reason,omitempty"`
+
 	// Helper state. A disconnected helper means clamshell (lid-closed) holds
 	// cannot work, even though idle holds still can.
 	HelperConnected bool   `json:"helper_connected"`
@@ -142,6 +147,10 @@ const (
 	// shorter and the machine quietly stops waking for something, and the
 	// user finds out by counting rows.
 	WarnRetired WarningKind = "retired"
+	// WarnAdvisory: a signed notice from goguma's own feed, or a newer
+	// release. Never a problem with the user's machine, which is why it is
+	// its own kind rather than folded in with the faults.
+	WarnAdvisory WarningKind = "advisory"
 )
 
 // Warning is a user-actionable problem. Each carries a Fix string that is

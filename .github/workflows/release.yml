@@ -37,6 +37,13 @@ jobs:
           # default GITHUB_TOKEN cannot push to another repository, so without
           # this the formula step fails after the artifacts are already built.
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # The public half of the advisory signing key, compiled in by
+          # .goreleaser.yaml. Unset is a supported state and is what every
+          # release so far has shipped: with no key the daemon never makes the
+          # request and reports the feature as unavailable, so an absent secret
+          # cannot break a build. The private half signs the feed and must
+          # never be here.
+          GOGUMA_ADVISORY_PUBKEY: ${{ secrets.GOGUMA_ADVISORY_PUBKEY }}
 
   # The download: a signed, notarized, stapled disk image containing the menu
   # bar app, with the command line tools bundled inside it.
@@ -95,6 +102,10 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
           SIGN_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          # Same key the CLI archives get. The app bundles its own daemon, so
+          # leaving it out here would mean whether you receive notices depends
+          # on whether you downloaded the app or used Homebrew.
+          GOGUMA_ADVISORY_PUBKEY: ${{ secrets.GOGUMA_ADVISORY_PUBKEY }}
         run: cd macos && ./scripts/make-app.sh release
 
       # Notarized and stapled in two passes, app first and disk image second,

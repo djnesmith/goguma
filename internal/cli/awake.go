@@ -30,7 +30,7 @@ minutes. The window is clamped to between 1 minute and 12 hours.
 
 The safety cutouts still apply: a lid-closed machine that overheats or runs
 low on battery releases this hold exactly as it releases a job's. It is also
-forgotten if the daemon restarts, and it is never recorded as a job run.`,
+forgotten if the background service restarts, and it is never recorded as a job run.`,
 	Run: func(ctx *Context, args []string) error {
 		_, positional := hoistFlags(args)
 		if len(positional) == 0 {

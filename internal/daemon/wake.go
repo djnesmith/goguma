@@ -55,12 +55,16 @@ func (d *Daemon) scheduleNextWake(now time.Time, cfg config.Config) {
 		had := d.nextWake != nil
 		d.nextWake, d.nextJob, d.nextFire = nil, "", nil
 		d.wakeOK, d.wakeErr = false, ""
+		d.noWakeReason = d.explainNoWakeLocked()
 		d.mu.Unlock()
 		if had {
 			_ = d.helper.CancelWake()
 		}
 		return
 	}
+	d.mu.Lock()
+	d.noWakeReason = ""
+	d.mu.Unlock()
 
 	d.mu.RLock()
 	current := d.nextWake
@@ -272,14 +276,23 @@ func (d *Daemon) SleepNow() int {
 //
 // The threshold is generous relative to the tick interval so that ordinary
 // scheduler jitter or a busy machine is not mistaken for sleep.
-func (d *Daemon) detectSleepGap(now time.Time) {
+// sleepGap reports how much of the time since the last tick the machine was
+// actually asleep, and whether that is enough to call it a sleep.
+//
+// Split out from detectSleepGap so the arithmetic can be tested without a
+// daemon, a store, or a clock that anyone has to wait on.
+func (d *Daemon) sleepGap(now time.Time) (time.Duration, bool) {
 	d.mu.Lock()
 	last := d.lastTick
 	tick := d.cfg.TickInterval.D()
+	// Claimed here, so a stall is charged to the window it happened in and
+	// not to the next one as well.
+	busy := d.busy
+	d.busy = 0
 	d.mu.Unlock()
 
 	if last.IsZero() {
-		return
+		return 0, false
 	}
 	// Compare wall clocks, not monotonic ones.
 	//
@@ -290,15 +303,36 @@ func (d *Daemon) detectSleepGap(now time.Time) {
 	// one tick interval and this function never fired at all. Round(0) strips
 	// the monotonic reading so the comparison sees the wall-clock jump that
 	// actually happened.
-	gap := now.Round(0).Sub(last.Round(0))
-	threshold := max(4*tick, time.Minute)
-	if gap < threshold {
+	elapsed := now.Round(0).Sub(last.Round(0))
+
+	// Minus the time the daemon spent running.
+	//
+	// A wall-clock gap is not proof of sleep, only of the loop not coming
+	// round. The loop makes blocking helper calls, and HelperTimeout is 45s,
+	// so a helper that accepts a connection and never answers produces the
+	// same gap a sleeping machine does. It did: three stalled pushes read as
+	// 2m20s of sleep, and recordSleptThrough then wrote missed runs for every
+	// job that fired while the machine was awake and running them.
+	gap := elapsed - busy
+	if gap < max(4*tick, time.Minute) {
+		return 0, false
+	}
+	return gap, true
+}
+
+func (d *Daemon) detectSleepGap(now time.Time) {
+	gap, ok := d.sleepGap(now)
+	if !ok {
 		return
 	}
 
-	iv := schedule.SleepInterval{Sleep: last, Wake: now}
+	// The window starts at `now - gap`, not at the last tick. A stall is time
+	// the machine was awake, so including it would hand recordSleptThrough a
+	// window wider than the sleep and let it mark a run that happened as one
+	// that did not.
+	iv := schedule.SleepInterval{Sleep: now.Add(-gap), Wake: now}
 	d.log.Info("machine appears to have slept",
-		"from", last.Format(time.RFC3339), "to", now.Format(time.RFC3339),
+		"from", iv.Sleep.Format(time.RFC3339), "to", now.Format(time.RFC3339),
 		"duration", gap.Round(time.Second))
 	if err := d.store.RecordSleepInterval(iv); err != nil {
 		d.log.Debug("could not record sleep interval", "err", err)
@@ -426,4 +460,41 @@ func (d *Daemon) schedulerFireTime(job *model.Job, now time.Time) time.Time {
 		return time.Time{}
 	}
 	return rec.NextRun
+}
+
+// explainNoWakeLocked says why nothing is scheduled.
+//
+// "none scheduled" on its own is the least useful thing this surface can say:
+// it is identical whether the user has no jobs, switched them all off, or
+// typed a schedule goguma cannot read, and those need three different actions.
+// The battery case has its own wording already; this covers the rest.
+//
+// Empty means there is nothing to explain, which is the ordinary transient
+// case: every job's window is already open, so there is no *next* wake to book
+// until one of them closes.
+//
+// Caller holds d.mu.
+func (d *Daemon) explainNoWakeLocked() string {
+	jobs := d.store.Jobs()
+	if len(jobs) == 0 {
+		return "no jobs are registered yet"
+	}
+
+	enabled, readable := 0, 0
+	for _, job := range jobs {
+		if !job.Enabled {
+			continue
+		}
+		enabled++
+		if _, err := schedule.ParseAt(job.Schedule, job.Location(), job.ScheduleAnchor()); err == nil {
+			readable++
+		}
+	}
+	switch {
+	case enabled == 0:
+		return "every job is switched off"
+	case readable == 0:
+		return "no job has a schedule goguma can read"
+	}
+	return ""
 }

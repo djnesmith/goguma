@@ -6,6 +6,20 @@ before:
   hooks:
     - go mod tidy
 
+# The advisory feed's public key, compiled in at release time.
+#
+# Defaulted to empty on purpose: with no key, internal/advisory.Enabled() is
+# false, the daemon never makes the request, and it reports the feature as
+# unavailable so the app hides the setting rather than offering a switch that
+# does nothing. That is exactly the behaviour of a build without this line, so
+# an unset secret changes nothing and cannot break a release.
+#
+# Set the GOGUMA_ADVISORY_PUBKEY repository secret to the *public* half printed
+# by `goguma-advisory keygen` to turn the feature on. The private half signs
+# advisories and must never be in CI, in this file, or in the repository.
+env:
+  - GOGUMA_ADVISORY_PUBKEY={{ if index .Env "GOGUMA_ADVISORY_PUBKEY" }}{{ .Env.GOGUMA_ADVISORY_PUBKEY }}{{ end }}
+
 # cgo is per-platform here, and both settings are load-bearing.
 #
 # darwin needs CGO_ENABLED=1: internal/power/darwin.go reaches IOKit and
@@ -32,6 +46,7 @@ builds:
     ldflags: &ldflags
       - -s -w
       - -X main.version={{ .Version }}
+      - -X github.com/junnam586/goguma/internal/advisory.publicKeyB64={{ .Env.GOGUMA_ADVISORY_PUBKEY }}
     overrides: &linux_cgo_off
       - goos: linux
         goarch: amd64

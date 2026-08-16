@@ -134,6 +134,21 @@ type Config struct {
 
 	// EventLogMaxBytes triggers rotation of events.jsonl.
 	EventLogMaxBytes int64 `json:"event_log_max_bytes"`
+
+	// AdvisoryChecks fetches goguma's signed notice feed once a day.
+	//
+	// The only network request goguma makes on its own, and the only one it
+	// makes at all unless a webhook is configured. It is a plain GET of a
+	// static file: no query string, no identifier, no version, nothing about
+	// the machine. What comes back can display a sentence and say a newer
+	// release exists, and can do nothing else, because the payload is checked
+	// against a key compiled into the binary and carries no settings.
+	//
+	// On by default, and disclosed during setup, because the failure it exists
+	// to catch is a bug on hardware the author does not own: goguma silently
+	// stops waking the Mac and nothing tells the user a fix was published.
+	// `goguma config set advisory_checks off` ends it permanently.
+	AdvisoryChecks bool `json:"advisory_checks"`
 }
 
 // Default returns the shipped configuration.
@@ -158,6 +173,7 @@ func Default() Config {
 		NotifyOnMissedJob:    true,
 		AutoAdoptInterval:    model.Duration(2 * time.Minute),
 		MinImportInterval:    0,
+		AdvisoryChecks:       true,
 		EventLogMaxBytes:     10 << 20,
 	}
 }
@@ -263,6 +279,21 @@ func Load(path string) (Config, []string, error) {
 	if err := json.Unmarshal(b, &c); err != nil {
 		return Default(), nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
+
+	// A config written before advisory checks existed means an existing
+	// install, and an existing install was told "nothing leaves your machine"
+	// during a setup that asked for root. Turning a network request on for
+	// them because they upgraded is exactly the bait and switch that promise
+	// exists to rule out, so the default only applies to a machine that has
+	// never had a config at all, which is the one that sees the current
+	// disclosure. Anyone upgrading opts in deliberately or not at all.
+	var probe struct {
+		AdvisoryChecks *bool `json:"advisory_checks"`
+	}
+	if json.Unmarshal(b, &probe) == nil && probe.AdvisoryChecks == nil {
+		c.AdvisoryChecks = false
+	}
+
 	warnings := c.Normalize()
 	return c, warnings, nil
 }

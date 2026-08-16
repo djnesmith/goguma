@@ -166,6 +166,14 @@ type ConfigResp struct {
 	// the drain-aware floor landed and displayed 15% where the daemon would
 	// wake at 11%.
 	WakeFloorBasePct int `json:"wake_floor_base_pct"`
+
+	// AdvisoriesAvailable reports whether this daemon was built with a
+	// signing key, and can therefore verify a notice feed at all.
+	//
+	// Sent so a client does not offer a switch that cannot do anything. A
+	// build with no key refuses every advisory, genuine ones included, so the
+	// setting is inert and a checkbox for it is a control that lies.
+	AdvisoriesAvailable bool `json:"advisories_available"`
 }
 
 type ConfigSetReq struct {

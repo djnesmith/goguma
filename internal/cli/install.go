@@ -22,12 +22,12 @@ var cmdInstall = &Command{
 	Summary: "install and start the background services",
 	Usage: `goguma install [--no-helper] [--dry-run]
 
-Installs the binaries, registers the background daemon so it starts at login,
+Installs the binaries, registers the background service so it starts at login,
 and installs the privileged helper.
 
 The helper is a separate root service that does exactly two things: block
 sleep, and register a wake with the OS. All scheduling and policy stays in the
-unprivileged daemon. Installing it requires your password once.
+unprivileged background service. Installing it requires your password once.
 
   --no-helper   skip the privileged helper. goguma will still hold sleep
                 off with the lid OPEN, but cannot hold a lid-closed machine
@@ -253,11 +253,11 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 	}
 
 	if lastErr != nil {
-		r.Problem("the daemon did not start · check the log for why",
+		r.Problem("the background service did not start · check the log for why",
 			"tail -n 40 "+filepath.Join(ctx.Layout.LogDir, "daemon.err.log"))
 		return
 	}
-	r.Printf("%s daemon is running (%s)\n", r.Good(r.Sym().OK), st.Version)
+	r.Printf("%s background service is running (%s)\n", r.Good(r.Sym().OK), st.Version)
 
 	if !expectHelper {
 		r.Printf("%s helper was skipped, lid-closed holds and OS wakes are unavailable\n",
@@ -265,20 +265,57 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 		return
 	}
 
-	full, err := fetchStatus(ctx)
-	if err == nil && full.HelperConnected {
-		r.Printf("%s privileged helper is connected (%s)\n", r.Good(r.Sym().OK), full.HelperVersion)
+	// Ask the helper, not the daemon.
+	//
+	// This used to read the daemon's cached "am I linked to the helper" flag,
+	// which answers a different question. That flag only turns true once the
+	// daemon has made a successful call, and a call issued while the helper is
+	// being swapped can sit on the socket for the full HelperTimeout, so the
+	// daemon can take tens of seconds to notice a helper that came up in
+	// under one. Waiting 1.5s for that and then declaring the helper "not
+	// answering" reported a failed install on a helper that was running as
+	// root and replying in a quarter of a second.
+	//
+	// The installer is running as the helper's owner and the socket is
+	// owner-only, so it can dial the helper itself. That is the actual claim
+	// being made here, checked against the actual process.
+	var hs ipc.HelperStatusResp
+	var lastHelperErr error
+	for range 12 {
+		if lastHelperErr = ipc.DoTimeout(paths.HelperSocket, 2*time.Second,
+			ipc.OpHelperStatus, nil, &hs); lastHelperErr == nil {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	if lastHelperErr != nil {
+		r.Problem("the privileged helper did not start, lid-closed holds and OS wakes will not work",
+			"goguma doctor")
 		return
 	}
-	// The daemon connects to the helper lazily, so give it a moment.
-	time.Sleep(1500 * time.Millisecond)
-	if full, err = fetchStatus(ctx); err == nil && full.HelperConnected {
-		r.Printf("%s privileged helper is connected (%s)\n", r.Good(r.Sym().OK), full.HelperVersion)
-		return
+	r.Printf("%s privileged helper is running (%s)\n", r.Good(r.Sym().OK), hs.Version)
+
+	// The daemon links to it on its own schedule, and until it does, `status`
+	// says the helper is down. Say so here rather than leaving the user to
+	// find a contradiction between this output and the next command they run.
+	if full, err := fetchStatus(ctx); err == nil && !full.HelperConnected {
+		r.Printf("  %s\n", r.Muted("the background service picks it up within a minute"))
 	}
-	r.Problem("the privileged helper is not answering yet, lid-closed holds will not work until it does",
-		"goguma doctor")
+
+	// A link, printed once, at the end.
+	//
+	// Not a prompt: an install that has just asked for a root password is the
+	// worst possible moment to also ask for an email address, and a form here
+	// would be the account this tool spends a whole page promising it does not
+	// have. A URL someone can ignore costs nothing and asks for nothing.
+	r.Blank()
+	r.Printf("  %s\n", r.Muted("to hear when something breaks or gets fixed:"))
+	r.Printf("  %s\n", r.Accent(signupURL))
 }
+
+// signupURL is where people can leave an email address if they want to.
+// Deliberately a page on the site rather than anything goguma posts to.
+const signupURL = "https://getgoguma.com/updates"
 
 func onPath(dir string) bool {
 	clean := filepath.Clean(dir)
@@ -295,8 +332,8 @@ var cmdUninstall = &Command{
 	Summary: "remove the services and binaries",
 	Usage: `goguma uninstall [--purge] [--yes]
 
-Stops and removes the daemon, the privileged helper, and the installed
-binaries. Removing the helper needs your password.
+Stops and removes the background service, the privileged helper, and the
+installed binaries. Removing the helper needs your password.
 
 Jobs, config, and run history are kept, so reinstalling picks up where you
 left off. Duration history takes weeks of real runs to accumulate and cannot

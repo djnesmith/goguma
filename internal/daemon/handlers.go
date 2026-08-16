@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/junnam586/goguma/internal/advisory"
 	"github.com/junnam586/goguma/internal/detect"
 	"github.com/junnam586/goguma/internal/estimate"
 	"github.com/junnam586/goguma/internal/ipc"
@@ -119,6 +120,9 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 			// job starts at and the only floor a client can state without
 			// knowing which job it is talking about.
 			WakeFloorBasePct: wakeFloor(d.cfg, -1),
+			// A build with no signing key refuses every advisory, genuine
+			// ones included, so a client must not offer a switch for it.
+			AdvisoriesAvailable: advisory.Enabled(),
 		}, nil
 
 	case ipc.OpConfigSet:
@@ -211,6 +215,7 @@ func (d *Daemon) Status() model.Status {
 		WakeScheduled:   d.wakeOK,
 		WakeError:       d.wakeErr,
 		WakeSuppressed:  d.wakeSuppressed,
+		NoWakeReason:    d.noWakeReason,
 		HelperConnected: d.helper.Connected(),
 		HelperVersion:   d.helper.Version(),
 		Paused:          d.paused,

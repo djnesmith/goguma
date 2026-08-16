@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/junnam586/goguma/internal/advisory"
 	"github.com/junnam586/goguma/internal/config"
 	"github.com/junnam586/goguma/internal/detect"
 	"github.com/junnam586/goguma/internal/estimate"
@@ -63,11 +65,26 @@ type Daemon struct {
 	// a failure, and conflating them would report a working safeguard as a
 	// broken scheduler.
 	wakeSuppressed string
+	// noWakeReason says why there is no next wake, when the reason is not the
+	// battery. Empty when a wake is scheduled, or when the absence is the
+	// ordinary transient one (every window already open).
+	noWakeReason string
 
 	// lastTick and lastState support sleep detection: a gap between ticks far
 	// larger than the tick interval means the machine was asleep in between.
-	lastTick  time.Time
+	lastTick time.Time
+	// busy is how long the control loop has spent inside its own work since
+	// lastTick. Sleep is inferred from a wall-clock gap between ticks, and
+	// the loop still makes blocking helper calls on the wake path, so without
+	// this a daemon stuck in a 45-second socket read is indistinguishable
+	// from a machine that slept for 45 seconds. Time spent running cannot be
+	// time spent asleep, so it is subtracted before the gap is judged.
+	busy      time.Duration
 	lastState power.State
+
+	// advisory is the last verified notice feed, or nil when none has been
+	// fetched, this build has no key compiled in, or the user turned it off.
+	advisory *advisory.Feed
 
 	// uncovered are scheduled jobs found on this machine that adoption
 	// declined to take, kept so they can be reported rather than forgotten.
@@ -153,6 +170,19 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 	d.srv = srv
 
+	// Apps that run their own schedules, described by manifest rather than by
+	// a hand-written reader. Loaded before the first scan so a machine whose
+	// real automation lives inside an application is covered from the first
+	// tick rather than from the next restart.
+	if loaded, problems := scan.LoadManifests(d.store.Layout().SchedulersDir()); len(loaded) > 0 || len(problems) > 0 {
+		if len(loaded) > 0 {
+			d.log.Info("loaded scheduler manifests", "sources", strings.Join(loaded, ", "))
+		}
+		for _, err := range problems {
+			d.log.Warn("a scheduler manifest could not be used", "err", err)
+		}
+	}
+
 	d.event(store.Event{Kind: store.EventDaemonStart, Message: "goguma " + d.version})
 	d.log.Info("daemon started",
 		"version", d.version,
@@ -166,6 +196,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 		if err := srv.Serve(ctx); err != nil {
 			d.log.Error("ipc server stopped", "err", err)
 		}
+	}()
+	// Every push to the helper goes through here, off the control loop.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		d.helper.pump(ctx)
 	}()
 
 	d.loop(ctx)
@@ -206,35 +242,62 @@ func (d *Daemon) loop(ctx context.Context) {
 	syncT := time.NewTicker(syncEvery)
 	defer syncT.Stop()
 
+	advisoryT := time.NewTicker(advisoryInterval)
+	defer advisoryT.Stop()
+	// Not at startup: a daemon that fetches the moment it launches makes the
+	// first thing a new install does a network request, before the user has
+	// seen the app at all. A few minutes in is soon enough for something
+	// checked once a day.
+	firstAdvisory := time.NewTimer(5 * time.Minute)
+	defer firstAdvisory.Stop()
+
 	// Sync before the first tick so a daemon restart immediately reflects any
 	// jobs created while it was down.
 	d.syncProviders(ctx)
 	d.tick(ctx, time.Now())
+	// Every branch is timed, because every branch can block: the wake path
+	// calls the helper synchronously, and syncProviders shells out to each
+	// scheduler on the machine.
+	busy := func(f func()) {
+		start := time.Now()
+		f()
+		d.mu.Lock()
+		d.busy += time.Since(start)
+		d.mu.Unlock()
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case now := <-tickT.C:
-			d.tick(ctx, now)
+			busy(func() { d.tick(ctx, now) })
 		case <-pollT.C:
 			// Only meaningful while a window is open; a cheap no-op otherwise.
 			now := time.Now()
 			d.mu.RLock()
 			cfg := d.cfg
 			d.mu.RUnlock()
-			d.pollDetection(ctx, now)
-			d.pollSchedulerState(ctx, now)
-			// Ceilings are enforced on the fast timer as well as the main
-			// tick. Checking only on the tick means a short ceiling overshoots
-			// by up to a full tick interval (a 5s ceiling fired at 10.2s in
-			// testing), which matters because the ceiling exists to bound how
-			// long a hung job can pin the machine awake.
-			d.enforceCeilings(now, cfg)
-			d.syncSleepBlock()
+			busy(func() {
+				d.pollDetection(ctx, now)
+				d.pollSchedulerState(ctx, now)
+				// Ceilings are enforced on the fast timer as well as the main
+				// tick. Checking only on the tick means a short ceiling overshoots
+				// by up to a full tick interval (a 5s ceiling fired at 10.2s in
+				// testing), which matters because the ceiling exists to bound how
+				// long a hung job can pin the machine awake.
+				d.enforceCeilings(now, cfg)
+				d.syncSleepBlock()
+			})
 		case <-repushT.C:
 			d.helper.Repush()
 		case <-syncT.C:
-			d.syncProviders(ctx)
+			busy(func() { d.syncProviders(ctx) })
+		case <-firstAdvisory.C:
+			go d.checkAdvisories(ctx)
+		case <-advisoryT.C:
+			// Off the loop goroutine: this one talks to the internet, and
+			// the control loop must never wait on a network round trip.
+			go d.checkAdvisories(ctx)
 		}
 	}
 }
@@ -689,12 +752,9 @@ func (d *Daemon) syncSleepBlock() {
 	if len(names) > 0 {
 		reason = "jobs: " + joinNames(names)
 	}
-	if err := d.helper.SetBlocked(want, reason); err != nil {
-		// Not fatal: the unprivileged idle assertion still holds a lid-open
-		// machine awake. Only clamshell holds are lost, which the status
-		// output reports rather than silently pretending to cover.
-		d.log.Debug("helper sleep-block push failed", "err", err)
-	}
+	// Queued, not sent. This runs on the two-second poll, and sending from
+	// here is what let a helper that had stopped answering freeze the loop.
+	d.helper.Push(want, reason)
 }
 
 func (d *Daemon) evaluateCutouts(st power.State, cfg config.Config, now time.Time) {
@@ -744,6 +804,11 @@ func (d *Daemon) shutdown() {
 	// Clear the privileged block explicitly. disablesleep is global and is
 	// NOT cleared when this process exits, so skipping this would leave the
 	// machine unable to sleep until something else fixed it.
+	//
+	// After the pump has stopped, or this can be overtaken by a push that was
+	// already in flight and the machine is left unable to sleep by the very
+	// call meant to free it.
+	d.helper.Settle(2 * time.Second)
 	if err := d.helper.SetBlocked(false, "daemon shutting down"); err != nil {
 		d.log.Warn("could not clear sleep block on shutdown", "err", err)
 	}

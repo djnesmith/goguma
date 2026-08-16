@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -190,4 +191,41 @@ func isInterpreter(name string) bool {
 		return true
 	}
 	return false
+}
+
+// ReplaceCrontabCommand rewrites one line's command, leaving everything else
+// byte for byte alone.
+//
+// This is the transform behind `import` editing the crontab for the user
+// instead of printing a line and asking them to paste it. It is deliberately
+// pure and deliberately fussy: comments, blank lines, PATH= assignments and
+// every other job must survive untouched, and the caller must be able to prove
+// what changed before installing it.
+//
+// `want` is the command the scan saw. It is checked rather than trusted,
+// because the crontab can be edited between the scan and the write, and
+// rewriting whatever now sits on line N would clobber a job the user just
+// added.
+func ReplaceCrontabCommand(text string, line int, want, replacement string) (string, error) {
+	if line < 1 {
+		return "", fmt.Errorf("line %d is not a line number", line)
+	}
+	lines := strings.Split(text, "\n")
+	if line > len(lines) {
+		return "", fmt.Errorf("the crontab has %d lines, so line %d is not in it anymore", len(lines), line)
+	}
+
+	raw := lines[line-1]
+	sched, cmd, ok := splitCrontabLine(strings.TrimSpace(raw))
+	if !ok {
+		return "", fmt.Errorf("line %d is not a job any more", line)
+	}
+	if cmd != want {
+		return "", fmt.Errorf("line %d now runs %q, not %q; the crontab changed since goguma read it", line, cmd, want)
+	}
+
+	// The indent is kept because it is the user's, not ours.
+	indent := raw[:len(raw)-len(strings.TrimLeft(raw, " \t"))]
+	lines[line-1] = indent + sched + " " + replacement
+	return strings.Join(lines, "\n"), nil
 }

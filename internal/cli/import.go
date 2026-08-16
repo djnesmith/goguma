@@ -277,11 +277,11 @@ func printBlindSpots(r *render.Renderer, cov []scan.Coverage) {
 		r.Printf("    %s\n", r.Muted("nothing was found in: "+strings.Join(missing, ", ")))
 	}
 	r.Line(r.Muted("    goguma reads crontab, launchd/systemd, and the app schedulers it"))
-	r.Line(r.Muted("    knows about. A tool that runs jobs from inside its own config is"))
-	r.Line(r.Muted("    invisible to this scan, check whatever runs your jobs for a"))
-	r.Line(r.Muted("    schedule list of its own."))
+	r.Line(r.Muted("    has been told about. A tool that runs jobs from inside its own"))
+	r.Line(r.Muted("    config is invisible until you point goguma at its schedule file:"))
+	r.Printf("    %s\n", r.Accent("goguma scheduler add <name> <its schedule file>"))
 	r.Blank()
-	r.Line(r.Muted("    You can register anything by hand regardless of what runs it:"))
+	r.Line(r.Muted("    Or register one job by hand, regardless of what runs it:"))
 	r.Printf("    %s\n", r.Accent("goguma add --name <name> --cron '<schedule>'"))
 	r.Blank()
 }
@@ -416,7 +416,7 @@ func chooseAction(ctx *Context, c scan.Candidate, others []scan.Candidate, regis
 		return chooseUnwrappableAction(ctx, c, assumeYes)
 	}
 
-	wrapped := wrapCommand(c)
+	wrapped := wrapCommand(ctx, c)
 	pattern := detect.SuggestPattern(c.Command)
 	// Offered only when it identifies this job and nothing else on the machine.
 	//
@@ -433,7 +433,20 @@ func chooseAction(ctx *Context, c scan.Candidate, others []scan.Candidate, regis
 
 	r.Blank()
 	r.Printf("      %s %s\n", r.Accent("[w] wrap"), r.Muted("exact detection · recommended"))
-	r.Printf("          %s\n", r.Muted("change the "+string(c.Source)+" line to:"))
+	switch c.Source {
+	case scan.SourceCrontab:
+		r.Printf("          %s\n", r.Muted("goguma changes this crontab line to, keeping a backup:"))
+	case scan.SourceLaunchd:
+		if needsRootToWrap(c.File) {
+			r.Printf("          %s\n", r.Muted(
+				"goguma edits the plist and reloads the job, keeping a backup."))
+			r.Printf("          %s\n", r.Warn("this one is system-wide, so it asks for your password:"))
+		} else {
+			r.Printf("          %s\n", r.Muted("goguma edits the plist and reloads the job, keeping a backup:"))
+		}
+	default:
+		r.Printf("          %s\n", r.Muted("change the "+string(c.Source)+" line to:"))
+	}
 	r.Printf("          %s\n", r.Accent(wrapped))
 	if patternUsable {
 		r.Printf("      %s %s\n", r.Accent("[p] pattern"), r.Muted("no changes to your setup"))
@@ -511,8 +524,64 @@ func chooseUnwrappableAction(ctx *Context, c scan.Candidate, assumeYes bool) imp
 	}
 }
 
-func wrapCommand(c scan.Candidate) string {
-	return fmt.Sprintf("goguma-mark %s -- %s", model.Slug(c.Name), c.Command)
+// wrapCommand builds the wrapped command line for a candidate.
+//
+// The wrapper is named by absolute path, never as `goguma-mark`.
+//
+// cron runs jobs with PATH=/usr/bin:/bin and launchd with
+// /usr/bin:/bin:/usr/sbin:/sbin. The wrapper installs to ~/.local/bin, which is
+// on neither. A bare name therefore produces a line that runs fine in the
+// user's shell, where PATH includes their bin dir, and fails with "command not
+// found" under the scheduler, which does not. That does not degrade timing: it
+// stops the job running at all. Wrapping a working job must never be able to
+// break it, so the path is resolved here and checked by the caller.
+func wrapCommand(ctx *Context, c scan.Candidate) string {
+	return fmt.Sprintf("%s %s -- %s", shellQuote(markBinary(ctx)), model.Slug(c.Name), c.Command)
+}
+
+// shellQuote makes a path safe as one word in a crontab line.
+//
+// macOS home directories are routinely "/Users/Jun Nam", so the wrapper's
+// absolute path routinely contains a space. A crontab command is handed to a
+// shell, which splits on it: the line runs "/Users/Jun" and the job dies with
+// "command not found". That is the same failure as using a bare name, and the
+// same severity, since a wrapped job that cannot start is a job that stopped
+// running.
+//
+// Quoted only here. launchd takes argv as literal array elements, so quoting
+// the plist entry would make the quotes part of the filename.
+func shellQuote(path string) string {
+	if !strings.ContainsAny(path, " \t\n\"'\\$`&|;<>()*?[]#~!") {
+		return path
+	}
+	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+}
+
+// markBinary is the absolute path to goguma-mark.
+//
+// The installed location first, then a sibling of the running binary, which is
+// what a build tree or an unpacked release looks like.
+func markBinary(ctx *Context) string {
+	installed := filepath.Join(ctx.Layout.BinDir, "goguma-mark")
+	if isExecutableFile(installed) {
+		return installed
+	}
+	if exe, err := os.Executable(); err == nil {
+		if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+			exe = resolved
+		}
+		if sibling := filepath.Join(filepath.Dir(exe), "goguma-mark"); isExecutableFile(sibling) {
+			return sibling
+		}
+	}
+	// Nothing found. Returning the installed path rather than a bare name
+	// keeps the failure legible: the line says exactly which file is missing.
+	return installed
+}
+
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
 }
 
 func readLine() (string, error) {
@@ -561,17 +630,56 @@ func registerCandidate(ctx *Context, c scan.Candidate, action importAction) erro
 			"the machine will wake for it; adjust the window with --max-runtime"))
 	}
 	if action == actionWrap {
-		// Deliberately not rewriting the crontab automatically. Editing a
-		// file the user owns, on their behalf, during a scan is a bigger
-		// promise than this command should make, and a mistake there breaks
-		// their automation rather than just goguma's view of it.
-		r.Printf("      %s\n", r.Muted("now update the line yourself:"))
-		r.Printf("      %s\n", r.Accent(wrapCommand(c)))
+		wrapped := wrapCommand(ctx, c)
+
+		// Applied, not recited.
+		//
+		// This used to print the line and tell the user to run `crontab -e`
+		// and paste it, on the grounds that editing a file they own is a
+		// bigger promise than the command should make. But the job is already
+		// registered as exactly-timed at this point, so skipping the paste
+		// leaves a job that records "never detected" on every run and warns
+		// about a setup the user was never told was half-finished. A setup
+		// command that ends in homework, and silently punishes forgetting it,
+		// is worse than one that does the work carefully.
 		if c.Source == scan.SourceCrontab {
-			r.Printf("      %s\n", r.Muted("run 'crontab -e' to edit it"))
+			if err := applyCrontabWrap(ctx, c.Line, c.Command, wrapped); err != nil {
+				r.Printf("      %s %s\n", r.Warn(r.Sym().Warn), r.Muted(err.Error()))
+				r.Printf("      %s\n", r.Muted("update the line yourself with 'crontab -e':"))
+				r.Printf("      %s\n", r.Accent(wrapped))
+				return nil
+			}
+			r.Printf("      %s %s\n", r.Good(r.Sym().OK),
+				r.Muted("crontab updated (a copy of the old one is in "+
+					shortHome(ctx.Layout.CrontabBackup())+")"))
+			return nil
+		}
+
+		if c.Source == scan.SourceLaunchd {
+			err := applyLaunchdWrap(ctx, c.File, c.Label, c.Command, markBinary(ctx), model.Slug(c.Name))
+			if err != nil {
+				r.Printf("      %s %s\n", r.Warn(r.Sym().Warn), r.Muted(err.Error()))
+				r.Printf("      %s\n", r.Muted("put these two entries at the front of ProgramArguments"))
+				r.Printf("      %s\n", r.Muted("in "+c.File+", then reload the job:"))
+				r.Printf("      %s\n", r.Accent("<string>"+markBinary(ctx)+"</string>"))
+				r.Printf("      %s\n", r.Accent("<string>"+model.Slug(c.Name)+"</string>"))
+				return nil
+			}
+			r.Printf("      %s %s\n", r.Good(r.Sym().OK),
+				r.Muted("plist updated and the job reloaded (a copy of the old one is in "+
+					shortHome(filepath.Join(ctx.Layout.StateDir, "launchd-backup"))+")"))
+			return nil
 		}
 	}
 	return nil
+}
+
+// shortHome trims the home directory off a path for display.
+func shortHome(p string) string {
+	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(p, home) {
+		return "~" + p[len(home):]
+	}
+	return p
 }
 
 // registeredCommands is every already-registered job's command line, so a
