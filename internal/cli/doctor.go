@@ -111,7 +111,7 @@ func runDoctor(ctx *Context, args []string) error {
 	switch {
 	case failed > 0:
 		r.Printf("%s %d check(s) failed.\n", r.Danger(r.Sym().Danger), failed)
-		return fmt.Errorf("goguma is not fully working")
+		return fmt.Errorf("goguma isn't fully working")
 	case warned > 0:
 		r.Printf("%s working, with %d thing(s) worth attention.\n", r.Warn(r.Sym().Warn), warned)
 	default:
@@ -191,7 +191,7 @@ func checkHelper(st model.Status) check {
 	}
 	return check{
 		name: "privileged helper", status: checkFail,
-		detail: "not reachable, lid-closed holds and OS wakes will not work",
+		detail: "not reachable, lid-closed holds and OS wakes won't work",
 		fix:    "goguma install",
 	}
 }
@@ -215,7 +215,7 @@ func checkWake(st model.Status) check {
 	case !st.WakeScheduled:
 		return check{
 			name: "scheduled wake", status: checkFail,
-			detail: "the OS did not accept the wake: " + st.WakeError,
+			detail: "the OS didn't accept the wake: " + st.WakeError,
 			fix:    "check 'pmset -g sched' for a competing entry",
 		}
 	default:
@@ -231,7 +231,7 @@ func checkThermal(st model.Status) check {
 	if st.Power.CPUTempC == nil {
 		return check{
 			name: "thermal cutout", status: checkWarn,
-			detail: "no temperature sensor is readable, so the cutout cannot arm",
+			detail: "no temperature sensor is readable, so the cutout can't arm",
 		}
 	}
 	return check{
@@ -247,7 +247,7 @@ func checkPlatform() []check {
 	if !ok {
 		return []check{{
 			name: "wake support", status: checkFail,
-			detail: "this machine cannot schedule a wake: " + reason,
+			detail: "this machine can't schedule a wake: " + reason,
 		}}
 	}
 	out := []check{{name: "wake support", status: checkOK, detail: "available on " + p.Name()}}
@@ -296,7 +296,7 @@ func checkOneJob(ctx *Context, v ipc.JobView) check {
 	if v.ScheduleError != "" {
 		return check{
 			name: name, status: checkFail,
-			detail: "its schedule will not parse: " + v.ScheduleError,
+			detail: "its schedule won't parse: " + v.ScheduleError,
 			fix:    fmt.Sprintf("goguma edit %s --cron '<expression>'", v.Job.ID),
 		}
 	}
@@ -323,7 +323,7 @@ func checkOneJob(ctx *Context, v ipc.JobView) check {
 			ipc.MatchTestReq{Pattern: v.Job.Match}, &resp); err == nil && !resp.Valid {
 			return check{
 				name: name, status: checkFail,
-				detail: "its match pattern is not a valid regular expression: " + resp.Error,
+				detail: "its match pattern isn't a valid regular expression: " + resp.Error,
 				fix:    fmt.Sprintf("goguma edit %s --match '<pattern>'", v.Job.ID),
 			}
 		}

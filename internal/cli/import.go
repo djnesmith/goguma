@@ -39,7 +39,7 @@ than the job is worth. What remains is ranked by how often it has genuinely
 been firing while this machine was asleep.
 
   --all       also list everything that was filtered out, with the reason
-  --deep      also search the filesystem for schedulers goguma cannot read.
+  --deep      also search the filesystem for schedulers goguma can't read.
               These are reported as leads to investigate, never registered:
               a file containing cron syntax may be dormant, commented out, or
               written for a different machine.
@@ -161,7 +161,7 @@ func runImport(ctx *Context, args []string) error {
 			continue
 		case actionWrap, actionPattern, actionWakeOnly:
 			if err := registerCandidate(ctx, c, action); err != nil {
-				r.Problem(fmt.Sprintf("could not register %s: %v", c.Name, err), "")
+				r.Problem(fmt.Sprintf("couldn't register %s: %v", c.Name, err), "")
 				continue
 			}
 			registered++
@@ -195,7 +195,7 @@ func printCoverage(r *render.Renderer, cov []scan.Coverage, total int) {
 		switch {
 		case c.Err != nil:
 			r.Printf("  %s %-9s %s\n", r.Warn(r.Sym().Warn), c.Source,
-				r.Warn("could not be read: "+c.Err.Error()))
+				r.Warn("couldn't be read: "+c.Err.Error()))
 		case !c.Available:
 			r.Printf("  %s %-9s %s\n", r.Muted(r.Sym().Disabled), c.Source,
 				r.Muted("none on this machine  ·  "+c.Where))
@@ -220,7 +220,7 @@ func printHints(ctx *Context, r *render.Renderer, bg context.Context) {
 	if err != nil {
 		return
 	}
-	r.Line(r.Muted("Searching for schedulers goguma does not know about…"))
+	r.Line(r.Muted("Searching for schedulers goguma doesn't know about…"))
 
 	hints := scan.FindSchedulerHints(bg, []string{home}, 5, 40)
 	hints = scan.VerifyAgainstInstalledCrontab(bg, hints)
@@ -239,7 +239,7 @@ func printHints(ctx *Context, r *render.Renderer, bg context.Context) {
 		case scan.LiveNo:
 			state = r.Muted("not installed here")
 		default:
-			state = r.Warn("cannot tell if it is in effect")
+			state = r.Warn("can't tell if it is in effect")
 		}
 		r.Printf("    %s  %s\n", shortenHomePath(h.Path, home), state)
 		r.Printf("      %s\n", r.Muted(h.Why))
@@ -248,7 +248,7 @@ func printHints(ctx *Context, r *render.Renderer, bg context.Context) {
 		}
 	}
 	r.Blank()
-	r.Line(r.Muted("  These are not registered. Containing a schedule is not the same as"))
+	r.Line(r.Muted("  These aren't registered. Containing a schedule isn't the same as"))
 	r.Line(r.Muted("  running one, a file can hold perfectly good cron syntax and be"))
 	r.Line(r.Muted("  dormant, commented out, or meant for a different machine."))
 	r.Line(r.Muted("  Register anything real with 'goguma add'."))
@@ -499,7 +499,7 @@ func chooseUnwrappableAction(ctx *Context, c scan.Candidate, assumeYes bool) imp
 		string(c.Source)+" runs this itself, so there is no command line to wrap."))
 	r.Printf("      %s %s\n", r.Accent("[k] wake only"), r.Muted("recommended"))
 	r.Printf("          %s\n", r.Muted(
-		"wake the machine for it and hold briefly; the job is not watched,"))
+		"wake the machine for it and hold briefly; the job isn't watched,"))
 	r.Printf("          %s\n", r.Muted(
 		"so the hold is a fixed window rather than its real runtime"))
 	r.Printf("      %s %s\n", r.Accent("[p] pattern"), r.Muted("try to watch for a process anyway"))
@@ -735,5 +735,5 @@ func patternRefusal(pattern string) string {
 		return "no distinctive text in this command to watch for"
 	}
 	return "\"" + pattern + "\" would also match another job, " +
-		"so it cannot tell them apart"
+		"so it can't tell them apart"
 }

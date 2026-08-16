@@ -45,7 +45,7 @@ var cmdSleepNow = &Command{
 	Summary: "release every hold so the machine can sleep",
 	Usage: `goguma sleep-now
 
-Releases every active hold immediately. Does not put the machine to sleep; it
+Releases every active hold immediately. Doesn't put the machine to sleep; it
 removes goguma's reason not to. Any job currently running keeps running.`,
 	Run: func(ctx *Context, args []string) error {
 		var resp struct {
@@ -107,7 +107,7 @@ goguma config set <key> <value>
 
 Settings:
   wake_buffer              how early to wake before a job fires (default 90s)
-  wake_only_hold           window for a job that cannot be watched (default 3m).
+  wake_only_hold           window for a job that can't be watched (default 3m).
                            Most adopted jobs use this, so it is the setting that
                            decides what they cost.
   default_ceiling          ceiling for a job with no history yet (default 5m)
@@ -120,7 +120,7 @@ Settings:
   low_battery_cutout_pct   release holds below this charge, 5-50 (default 10).
                            goguma also refuses to wake the machine at all
                            until it is this plus the rearm margin, so a wake
-                           cannot land straight into a release.
+                           can't land straight into a release.
   cutout_rearm_margin_pct  headroom above the cutout, 1-50 (default 5)
   webhook_url              POST target for problem events
   notify_on_missed_job     notify when a job is never detected
@@ -129,7 +129,11 @@ Settings:
                            covers everything, however often it fires
   auto_adopt               schedulers watched for new jobs. 'all' restores the
                            default (everything adoptable), 'off' disables it,
-                           or name sources comma-separated.`
+                           or name sources comma-separated.
+  advisory_checks          check getgoguma.com once a day for word of a bug or
+                           a fix. Off for anyone who installed before it
+                           existed. Does nothing in a build with no signing key
+                           compiled in, which is every release so far.`
 
 var cmdConfig = &Command{
 	Name:    "config",
@@ -167,7 +171,7 @@ func configGet(ctx *Context, args []string) error {
 			return errDaemonDown()
 		}
 		resp = ipc.ConfigResp{Config: cfg, Warnings: warnings}
-		ctx.Out.Line(ctx.Out.Muted("(daemon not running · showing the config file)"))
+		ctx.Out.Line(ctx.Out.Muted("(background service not running · showing the config file)"))
 	}
 
 	if *asJSON {
@@ -199,6 +203,7 @@ func configGet(ctx *Context, args []string) error {
 		{"webhook_url", orNone(r, c.WebhookURL)},
 		{"notify_on_missed_job", fmt.Sprintf("%t", c.NotifyOnMissedJob)},
 		{"use_wake_or_power_on", fmt.Sprintf("%t", c.UseWakeOrPowerOn)},
+		{"advisory_checks", fmt.Sprintf("%t", c.AdvisoryChecks)},
 		{"min_import_interval", c.MinImportInterval.String()},
 	})
 

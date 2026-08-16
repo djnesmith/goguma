@@ -68,7 +68,7 @@ func (w *webhookSender) send(url string, p webhookPayload) {
 			// The error text embeds the URL, and webhook URLs are bearer
 			// credentials (Slack and Discord put the token in the path), so
 			// it must not reach the log.
-			w.log.Warn("webhook request could not be built; check webhook_url", "event", p.Event)
+			w.log.Warn("webhook request couldn't be built; check webhook_url", "event", p.Event)
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")

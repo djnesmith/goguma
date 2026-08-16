@@ -79,3 +79,32 @@ func TestHelpNeverRunsTheCommand(t *testing.T) {
 		})
 	}
 }
+
+// TestEveryCommandIsListed fails when a command exists but no help group
+// mentions it. `goguma scheduler` shipped that way: registered, documented,
+// reachable if you already knew the word, and absent from `goguma help`. A
+// command nobody can discover is very close to a command that does not exist.
+func TestEveryCommandIsListed(t *testing.T) {
+	listed := map[string]bool{}
+	for _, g := range helpGroups() {
+		for _, n := range g.names {
+			if listed[n] {
+				t.Errorf("command %q is listed in more than one help group", n)
+			}
+			listed[n] = true
+		}
+	}
+	for name, c := range commands {
+		if c.Hidden || name != c.Name {
+			continue // aliases point at a command listed under its real name
+		}
+		if !listed[name] {
+			t.Errorf("command %q is not in any help group, so `goguma help` never shows it", name)
+		}
+	}
+	for name := range listed {
+		if _, ok := commands[name]; !ok {
+			t.Errorf("help group lists %q, which is not a registered command", name)
+		}
+	}
+}

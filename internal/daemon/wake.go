@@ -112,19 +112,19 @@ func (d *Daemon) scheduleNextWake(now time.Time, cfg config.Config) {
 	case err != nil:
 		d.wakeOK, d.wakeErr = false, err.Error()
 	case !verified:
-		d.wakeOK, d.wakeErr = false, "the OS did not retain the scheduled wake"
+		d.wakeOK, d.wakeErr = false, "the OS didn't retain the scheduled wake"
 	default:
 		d.wakeOK, d.wakeErr = true, ""
 	}
 	d.mu.Unlock()
 
 	if err == nil && !verified {
-		d.log.Warn("scheduled wake was not retained by the OS; the machine may sleep through the job",
+		d.log.Warn("scheduled wake wasn't retained by the OS; the machine may sleep through the job",
 			"at", wakeAt.Format(time.RFC3339), "job", job.ID)
 	}
 
 	if err != nil {
-		d.log.Error("could not schedule the OS wake; jobs may be missed",
+		d.log.Error("couldn't schedule the OS wake; jobs may be missed",
 			"at", wakeAt.Format(time.RFC3339), "err", err)
 		d.event(store.Event{
 			Kind: store.EventWakeFailed, JobID: job.ID, JobName: job.Name,
@@ -133,7 +133,7 @@ func (d *Daemon) scheduleNextWake(now time.Time, cfg config.Config) {
 		d.hooks.send(cfg.WebhookURL, webhookPayload{
 			Event:   string(store.EventWakeFailed),
 			Job:     job.Name,
-			Message: "could not register a wake with the OS: " + err.Error(),
+			Message: "couldn't register a wake with the OS: " + err.Error(),
 		})
 		return
 	}
@@ -335,7 +335,7 @@ func (d *Daemon) detectSleepGap(now time.Time) {
 		"from", iv.Sleep.Format(time.RFC3339), "to", now.Format(time.RFC3339),
 		"duration", gap.Round(time.Second))
 	if err := d.store.RecordSleepInterval(iv); err != nil {
-		d.log.Debug("could not record sleep interval", "err", err)
+		d.log.Debug("couldn't record sleep interval", "err", err)
 	}
 	d.event(store.Event{
 		Kind:    store.EventWoke,
@@ -409,14 +409,14 @@ func (d *Daemon) recordSleptThrough(iv schedule.SleepInterval, now time.Time) {
 				BatteryEnd:   -1,
 			}
 			if err := d.store.AppendRun(run); err != nil {
-				d.log.Warn("could not record a slept-through run", "job", job.ID, "err", err)
+				d.log.Warn("couldn't record a slept-through run", "job", job.ID, "err", err)
 				continue
 			}
-			d.log.Info("job was not run: the machine was asleep at its fire time",
+			d.log.Info("job wasn't run: the machine was asleep at its fire time",
 				"job", job.ID, "fire", fire.Format(time.RFC3339))
 			d.event(store.Event{
 				Kind: store.EventNeverDetected, JobID: job.ID, JobName: job.Name,
-				Message: "the machine was asleep at " + fire.Format("15:04") + " and was not woken",
+				Message: "the machine was asleep at " + fire.Format("15:04") + " and wasn't woken",
 			})
 		}
 	}

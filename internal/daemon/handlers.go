@@ -348,7 +348,7 @@ func (d *Daemon) testMatch(ctx context.Context, pattern string) ipc.MatchTestRes
 	}
 	procs, err := detect.Snapshot(ctx)
 	if err != nil {
-		return ipc.MatchTestResp{Valid: true, Error: "could not read the process table: " + err.Error()}
+		return ipc.MatchTestResp{Valid: true, Error: "couldn't read the process table: " + err.Error()}
 	}
 	resp := ipc.MatchTestResp{Valid: true}
 	for _, p := range m.Find(procs) {

@@ -71,19 +71,19 @@ func applyLaunchdWrap(ctx *Context, plistPath, label, oldCommand, markPath, slug
 
 	if err := scope.edit(plistPath, markPath, slug); err != nil {
 		scope.restore(backup, plistPath)
-		return fmt.Errorf("could not edit %s (it was put back as it was): %w", filepath.Base(plistPath), err)
+		return fmt.Errorf("couldn't edit %s (it was put back as it was): %w", filepath.Base(plistPath), err)
 	}
 	// A plist that no longer parses would make launchd refuse the job
 	// entirely, so this is checked before anything is reloaded.
 	if out, lerr := exec.Command("plutil", "-lint", plistPath).CombinedOutput(); lerr != nil {
 		scope.restore(backup, plistPath)
-		return fmt.Errorf("the edited plist did not validate, so it was put back: %s", bytes.TrimSpace(out))
+		return fmt.Errorf("the edited plist didn't validate, so it was put back: %s", bytes.TrimSpace(out))
 	}
 
 	if err := scope.reload(plistPath, label); err != nil {
 		scope.restore(backup, plistPath)
 		_ = scope.reload(plistPath, label)
-		return fmt.Errorf("could not reload the job (the plist was put back): %w", err)
+		return fmt.Errorf("couldn't reload the job (the plist was put back): %w", err)
 	}
 
 	// Read back rather than trust the edit.
@@ -93,7 +93,7 @@ func applyLaunchdWrap(ctx *Context, plistPath, label, oldCommand, markPath, slug
 	if err != nil || len(after) < 2 || after[0] != markPath || after[1] != slug || badProgram {
 		scope.restore(backup, plistPath)
 		_ = scope.reload(plistPath, label)
-		return fmt.Errorf("the change did not take, so %s was put back as it was", filepath.Base(plistPath))
+		return fmt.Errorf("the change didn't take, so %s was put back as it was", filepath.Base(plistPath))
 	}
 	return nil
 }
@@ -107,7 +107,7 @@ func programArguments(path string) ([]string, error) {
 	}
 	var args []string
 	if err := json.Unmarshal(out, &args); err != nil {
-		return nil, fmt.Errorf("could not read ProgramArguments from %s: %w", filepath.Base(path), err)
+		return nil, fmt.Errorf("couldn't read ProgramArguments from %s: %w", filepath.Base(path), err)
 	}
 	return args, nil
 }
@@ -207,7 +207,7 @@ func scopeOf(path string) (plistScope, error) {
 	case strings.HasPrefix(path, "/Library/LaunchDaemons/"):
 		return plistScope{domain: "system", needsRoot: true}, nil
 	}
-	return plistScope{}, fmt.Errorf("%s is not in a launchd directory goguma edits", path)
+	return plistScope{}, fmt.Errorf("%s isn't in a launchd directory goguma edits", path)
 }
 
 // edit applies the wrapper, through sudo when the file is root-owned.
@@ -241,7 +241,7 @@ func (s plistScope) edit(path, markPath, slug string) error {
 		return err
 	}
 	if out, lerr := exec.Command("plutil", "-lint", tmpName).CombinedOutput(); lerr != nil {
-		return fmt.Errorf("the edited copy did not validate, so nothing was installed: %s", bytes.TrimSpace(out))
+		return fmt.Errorf("the edited copy didn't validate, so nothing was installed: %s", bytes.TrimSpace(out))
 	}
 	return sudoInstall(tmpName, path)
 }
@@ -318,7 +318,7 @@ func backUpPlist(ctx *Context, path, label string) (string, error) {
 	}
 	dest := filepath.Join(dir, label+".plist")
 	if err := os.WriteFile(dest, b, 0o600); err != nil {
-		return "", fmt.Errorf("could not save a backup to %s, so nothing was changed: %w", dest, err)
+		return "", fmt.Errorf("couldn't save a backup to %s, so nothing was changed: %w", dest, err)
 	}
 	return dest, nil
 }

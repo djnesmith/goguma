@@ -17,7 +17,7 @@ var cmdScheduler = &Command{
 	Usage: `goguma scheduler <command>
 
 Some apps run jobs from inside themselves rather than through cron or launchd.
-Those jobs appear in no system registry, so goguma cannot find them until it is
+Those jobs appear in no system registry, so goguma can't find them until it is
 told where they live. This is how you tell it, and it only has to be done once
 per app.
 
@@ -124,7 +124,7 @@ func schedulerAdd(ctx *Context, args []string) error {
 	if verr := m.Validate(); verr != nil {
 		r.Problem(verr.Error(), "")
 		r.Line(r.Muted("  Nothing was saved. The file may not hold schedules, or the fields"))
-		r.Line(r.Muted("  may be named in a way goguma could not recognise."))
+		r.Line(r.Muted("  may be named in a way goguma couldn't recognise."))
 		return nil
 	}
 
@@ -174,7 +174,7 @@ func schedulerRemove(ctx *Context, args []string) error {
 	dest := filepath.Join(ctx.Layout.SchedulersDir(), args[0]+".json")
 	if err := os.Remove(dest); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("goguma does not know about an app scheduler called %q", args[0])
+			return fmt.Errorf("goguma doesn't know about an app scheduler called %q", args[0])
 		}
 		return err
 	}

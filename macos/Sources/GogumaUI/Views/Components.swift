@@ -199,7 +199,7 @@ struct SetupDisclosure: View {
             // The three lines above are the summary; this is the whole account,
             // written to be checked rather than believed.
             Link(destination: Self.securityDoc) {
-                Text("Read what it can and cannot do")
+                Text("Read what it can and can't do")
                     .font(Theme.Typography.caption)
                     .underline()
             }

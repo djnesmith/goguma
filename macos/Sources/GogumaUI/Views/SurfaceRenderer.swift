@@ -111,7 +111,7 @@ enum SurfaceRenderer {
         view.layoutSubtreeIfNeeded()
 
         guard let data = capture(view) else {
-            fail("could not encode PNG")
+            fail("couldn't encode PNG")
             return
         }
         do {

@@ -41,11 +41,11 @@ func applyCrontabWrap(ctx *Context, entryLine int, oldCommand, wrapped string) e
 
 	backup := ctx.Layout.CrontabBackup()
 	if err := os.WriteFile(backup, []byte(before), 0o600); err != nil {
-		return fmt.Errorf("could not save a backup to %s, so nothing was changed: %w", backup, err)
+		return fmt.Errorf("couldn't save a backup to %s, so nothing was changed: %w", backup, err)
 	}
 
 	if err := installCrontab(after); err != nil {
-		return fmt.Errorf("could not write the crontab (the original is untouched): %w", err)
+		return fmt.Errorf("couldn't write the crontab (the original is untouched): %w", err)
 	}
 
 	// Read back rather than trust the exit status. `crontab` accepts input and
@@ -54,10 +54,10 @@ func applyCrontabWrap(ctx *Context, entryLine int, oldCommand, wrapped string) e
 	if err != nil || !wrappedIsLive(live, entryLine, wrapped) {
 		if restoreErr := installCrontab(before); restoreErr != nil {
 			return fmt.Errorf(
-				"the crontab was changed and could not be verified or restored; "+
+				"the crontab was changed and couldn't be verified or restored; "+
 					"your original is saved at %s: %w", backup, restoreErr)
 		}
-		return fmt.Errorf("the change did not take, so the crontab was put back as it was")
+		return fmt.Errorf("the change didn't take, so the crontab was put back as it was")
 	}
 	return nil
 }
@@ -79,7 +79,7 @@ func readCrontab() (string, error) {
 		// An empty crontab exits non-zero on most platforms, which is not a
 		// failure to read one.
 		if len(out) == 0 {
-			return "", fmt.Errorf("could not read your crontab: %w", err)
+			return "", fmt.Errorf("couldn't read your crontab: %w", err)
 		}
 	}
 	return string(out), nil

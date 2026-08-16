@@ -878,7 +878,7 @@ struct JobView: Codable, Sendable, Hashable, Identifiable {
 
     var nightlyCostHelp: String {
         guard hasMeasuredCost else {
-            return "This job has not run on battery yet, so there is nothing measured to project."
+            return "This job hasn't run on battery yet, so there is nothing measured to project."
         }
         return "\(firesPerNight) firings across 8 hours asleep, at "
             + String(format: "%.1f%%", stats.batteryPerRun) + " each."
@@ -975,7 +975,7 @@ struct JobView: Codable, Sendable, Hashable, Identifiable {
     var rowWarnings: [String] {
         var out: [String] = []
         if !scheduleError.isEmpty {
-            out.append("Schedule does not parse: \(scheduleError)")
+            out.append("Schedule doesn't parse: \(scheduleError)")
         }
         guard job.detection.isObservable else { return out }
 

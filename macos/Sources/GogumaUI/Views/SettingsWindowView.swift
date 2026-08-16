@@ -267,18 +267,18 @@ struct SettingsWindowView: View {
                 ) { apply("default_ceiling", $0.wireString) }
             }
             .help(
-                "How long to stay awake for a job goguma has not timed yet. After a "
+                "How long to stay awake for a job goguma hasn't timed yet. After a "
                     + "few runs it knows how long that job takes and uses that instead."
             )
 
-            settingsRow("Stay awake for a job it cannot watch") {
+            settingsRow("Stay awake for a job it can't watch") {
                 DurationPicker(
                     presets: [60, 120, 180, 300, 600].map { WGDuration(seconds: $0) },
                     current: store.config?.wakeOnlyHold ?? .zero
                 ) { apply("wake_only_hold", $0.wireString) }
             }
             .help(
-                "Some jobs run in a way goguma cannot recognise, so it cannot tell when "
+                "Some jobs run in a way goguma can't recognise, so it can't tell when "
                     + "they finish and stays awake for a fixed stretch instead. Most jobs "
                     + "it finds by itself are like this, so this is what they cost."
             )
@@ -317,7 +317,7 @@ struct SettingsWindowView: View {
                 .help(
                     "goguma watches every scheduler on this Mac and registers new jobs as "
                         + "they appear, including crontab and launchd. It never edits your "
-                        + "crontab to do it, so a job whose process it cannot recognise gets "
+                        + "crontab to do it, so a job whose process it can't recognise gets "
                         + "a fixed window rather than exact timing."
                 )
             }
@@ -395,7 +395,7 @@ struct SettingsWindowView: View {
                 unit: "°C",
                 focusID: .thermal,
                 help: "Above this CPU temperature, every hold is released and the Mac "
-                    + "sleeps normally, so a laptop in a bag does not overheat."
+                    + "sleeps normally, so a laptop in a bag doesn't overheat."
             ) { apply("thermal_cutout_c", String(Int(thermalCutout))) }
 
             sliderRow(
@@ -407,7 +407,7 @@ struct SettingsWindowView: View {
                 unit: "%",
                 focusID: .battery,
                 help: "Below this charge, holds are released and the Mac sleeps normally, "
-                    + "so it does not run out of battery while you are away from it."
+                    + "so it doesn't run out of battery while you are away from it."
             ) { apply("low_battery_cutout_pct", String(Int(lowBatteryCutout))) }
 
             // A consequence of the slider above, not a setting of its own.
@@ -500,7 +500,7 @@ struct SettingsWindowView: View {
                     .help("Fetches a small signed file from getgoguma.com once a day. It "
                         + "sends nothing about you or your jobs: no account, no identifier, "
                         + "not even the version you are running. What comes back can show a "
-                        + "message and cannot change any setting.")
+                        + "message and can't change any setting.")
                 }
             }
 
@@ -537,7 +537,7 @@ struct SettingsWindowView: View {
                         set: { apply("notify_on_missed_job", $0 ? "true" : "false") }
                     )
                 )
-                .help("A macOS notification when a job goguma was watching did not run.")
+                .help("A macOS notification when a job goguma was watching didn't run.")
             }
 
             unlabelledRow {
@@ -550,7 +550,7 @@ struct SettingsWindowView: View {
                 )
                 .help(
                     "Off by default: silently powering on a Mac someone deliberately shut "
-                        + "down is a surprise most people would not consent to."
+                        + "down is a surprise most people wouldn't consent to."
                 )
             }
         }
@@ -616,7 +616,7 @@ struct SettingsWindowView: View {
                     Text(
                         "For piping alerts into Slack, a pager, or your own service. "
                             + "Overruns, wake failures, undetected jobs and cutouts are sent "
-                            + "as JSON. Leave empty if you do not have one."
+                            + "as JSON. Leave empty if you don't have one."
                     )
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.textTertiary)
@@ -652,7 +652,7 @@ struct SettingsWindowView: View {
             }
             .help(
                 "A floor under the learned window. A job measured faster than this still "
-                    + "gets this much, so a brief stall does not end the hold early."
+                    + "gets this much, so a brief stall doesn't end the hold early."
             )
 
             settingsRow("Never hold more than") {
@@ -674,7 +674,7 @@ struct SettingsWindowView: View {
             }
             .help(
                 "How far above the cutout the battery must recover before holds resume, "
-                    + "so a machine sitting on the threshold does not release and re-take "
+                    + "so a machine sitting on the threshold doesn't release and re-take "
                     + "a hold repeatedly."
             )
         }

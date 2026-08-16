@@ -1,5 +1,10 @@
 # goguma menu bar app
 
+[README](../README.md) ·
+[Security](../SECURITY.md) ·
+[Architecture](../Docs/ARCHITECTURE.md) ·
+[getgoguma.com](https://getgoguma.com)
+
 A macOS menu bar client for the goguma daemon. It shows what goguma is
 doing right now, what it will wake the Mac for next, and how much battery each
 job's wake window actually costs; and it lets you skip a wake, release the
@@ -57,6 +62,47 @@ GOGUMA_STATE_DIR=/tmp/wg-dev .build/debug/GogumaUI
 Useful for running against a development daemon without touching a real
 installation. Note that `AF_UNIX` caps the socket path at 104 bytes, so a deeply
 nested override directory will fail with a clear error rather than silently.
+
+### Rendering a surface to a PNG
+
+```sh
+macos/build/goguma.app/Contents/MacOS/goguma --render popover out.png light
+```
+
+Surfaces: `popover`, `jobs`, `jobs-selected`, `settings`, `addjob`, `history`,
+`empty`, `offline`, `marks`. The last argument is `light` or `dark`.
+
+This is how the screenshots in the docs are made, and it is worth knowing about
+before reaching for a screenshot tool: capturing a menu bar app off the screen
+needs Screen Recording permission, which an agent or a CI runner doesn't have,
+and the popover dismisses itself the moment anything else takes focus. The
+renderer hosts the real view in a window placed far offscreen and captures it
+with `cacheDisplay`, so it needs no permission and can't be dismissed.
+
+It reads from the live daemon, so what comes out is a real machine's jobs
+rather than a fixture. That is the point, and it is also the catch: check what
+is in the picture before committing it. `SurfaceRenderer.swift` explains why
+this isn't `ImageRenderer`.
+
+For the jobs window that default is wrong twice over, so there is
+`Docs/media/demo-daemon.py`:
+
+```sh
+python3 Docs/media/demo-daemon.py &
+GOGUMA_STATE_DIR=/tmp/ggdemo \
+    macos/build/goguma.app/Contents/MacOS/goguma --render jobs-selected out.png light
+```
+
+It put the author's own project names and home directory path in a README, and
+it left the battery columns empty. Empty was correct: "per sleep" is
+`fires_per_night * battery_per_run`, and a job scheduled for 09:00 doesn't
+fire while anyone is asleep. But a column of dashes says nothing about what the
+column is for. The fixture is a machine whose work runs overnight, which is the
+case goguma exists for, with one weekly job left in so a cell stays honestly
+blank. It captures the shape from the running daemon and replaces only the
+values, so it can't drift from the protocol, and it answers reads only: a real
+second daemon would reach the same privileged helper as the installed one and
+fight it over the wake schedule.
 
 ## Design: `Theme.swift` is the single file to edit
 
@@ -146,7 +192,7 @@ a daemon that closes mid-write returns `EPIPE` instead of killing the app.
 
 The response envelope is decoded **twice**: once with a payload type that
 ignores its body, to read `protocol`/`ok`/`error`, and only then for the payload
-itself. That way a payload this build cannot parse still surfaces the daemon's
+itself. That way a payload this build can't parse still surfaces the daemon's
 own error message rather than a generic decode failure.
 
 ### Concurrency
@@ -256,7 +302,17 @@ daemon warnings, prominently; a compact job list with enable toggles (click a ro
 for its history); and Skip next wake, Let it sleep now, Pause/Resume, Jobs,
 Settings, Quit.
 
-**Jobs window.** A table of every job: name, schedule, next run, typical,
+**One main window, two pages.** Jobs and Settings are the same `NSWindow`,
+swapped by `WindowCoordinator.retarget(_:to:)` rather than opened as two. They
+were separate windows, and picking Settings from a popover already covering the
+Jobs window put the thing you asked for behind the thing you were looking at.
+Sharing one window also means one place to remember position and size. History
+is still its own window, because it is opened *from* the jobs list and wants to
+sit beside it. The shared window is built once at launch by `prewarm()` and
+kept off screen, because a cold `NSHostingController` costs a visible beat on
+the first open.
+
+**Jobs page.** A table of every job: name, schedule, next run, typical,
 ceiling, detection mode, and an inline duration sparkline drawn from
 `stats.recent` with non-`ok` runs marked. A badge appears when `schedule_error`
 is non-empty, or (for observable jobs only) `stats.never_detected > 0`,
@@ -264,11 +320,23 @@ is non-empty, or (for observable jobs only) `stats.never_detected > 0`,
 Add/Edit sheet, Remove behind a confirmation, and **Sync** to re-read watched
 schedulers immediately.
 
-**Add / edit sheet.** Name, schedule, timezone, command, detection mode, match
-pattern (pattern mode only) with live `match.test` validation (debounced while
-typing, plus an explicit Test button), optional max-runtime and wake-buffer
-overrides, enabled toggle. The pattern tester is the point of the sheet: a wrong
-regexp otherwise fails silently at 3am.
+**Add / edit sheet.** One `Grid` with a fixed 108pt label column, so every
+control starts on the same x no matter how long its label is. The rows are
+Name, Repeat, then whatever that repeat implies (On / Day / Every), At, Time
+zone, While it runs, and a disclosure called Advanced holding Command, How it's
+watched, Stay awake for and Wake early.
+
+Two things it is careful about. The schedule is built rather than typed
+(`ScheduleBuilder.swift`): the cron expression is generated from Repeat and At,
+because asking for `0 3 * * *` is asking most people to get it wrong silently.
+And the labels say what the setting does rather than what it is called
+internally, so the ceiling is "Stay awake for" and the buffer is "Wake early".
+Advanced is a disclosure inside the same grid, not a second layout, so opening
+it adds rows instead of rearranging the sheet.
+
+The pattern tester is still the point of the detection row: live `match.test`
+validation, debounced while typing plus an explicit Test button, because a
+wrong regexp otherwise fails silently at 3am.
 
 **History window.** Run durations over time with the ceiling as a dashed
 reference line and hold duration as a second series, so the gap between "what the
@@ -277,10 +345,10 @@ a table of runs with started / duration / held / wasted / outcome / exit code /
 whether goguma actually woke the machine. Rows where the hold greatly exceeds
 the runtime are called out; that is wasted battery, and the thing worth fixing.
 
-**Settings.** `wake_buffer`, `default_ceiling`, `wake_only_hold`,
+**Settings page.** `wake_buffer`, `default_ceiling`, `wake_only_hold`,
 `thermal_cutout_c` (70-95), `low_battery_cutout_pct` (5-50), `auto_adopt`,
-`webhook_url`, `notify_on_missed_job`, `use_wake_or_power_on`, plus a **Sync
-Now** button, daemon version, helper connection and version, protocol version,
+`webhook_url`, `notify_on_missed_job`, `use_wake_or_power_on`,
+`advisory_checks`, plus a **Sync Now** button, daemon version, helper connection and version, protocol version,
 socket path, and last-updated. Text fields commit on Return; sliders on release.
 Every write goes through `config.set` and the config is re-read afterwards, so a
 value the daemon clamps shows its clamped value here rather than the one that
@@ -289,9 +357,14 @@ was typed.
 Two things Settings is careful about:
 
 - **`low_battery_cutout_pct` governs two thresholds.** Holds are released below
-  it, *and* the machine is not woken at all below it plus
+  it, *and* the machine isn't woken at all below it plus
   `cutout_rearm_margin_pct`. Showing only the cutout would understate the second
   by the margin, so the derived wake floor is spelled out beneath the slider.
+- **`advisory_checks` is hidden, not disabled, when the build can't use it.**
+  A daemon built without a signing key refuses every advisory, genuine ones
+  included, so the setting is inert. It reports that as
+  `advisories_available` on `config.get` and the row isn't drawn at all,
+  because a switch that can't do anything is a control that lies.
 - **`auto_adopt` has three states, not two.** `null` (never configured) means
   every adoptable source is watched, i.e. ON. `[]` means explicitly off. A
   non-empty list means exactly those sources. `null` and `[]` are opposites, so
@@ -317,7 +390,7 @@ The toggle is therefore lossless in both directions: **off** sends `"off"`,
 **on** sends `"all"`. (An earlier version scraped a source list from
 registered jobs when re-enabling, which permanently narrowed coverage to
 whatever happened to be visible at the moment of the click; `"all"` exists so
-the toggle is not a one-way door.)
+the toggle isn't a one-way door.)
 
 ### Other places the app had to decide
 

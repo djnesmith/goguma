@@ -16,7 +16,7 @@ Re-reads every scheduler listed in auto_adopt and registers jobs that have
 appeared since the last check, retiring ones that have gone.
 
 This normally happens on its own every couple of minutes. Run it by hand when
-you have just created a job and do not want to wait.
+you have just created a job and don't want to wait.
 
 To start watching a scheduler:
 

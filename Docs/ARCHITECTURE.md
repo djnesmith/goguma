@@ -2,13 +2,19 @@
 
 > How goguma is built: the three privilege tiers, the wake and sleep-hold
 > mechanisms, how jobs are detected, the hold lifecycle, and the safety
-> cutouts. For the user-facing pitch, see the [README](../README.md).
+> cutouts.
+
+[README](../README.md) ·
+[Security](../SECURITY.md) ·
+[Mac app](../macos/README.md) ·
+[getgoguma.com](https://getgoguma.com)
 
 ---
 
 ## 1. Components
 
-Four binaries across three privilege tiers, plus an optional GUI.
+Five binaries across three privilege tiers, plus an optional GUI. Four of them
+ship to users; the fifth is a maintainer tool.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -29,6 +35,7 @@ Four binaries across three privilege tiers, plus an optional GUI.
 │  • duration history and ceiling estimation                           │
 │  • thermal and low-battery cutouts, cutout latch                     │
 │  • sleep/wake observation, event log, webhooks                       │
+│  • app-scheduler manifests, and the daily advisory check             │
 └────────────────────────────┬─────────────────────────────────────────┘
                              │ length-prefixed JSON over a unix socket
                              │ /var/run/goguma-helper.sock  (root-owned)
@@ -44,6 +51,10 @@ Four binaries across three privilege tiers, plus an optional GUI.
   goguma-mark   (wrapper, runs inside the user's cron line)
   • goguma-mark <job> -- <command>
   • reports the job's real start, exit time, and exit code to the daemon
+
+  goguma-advisory  (maintainer tool, never run by a user)
+  • keygen / sign, for the notice feed
+  • the private half never exists on a user's machine
 ```
 
 ### Why the split
@@ -51,7 +62,7 @@ Four binaries across three privilege tiers, plus an optional GUI.
 The helper is privileged because scheduling a wake and overriding clamshell
 sleep both require root. It is kept to two mutating operations and no state so
 the elevated-privilege surface of the whole product is one readable file. It
-does not know what a job is, when anything is scheduled, or why sleep is being
+doesn't know what a job is, when anything is scheduled, or why sleep is being
 blocked.
 
 The daemon runs as the user so it can read the user's crontab, watch
@@ -78,7 +89,7 @@ and other applications' scheduled events.
 
 `wakeorpoweron` is available via `use_wake_or_power_on` and additionally boots
 a powered-off machine. It is off by default because silently powering on a
-shut-down laptop is a surprise most users would not consent to.
+shut-down laptop is a surprise most users wouldn't consent to.
 
 **Known quirk, and the mitigation.** Scheduled wake entries can be silently
 dropped or overwritten when other applications call `pmset schedule`. A wake
@@ -87,7 +98,7 @@ that never fires because its wake vanished is exactly the silent failure
 goguma exists to prevent. So the daemon re-asserts the current wake every
 60 seconds rather than setting it once, and the helper exposes
 `scheduledWakes()` so a requested wake can be read back and verified; "pmset
-returned success" is not treated as sufficient evidence.
+returned success" isn't treated as sufficient evidence.
 
 Only one wake is registered at a time: the nearest. Registering every job's
 wake up front would fill the system schedule with entries that go stale the
@@ -126,7 +137,7 @@ lid-closed Mac awake:
 - `IOPMSetSystemPowerSetting("SleepDisabled", …)`: returns success but
   `pmset -g` still reports `SleepDisabled 0`; `pmset` coordinates
   `IOPMSetPMPreferences` and an activation step around that call which the
-  bare call does not reproduce.
+  bare call doesn't reproduce.
 
 `pmset -a disablesleep` is blunt (global, also suppresses idle sleep, and
 persists in the power-management preferences until cleared) but it is Apple's
@@ -151,7 +162,7 @@ be reset by the kernel across a sleep/wake cycle. Five layers cover that:
    because that is what makes the re-push a repair rather than a no-op.
 
 Every `pmset` invocation runs under a 10-second timeout so a wedged subprocess
-cannot deadlock the helper's policy lock.
+can't deadlock the helper's policy lock.
 
 **Linux**: a `systemd-logind` inhibitor lock held by a child process. The
 inhibitor is `--what=sleep:idle:handle-lid-switch`, not `sleep:idle`:
@@ -167,7 +178,7 @@ reboot and is precisely the stranding the dead-man switch exists to prevent.
 
 ## 4. Detecting jobs
 
-goguma does not run jobs. The user's existing cron, launchd, or systemd
+goguma doesn't run jobs. The user's existing cron, launchd, or systemd
 entry does. So the daemon has to work out on its own whether a job is
 currently running, and there are two ways to know.
 
@@ -192,7 +203,25 @@ A mark for a job with no open window opens an **ad-hoc window**. Something real
 is running and the machine should stay awake for it, a genuine advantage over
 pattern matching, which can only observe jobs inside an expected window.
 
-### 4.2 Wake-only: for jobs that cannot be observed
+**Getting the wrapper in there is `import --register`'s job, not the user's.**
+It used to print the line and leave the user to run `crontab -e` and paste it,
+which reads as the more modest promise but is the worse outcome: the job is
+already registered as exactly-timed by that point, so a forgotten paste leaves
+it recording "never detected" on every run and warning about a setup nobody
+said was half-finished. A setup step that ends in homework, and then silently
+punishes forgetting it, isn't restraint.
+
+So it writes. `internal/cli/crontab_apply.go` rewrites the one crontab line and
+`internal/cli/launchd_apply.go` rewrites the one plist and reloads the job, both
+only after the user picks that option for that specific job. Each copies the
+original first, changes only its own line or key, reads the result back, and
+puts the original back if it doesn't re-parse. Two details are load-bearing:
+the wrapper path is absolute, because cron's `PATH` is `/usr/bin:/bin` and would
+never find `~/.local/bin/goguma-mark`; and it is shell-quoted for crontab but
+not for launchd, because one is a shell line and the other is an argv array.
+Getting that backwards splits `/Users/Jun Nam/...` in half.
+
+### 4.2 Wake-only: for jobs that can't be observed
 
 Detection mode `none`. The machine is woken and held for a fixed window, and
 no attempt is made to watch the job.
@@ -206,14 +235,14 @@ about a configuration that is correct.
 
 Wake-only holds therefore end as `ok` rather than `never_detected`, and their
 ceiling comes from `wake_only_hold` (3 minutes default) rather than from
-history. The cost is explicit: the hold cannot converge on real runtime, so it
+history. The cost is explicit: the hold can't converge on real runtime, so it
 wastes more battery than the observable modes. That is the honest price of not
 being able to see the job, and it is stated in the UI rather than hidden.
 
 ### 4.3 Pattern: best effort
 
 The daemon scans the process table for a regexp match. No changes to the
-user's setup, but it cannot see exit codes, cannot distinguish concurrent
+user's setup, but it can't see exit codes, can't distinguish concurrent
 runs, and observes nothing at all if the pattern is wrong.
 
 Process listing is `ps -Awwo pid=,args=` on macOS: reading another process's
@@ -232,8 +261,8 @@ matchable.
 
 ### 4.4 Making failure loud
 
-Pattern detection is the project's main reliability risk. The mitigation is
-not cleverer matching, it is refusing to fail silently:
+Pattern detection is the project's main reliability risk. The mitigation
+isn't cleverer matching, it's refusing to fail silently:
 
 - a window that closes without ever seeing the job is recorded as
   `never_detected`, not as a successful run;
@@ -313,7 +342,7 @@ when set.
 
 Both valves are gated on the lid being closed, because that is the only state
 where holding sleep off is genuinely dangerous: the machine may be in a bag
-with no airflow and the user cannot see anything is wrong. With the lid open, a
+with no airflow and the user can't see anything is wrong. With the lid open, a
 hot or draining machine is visible and the normal system protections apply.
 
 - **Thermal**: above 80°C (configurable 70-95) every hold is force-released.
@@ -331,9 +360,9 @@ already gone bad. That is sufficient for a tool which only ever holds a machine
 that is *already awake*: the user was just using it, and it is probably open
 or recently open.
 
-goguma has a hazard that shape of tool does not. It wakes a machine the user
+goguma has a hazard that shape of tool doesn't. It wakes a machine the user
 deliberately put to sleep, possibly into a closed bag, possibly at 3am with
-nobody watching. **A cutout cannot un-wake a machine**: by the time it fires,
+nobody watching. **A cutout can't un-wake a machine**: by the time it fires,
 the wake has happened and the energy is spent. On a nearly-flat battery the
 sequence would be wake, immediately release, and end up closer to a hard
 shutdown with the job not run either.
@@ -351,7 +380,7 @@ hours later at wake time; blocking on it would refuse wakes for a hazard that
 has passed. Charge only ever falls while asleep, which makes it the one signal
 that stays meaningful.
 
-**An unreadable sensor cannot fire a cutout**, and is never treated as safe
+**An unreadable sensor can't fire a cutout**, and is never treated as safe
 either: the daemon raises a warning saying the valve is inoperative, so the
 user knows rather than assuming they are protected.
 
@@ -388,13 +417,22 @@ reports "nothing scheduled here" while every job they care about sits in a
 file it never opened.
 
 So discovery is a `Provider` interface (`internal/scan/provider.go`) and adding
-a scheduler is one new file. Each provider reports three things: whether it
-exists on this machine, *where* it looked, and what it found.
+a scheduler in Go is one new file. Each provider reports three things: whether
+it exists on this machine, *where* it looked, and what it found.
 
-That coverage report is not decoration. The single most dangerous output this
+Shipping a Go file per app doesn't scale to software goguma has never heard
+of, so there is a second path that needs no code at all.
+`internal/scan/manifest.go` reads small JSON manifests out of the state
+directory, each naming a file to watch and which fields inside it are a job's
+name and schedule. `goguma scheduler add <name> <file>` writes one: it reads
+the file, infers those fields (`internal/scan/infer.go`), and prints what it
+decided, so the guess can be checked and the manifest hand-edited afterwards.
+Teaching goguma a new scheduler is a user action now, not a release.
+
+That coverage report isn't decoration. The single most dangerous output this
 command can produce is a confident "nothing needs goguma" when the truth is
-"your jobs live somewhere I did not check", and the user most likely to run
-`import` is precisely the one who does not know where their jobs are defined.
+"your jobs live somewhere I didn't check", and the user most likely to run
+`import` is precisely the one who doesn't know where their jobs are defined.
 An unqualified all-clear would actively mislead them. When nothing is found,
 the command says which sources were empty and which were never available.
 
@@ -408,9 +446,9 @@ Comparing that timestamp against the schedule gives the delay as a *fact*:
 "scheduled 09:00, last ran 12:52, 3h52m late." No sleep-history
 reconstruction, no schedule replay, nothing to be wrong about. Such a job is
 surfaced even when it would otherwise be excluded as self-healing: a
-scheduler that catches up is not a problem in principle, but if its own records
-show it running four hours behind, then in practice the job is not happening
-when the user expects, and catch-up logic does not change that.
+scheduler that catches up isn't a problem in principle, but if its own records
+show it running four hours behind, then in practice the job isn't happening
+when the user expects, and catch-up logic doesn't change that.
 
 Lateness is only treated as urgent for schedules that name a wall-clock time.
 "Every 6 hours" only asks to happen periodically and running late is nearly
@@ -447,7 +485,7 @@ The daemon also records its own observed sleep gaps, which covers platforms
 with no queryable system log and survives log rotation.
 
 **DarkWake coalescing.** macOS punctuates a long sleep with maintenance
-DarkWakes lasting two to five seconds. The machine is not usefully awake during
+DarkWakes lasting two to five seconds. The machine isn't usefully awake during
 those, so gaps under 90 seconds are joined into one continuous interval.
 Without this an overnight sleep is recorded as dozens of separate intervals and
 a job that happened to fire in a gap is scored "not missed", exactly backwards.
@@ -477,7 +515,7 @@ Length-prefixed JSON over a Unix domain socket: a 4-byte big-endian length,
 then that many bytes of JSON. Length prefixing rather than newline delimiting
 because payloads are large and structured, and a parser scanning for delimiters
 inside JSON strings is a class of bug worth designing out. Frames are capped at
-8 MiB so a corrupt length cannot cause an unbounded allocation.
+8 MiB so a corrupt length can't cause an unbounded allocation.
 
 ```json
 // request
@@ -517,14 +555,14 @@ nothing about the cause; it is reachable in practice through a long username.
 Everything is written atomically (temp file, fsync, rename), because the daemon
 can be killed at any moment and a half-written `jobs.json` would silently
 disable every registered job. A malformed individual job is skipped and
-reported rather than failing the whole load: one bad hand-edit should not take
+reported rather than failing the whole load: one bad hand-edit shouldn't take
 every other job offline. Unparseable history lines are skipped for the same
 reason: a truncated final line from a hard kill must not reset a job to a
 cold-start ceiling.
 
 Run records and event lines are written off the control path so a slow disk
-cannot delay releasing a sleep hold, but they are tracked and flushed on
-shutdown so the last window of a session is not lost.
+can't delay releasing a sleep hold, but they are tracked and flushed on
+shutdown so the last window of a session isn't lost.
 
 ---
 

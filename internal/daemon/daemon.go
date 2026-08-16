@@ -179,7 +179,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			d.log.Info("loaded scheduler manifests", "sources", strings.Join(loaded, ", "))
 		}
 		for _, err := range problems {
-			d.log.Warn("a scheduler manifest could not be used", "err", err)
+			d.log.Warn("a scheduler manifest couldn't be used", "err", err)
 		}
 	}
 
@@ -308,7 +308,7 @@ func (d *Daemon) tick(ctx context.Context, now time.Time) {
 
 	st, err := d.plat.ReadState()
 	if err != nil {
-		d.log.Warn("could not read power state", "err", err)
+		d.log.Warn("couldn't read power state", "err", err)
 		// Unknown, not flat.
 		//
 		// A failed read leaves `st` as the zero value, which is `OnAC: false,
@@ -414,7 +414,7 @@ func (d *Daemon) openDueWindows(ctx context.Context, now time.Time, cfg config.C
 func (d *Daemon) openWindow(ctx context.Context, job *model.Job, fire, now time.Time, cfg config.Config) {
 	runs, err := d.store.Runs(job.ID)
 	if err != nil {
-		d.log.Warn("could not read history", "job", job.ID, "err", err)
+		d.log.Warn("couldn't read history", "job", job.ID, "err", err)
 	}
 	est := estimate.Compute(job, runs, cfg)
 
@@ -431,7 +431,7 @@ func (d *Daemon) openWindow(ctx context.Context, job *model.Job, fire, now time.
 	// The unprivileged idle assertion is taken directly; the clamshell block
 	// goes through the helper in syncSleepBlock.
 	if a, err := d.plat.HoldIdleSleep("goguma: " + job.Name); err != nil {
-		d.log.Error("could not hold idle sleep", "job", job.ID, "err", err)
+		d.log.Error("couldn't hold idle sleep", "job", job.ID, "err", err)
 	} else {
 		h.assertion = a
 	}
@@ -491,7 +491,7 @@ func (d *Daemon) pollDetection(ctx context.Context, now time.Time) {
 		var err error
 		procs, err = detect.Snapshot(ctx)
 		if err != nil {
-			d.log.Warn("could not read the process table", "err", err)
+			d.log.Warn("couldn't read the process table", "err", err)
 			return
 		}
 	}
@@ -683,7 +683,7 @@ func (d *Daemon) finishHoldLocked(h *hold, now time.Time, outcome model.Outcome)
 	go func() {
 		defer d.bg.Done()
 		if err := d.store.AppendRun(run); err != nil {
-			d.log.Warn("could not record run", "job", run.JobID, "err", err)
+			d.log.Warn("couldn't record run", "job", run.JobID, "err", err)
 		}
 	}()
 
@@ -810,7 +810,7 @@ func (d *Daemon) shutdown() {
 	// call meant to free it.
 	d.helper.Settle(2 * time.Second)
 	if err := d.helper.SetBlocked(false, "daemon shutting down"); err != nil {
-		d.log.Warn("could not clear sleep block on shutdown", "err", err)
+		d.log.Warn("couldn't clear sleep block on shutdown", "err", err)
 	}
 	// Wait for pending run and event writes so the last window of a session
 	// is durable, then record the stop.
@@ -1054,7 +1054,7 @@ func (d *Daemon) pollSchedulerState(ctx context.Context, now time.Time) {
 		go func() {
 			defer d.bg.Done()
 			if err := d.store.AppendRun(run); err != nil {
-				d.log.Warn("could not record late completion", "job", run.JobID, "err", err)
+				d.log.Warn("couldn't record late completion", "job", run.JobID, "err", err)
 			}
 		}()
 	}

@@ -148,7 +148,7 @@ struct JobsWindowView: View {
             } else {
                 Text(
                     "goguma will stop waking the Mac for this job. Its run history is kept, and the "
-                        + "underlying cron or launchd entry is not touched."
+                        + "underlying cron or launchd entry isn't touched."
                 )
             }
         }
@@ -668,17 +668,20 @@ struct JobsWindowView: View {
             // across the bottom of the window. The content here is bounded (a
             // two-line command, four stats, a handful of warnings), so it can
             // simply be as tall as it is.
-            VStack(alignment: .leading, spacing: Theme.Space.sm) {
-                VStack(alignment: .leading, spacing: Theme.Space.sm) {
+            // Tight on purpose. This pane is bounded content at the foot of a
+            // 472pt window, and at `md` padding with `sm` spacing it took 124
+            // of those points, a quarter of the window, to show four numbers
+            // and a command.
+            //
+            // It also costs more than its own height. The ice scene behind the
+            // list draws into whatever gap the rows leave and gives up below
+            // 96pt, so the pane was not merely large, it was silently taking
+            // the illustration with it: selecting a job made the window fuller
+            // and emptier at the same time. Horizontal padding stays at `md`
+            // because that edge aligns with the list above it.
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
                     detailHeader(view)
-
-                    if !view.job.command.isEmpty {
-                        Text(view.job.command)
-                            .font(Theme.Typography.code)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .textSelection(.enabled)
-                            .lineLimit(2)
-                    }
 
                     statRow(view)
 
@@ -690,7 +693,8 @@ struct JobsWindowView: View {
                     }
 
                 }
-                .padding(Theme.Space.md)
+                .padding(.horizontal, Theme.Space.md)
+                .padding(.vertical, Theme.Space.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(.thinMaterial)
@@ -743,6 +747,24 @@ struct JobsWindowView: View {
             Text(view.job.source.isEmpty ? "manual" : view.job.source)
                 .themeBadge(Theme.Colors.textSecondary)
 
+            // On the title row rather than on one of its own.
+            //
+            // A line to itself cost the pane about 16pt on every job, and this
+            // row already runs a third of its width empty between the badges
+            // and the buttons. It also belongs here: the command is what the
+            // job *is*, so reading it next to the name is better than reading
+            // it underneath. Long ones truncate and stay selectable, which is
+            // what a second line was buying.
+            if !view.job.command.isEmpty {
+                Text(view.job.command)
+                    .font(Theme.Typography.code)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(-1)
+            }
+
             Spacer(minLength: Theme.Space.md)
 
             Button("Edit…") { editing = .edit(view.job) }
@@ -769,7 +791,7 @@ struct JobsWindowView: View {
                 stat("Typical", view.stats.typical.displayOrNil ?? Format.empty)
                 stat(
                     "Slow run", view.stats.p95.displayOrNil ?? Format.empty,
-                    help: "How long all but the slowest run took. The window is built\nfrom this rather than the maximum, so one stall does not widen every run after it."
+                    help: "How long all but the slowest run took. The window is built\nfrom this rather than the maximum, so one stall doesn't widen every run after it."
                 )
                 stat(
                     "Ceiling", view.stats.ceiling.displayOrNil ?? Format.empty,
@@ -812,21 +834,26 @@ struct JobsWindowView: View {
             Text(label)
                 .font(Theme.Typography.sectionLabel)
                 .foregroundStyle(Theme.Colors.textTertiary)
-            Text(value)
-                .font(Theme.Typography.body)
-                .foregroundStyle(tint ?? Theme.Colors.textPrimary)
-                .lineLimit(1)
-            // Under the number it explains.
+            // Beside the number it explains, not under it.
             //
-            // The ceiling's reason used to be a line below the whole row, which
-            // put "p95 of 5 runs ×1.2" beneath the schedule, two columns from
-            // the hold window it describes, reading as a stray note about
-            // whichever value happened to sit above it.
-            if let note, !note.isEmpty {
-                Text(note)
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.textTertiary)
+            // It began as a line below the whole row, which put "p95 of 5 runs
+            // x1.2" beneath the schedule, two columns from the hold window it
+            // describes, reading as a stray note about whichever value happened
+            // to sit above it. Moving it into this column fixed that and cost a
+            // third line, which every stat then paid for whether it had a note
+            // or not: one footnote set the height of the entire row, and the
+            // row sets the height of the pane.
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.xs) {
+                Text(value)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(tint ?? Theme.Colors.textPrimary)
                     .lineLimit(1)
+                if let note, !note.isEmpty {
+                    Text(note)
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .lineLimit(1)
+                }
             }
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -936,7 +963,7 @@ private struct JobRow: View {
                 .frame(width: 72, alignment: .trailing)
                 .help(view.hasMeasuredCost
                     ? "One firing costs this much battery."
-                    : "This job has not run on battery yet.")
+                    : "This job hasn't run on battery yet.")
 
             Text(view.nightlyCostText)
                 .font(Theme.Typography.tabularSmall)

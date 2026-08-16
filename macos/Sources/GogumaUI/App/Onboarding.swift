@@ -81,7 +81,7 @@ enum Onboarding {
             // Automating Terminal needs consent the user may have refused, and
             // a button that silently does nothing reads as a broken app. Fall
             // back to revealing the binary so there is still a way forward.
-            NSLog("goguma: could not drive Terminal (\(error)); revealing the CLI instead")
+            NSLog("goguma: couldn't drive Terminal (\(error)); revealing the CLI instead")
             NSWorkspace.shared.activateFileViewerSelecting([cli])
         }
     }

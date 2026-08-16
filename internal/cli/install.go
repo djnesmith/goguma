@@ -30,8 +30,8 @@ sleep, and register a wake with the OS. All scheduling and policy stays in the
 unprivileged background service. Installing it requires your password once.
 
   --no-helper   skip the privileged helper. goguma will still hold sleep
-                off with the lid OPEN, but cannot hold a lid-closed machine
-                awake, and cannot schedule OS wakes, which is most of what
+                off with the lid OPEN, but can't hold a lid-closed machine
+                awake, and can't schedule OS wakes, which is most of what
                 it is for.
   --dry-run     print the steps without doing anything`,
 	Run: runInstall,
@@ -126,7 +126,7 @@ func runInstall(ctx *Context, args []string) error {
 	if !onPath(l.BinDir) {
 		r.Blank()
 		r.Problem(
-			fmt.Sprintf("%s is not on your PATH, so the goguma command will not be found", l.BinDir),
+			fmt.Sprintf("%s isn't on your PATH, so the goguma command won't be found", l.BinDir),
 			fmt.Sprintf(`echo 'export PATH="%s:$PATH"' >> ~/.zshrc`, l.BinDir))
 	}
 
@@ -253,7 +253,7 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 	}
 
 	if lastErr != nil {
-		r.Problem("the background service did not start · check the log for why",
+		r.Problem("the background service didn't start · check the log for why",
 			"tail -n 40 "+filepath.Join(ctx.Layout.LogDir, "daemon.err.log"))
 		return
 	}
@@ -289,7 +289,7 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 		time.Sleep(250 * time.Millisecond)
 	}
 	if lastHelperErr != nil {
-		r.Problem("the privileged helper did not start, lid-closed holds and OS wakes will not work",
+		r.Problem("the privileged helper didn't start, lid-closed holds and OS wakes won't work",
 			"goguma doctor")
 		return
 	}
@@ -336,11 +336,11 @@ Stops and removes the background service, the privileged helper, and the
 installed binaries. Removing the helper needs your password.
 
 Jobs, config, and run history are kept, so reinstalling picks up where you
-left off. Duration history takes weeks of real runs to accumulate and cannot
+left off. Duration history takes weeks of real runs to accumulate and can't
 be reconstructed, so throwing it away is opt-in.
 
   --purge   also delete jobs, config, and run history
-  --yes     do not ask for confirmation`,
+  --yes     don't ask for confirmation`,
 	Run: func(ctx *Context, args []string) error {
 		fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)

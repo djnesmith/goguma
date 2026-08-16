@@ -84,7 +84,7 @@ func (d *Daemon) KeepAwake(want time.Duration, now time.Time) (ipc.KeepAwakeResp
 	h := &hold{job: job, fireAt: now, openedAt: now, ceiling: ceiling,
 		batteryStart: batteryLevel(d.lastState)}
 	if a, err := d.plat.HoldIdleSleep("goguma: " + job.Name); err != nil {
-		d.log.Error("could not hold idle sleep for a manual keep-awake", "err", err)
+		d.log.Error("couldn't hold idle sleep for a manual keep-awake", "err", err)
 	} else {
 		h.assertion = a
 	}

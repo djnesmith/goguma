@@ -27,8 +27,15 @@ Detection (how goguma knows the job is running):
 
   --detection pattern   (no changes to your setup)
         goguma watches the process table for --match. Requires no edits,
-        but cannot see exit codes and silently observes nothing if the
+        but can't see exit codes and silently observes nothing if the
         pattern is wrong. Test it first with 'goguma test-match'.
+
+  --detection none      (for jobs that can't be observed at all)
+        No detection. goguma wakes the machine, holds it awake for a fixed
+        window, and lets it sleep again when the window ends, whether or not
+        the job finished. It costs the most battery of the three, and it is
+        the right answer when the job runs inside a process goguma can't
+        pick out on its own.
 
 options:
   --name <name>          required, the job's name
@@ -37,7 +44,7 @@ options:
                          "every 30 minutes"). Run 'goguma add' with no flags
                          to be asked instead.
   --tz <zone>            IANA timezone the schedule is evaluated in
-  --detection <mode>     mark (default) or pattern
+  --detection <mode>     mark (default), pattern, or none
   --match <regexp>       process pattern, required with --detection pattern
   --command <cmd>        the command this job runs, recorded for reference
   --group <name>         file the job under a heading in 'goguma list'.
@@ -191,7 +198,7 @@ func reportMatchPreview(ctx *Context, pattern string) {
 		r.Printf("%s %s\n", r.Warn(r.Sym().Warn), resp.Error)
 	case len(resp.Matches) == 0:
 		r.Printf("%s %s\n", r.Muted(r.Sym().Bullet), r.Muted(
-			"nothing matches that pattern right now, expected if the job is not running"))
+			"nothing matches that pattern right now, expected if the job isn't running"))
 	default:
 		r.Printf("%s matches %d process(es) right now, e.g. pid %d\n",
 			r.Good(r.Sym().OK), len(resp.Matches), resp.Matches[0].PID)
@@ -341,7 +348,7 @@ const groupUsage = `goguma group <job> <group-name>
 goguma group <job> --clear
 
 Files a job under a heading in 'goguma list', or removes it from one. A job
-belongs to at most one group, and groups do not nest; they exist so a machine
+belongs to at most one group, and groups don't nest; they exist so a machine
 with twenty adopted jobs reads as a handful of headings rather than one wall.
 
 Grouping is organisation only. It changes nothing about when a job runs, what
@@ -402,7 +409,7 @@ var cmdGroup = &Command{
 		r := ctx.Out
 		switch {
 		case saved.Group == "" && previous == "":
-			r.Printf("%s %s was not in a group\n",
+			r.Printf("%s %s wasn't in a group\n",
 				r.Muted(r.Sym().Bullet), r.Bold(saved.Name))
 		case saved.Group == "":
 			r.Printf("%s %s is no longer in %s\n",
@@ -482,7 +489,7 @@ mistake surfaces now rather than as a job that silently never runs.`,
 		if len(resp.Matches) == 0 {
 			r.Printf("%s nothing currently matches %s\n", r.Muted(r.Sym().Bullet), r.Bold(pattern))
 			r.Blank()
-			r.Line(r.Muted("  That is expected if the job is not running right now. To be sure the"))
+			r.Line(r.Muted("  That is expected if the job isn't running right now. To be sure the"))
 			r.Line(r.Muted("  pattern is right, run this while the job is actually running."))
 			return nil
 		}
@@ -496,7 +503,7 @@ mistake surfaces now rather than as a job that silently never runs.`,
 		if len(resp.Matches) > 1 {
 			r.Blank()
 			r.Line(r.Muted("  More than one match: goguma will follow the first, and the hold"))
-			r.Line(r.Muted("  ends when it exits. Narrow the pattern if that is not what you want."))
+			r.Line(r.Muted("  ends when it exits. Narrow the pattern if that isn't what you want."))
 		}
 		return nil
 	},

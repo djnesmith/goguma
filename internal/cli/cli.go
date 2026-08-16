@@ -16,6 +16,7 @@ import (
 
 	"github.com/junnam586/goguma/internal/paths"
 	"github.com/junnam586/goguma/internal/render"
+	"github.com/junnam586/goguma/internal/scan"
 )
 
 // Version is set from main at build time.
@@ -42,6 +43,9 @@ type Context struct {
 
 func newContext() *Context {
 	layout := paths.MustResolve()
+	// The same app-scheduler manifests the daemon reads, so `import` and
+	// `list` never disagree with it about which sources exist.
+	_, _ = scan.LoadManifests(layout.SchedulersDir())
 	return &Context{
 		Out:    render.New(os.Stdout),
 		Err:    render.New(os.Stderr),
@@ -65,6 +69,7 @@ func init() {
 	register(cmdDisable)
 	register(cmdHistory)
 	register(cmdImport)
+	register(cmdScheduler)
 	register(cmdSync)
 	register(cmdTestMatch)
 	register(cmdConfig)
@@ -201,19 +206,7 @@ func printHelp(ctx *Context, args []string) {
 	r.Line(r.Muted("usage:") + " goguma <command> [options]")
 	r.Blank()
 
-	// Grouped rather than alphabetical, because the order a new user needs
-	// them in is not the order they sort in.
-	groups := []struct {
-		title string
-		names []string
-	}{
-		{"getting started", []string{"install", "import", "add", "sync"}},
-		{"everyday", []string{"status", "list", "history"}},
-		{"managing jobs", []string{"edit", "group", "remove", "enable", "disable", "test-match"}},
-		{"control", []string{"awake", "skip-next", "sleep-now", "pause", "resume"}},
-		{"maintenance", []string{"config", "doctor", "uninstall", "version"}},
-	}
-	for _, g := range groups {
+	for _, g := range helpGroups() {
 		r.Section("  " + g.title)
 		for _, n := range g.names {
 			c, ok := commands[n]
@@ -225,6 +218,31 @@ func printHelp(ctx *Context, args []string) {
 		r.Blank()
 	}
 	r.Line(r.Muted("  run 'goguma help <command>' for details on any of these"))
+}
+
+// helpGroup is one titled block of `goguma help`.
+type helpGroup struct {
+	title string
+	names []string
+}
+
+// helpGroups is the top-level listing, grouped rather than alphabetical
+// because the order a new user needs these in is not the order they sort in.
+//
+// Every non-hidden command has to appear in exactly one group. A command
+// missing from here is not listed at all, which is how `goguma scheduler`
+// shipped invisible: it was registered, had a Summary written for this very
+// listing, and had no group to be listed in, so the only way to find it was to
+// already know the word. TestEveryCommandIsListed fails when that happens
+// again, which is why this is a function rather than a literal inline above.
+func helpGroups() []helpGroup {
+	return []helpGroup{
+		{"getting started", []string{"install", "import", "add", "sync", "scheduler"}},
+		{"everyday", []string{"status", "list", "history"}},
+		{"managing jobs", []string{"edit", "group", "remove", "enable", "disable", "test-match"}},
+		{"control", []string{"awake", "skip-next", "sleep-now", "pause", "resume"}},
+		{"maintenance", []string{"config", "doctor", "uninstall", "version"}},
+	}
 }
 
 // commandNames is used by help and completion.
@@ -242,17 +260,17 @@ func commandNames() []string {
 var cmdVersion = &Command{
 	Name:    "version",
 	Summary: "print the version",
-	Usage:   "goguma version\n\nPrints the CLI version, and the daemon and helper versions when reachable.",
+	Usage:   "goguma version\n\nPrints the CLI version, and the background service and helper versions when reachable.",
 	Run: func(ctx *Context, args []string) error {
 		r := ctx.Out
 		r.Printf("goguma %s\n", Version)
 
 		st, err := fetchStatus(ctx)
 		if err != nil {
-			r.Line(r.Muted("daemon    not running"))
+			r.Line(r.Muted("service   not running"))
 			return nil
 		}
-		r.Printf("%s %s\n", r.Muted("daemon   "), st.DaemonVersion)
+		r.Printf("%s %s\n", r.Muted("service  "), st.DaemonVersion)
 		if st.HelperConnected {
 			r.Printf("%s %s\n", r.Muted("helper   "), st.HelperVersion)
 		} else {

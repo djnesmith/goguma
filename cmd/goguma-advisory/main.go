@@ -66,7 +66,7 @@ func keygen() {
   go build -ldflags "-X github.com/junnam586/goguma/internal/advisory.publicKeyB64=<public>" ./cmd/...
 
 Anyone holding the private half can put words in goguma's mouth on every
-install. It cannot change any setting, run anything, or read anything, but it
+install. It can't change any setting, run anything, or read anything, but it
 can display a sentence. Store it accordingly.
 `)
 }
@@ -84,7 +84,7 @@ func sign(args []string) {
 	}
 	priv, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
 	if err != nil || len(priv) != ed25519.PrivateKeySize {
-		die(fmt.Errorf("%s does not hold a base64 ed25519 private key", *keyFile))
+		die(fmt.Errorf("%s doesn't hold a base64 ed25519 private key", *keyFile))
 	}
 
 	var f advisory.Feed
@@ -106,7 +106,7 @@ func verify(args []string) {
 	_ = fs.Parse(args)
 	pub, err := base64.StdEncoding.DecodeString(strings.TrimSpace(*pubB64))
 	if err != nil || len(pub) != ed25519.PublicKeySize {
-		die(fmt.Errorf("--pub is not a base64 ed25519 public key"))
+		die(fmt.Errorf("--pub isn't a base64 ed25519 public key"))
 	}
 	var f advisory.Feed
 	if err := json.NewDecoder(os.Stdin).Decode(&f); err != nil {

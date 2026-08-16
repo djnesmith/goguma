@@ -108,7 +108,7 @@ func errUnadoptable(got string, allowed []string) error {
 		return fmt.Errorf("no scheduler on this machine supports automatic adoption")
 	}
 	return fmt.Errorf(
-		"%q cannot be watched automatically. Only schedulers that run their own "+
+		"%q can't be watched automatically. Only schedulers that run their own "+
 			"jobs qualify, because everything else needs its command line edited "+
 			"to be detectable. Available: %s",
 		got, strings.Join(allowed, ", "))

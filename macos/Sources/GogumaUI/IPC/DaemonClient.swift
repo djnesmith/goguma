@@ -58,7 +58,7 @@ final class DaemonClient: Sendable {
         do {
             body = try JSONEncoder().encode(envelope)
         } catch {
-            throw DaemonError.io("could not encode a \(op.rawValue) request: \(error)")
+            throw DaemonError.io("couldn't encode a \(op.rawValue) request: \(error)")
         }
         let framed = try UnixSocket.frame(body)
         let path = WGProtocol.socketPath

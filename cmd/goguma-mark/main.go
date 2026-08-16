@@ -38,7 +38,7 @@ example, in a crontab line:
   0 9 * * * goguma-mark morning-briefing -- hermes cron run morning-briefing
 
 The command runs unchanged and its exit status is passed through. If the
-goguma background service is not running, the command still runs normally.
+goguma background service isn't running, the command still runs normally.
 `
 
 // markTimeout is short by design. This runs on the job's critical path, so a
@@ -75,7 +75,7 @@ func run(jobName string, argv []string) int {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "goguma-mark: cannot run %s: %v\n", argv[0], err)
+		fmt.Fprintf(os.Stderr, "goguma-mark: can't run %s: %v\n", argv[0], err)
 		// Report the failed start so the window closes rather than being held
 		// open for a job that will never appear.
 		notify(sock, ipc.OpMarkEnd, ipc.MarkEndReq{Job: jobName, ExitCode: 127})
@@ -157,7 +157,7 @@ func notify(sock string, op ipc.Op, payload any) {
 	if !resp.Known {
 		if name, ok := jobNameOf(payload); ok {
 			fmt.Fprintf(os.Stderr,
-				"goguma-mark: no job named %q is registered; this run is not being tracked.\n"+
+				"goguma-mark: no job named %q is registered; this run isn't being tracked.\n"+
 					"  register it with: goguma add --name %s --cron '<schedule>' --detection mark\n",
 				name, name)
 		}

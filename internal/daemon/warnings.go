@@ -50,7 +50,7 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 	if wakeErr != "" && !helperDown {
 		out = append(out, model.Warning{
 			Kind: model.WarnWakeFailed,
-			Message: fmt.Sprintf("could not register an OS wake for %q, it will be missed if the machine is asleep: %s",
+			Message: fmt.Sprintf("couldn't register an OS wake for %q, it will be missed if the machine is asleep: %s",
 				nextJob, wakeErr),
 			Fix: "goguma doctor",
 		})
@@ -83,7 +83,7 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 	if holding && st.LidClosed && st.TempC == nil {
 		out = append(out, model.Warning{
 			Kind:    model.WarnCeilingHits,
-			Message: "no CPU temperature sensor is readable, so the thermal cutout cannot arm while the lid is closed",
+			Message: "no CPU temperature sensor is readable, so the thermal cutout can't arm while the lid is closed",
 		})
 	}
 
@@ -92,8 +92,8 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 	if err := d.store.LoadError(); err != nil {
 		out = append(out, model.Warning{
 			Kind: model.WarnScheduleParse,
-			Message: "jobs.json could not be read, so no jobs are registered and " +
-				"changes cannot be saved: " + err.Error(),
+			Message: "jobs.json couldn't be read, so no jobs are registered and " +
+				"changes can't be saved: " + err.Error(),
 			Fix: "fix the file or move it aside, then restart the daemon",
 		})
 	}
@@ -133,7 +133,7 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 				Kind:  model.WarnNeverDetected,
 				JobID: job.ID,
 				Message: fmt.Sprintf(
-					"job %q has not been detected in its last %d windows, the machine was woken and held awake for nothing",
+					"job %q hasn't been detected in its last %d windows, the machine was woken and held awake for nothing",
 					job.Name, missed),
 			}
 			if job.Detection == model.DetectPattern {
@@ -221,7 +221,7 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 		out = append(out, model.Warning{
 			Kind: model.WarnUncovered,
 			Message: fmt.Sprintf(
-				"%s %s woken for on a fixed window because the command cannot "+
+				"%s %s woken for on a fixed window because the command can't "+
 					"be watched; wrapping %s gives exact timing (%s)",
 				pluralJobs(n), verbIs(n), objectThem(n), list),
 			Fix: "goguma import",

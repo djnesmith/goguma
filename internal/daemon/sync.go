@@ -178,7 +178,7 @@ func (d *Daemon) adoptNew(candidates []scan.Candidate, sources []string) (adopte
 			continue
 		}
 		if err := d.store.Add(job); err != nil {
-			d.log.Warn("could not adopt job", "job", c.Name, "err", err)
+			d.log.Warn("couldn't adopt job", "job", c.Name, "err", err)
 			continue
 		}
 
@@ -321,7 +321,7 @@ func (d *Daemon) updateChanged(entries []scan.Entry, sources []string, cfg confi
 		// as scan.Evaluate's.
 		if gap := sched.TypicalInterval(time.Now()); gap > 0 && gap <= cfg.MinImportInterval.D() {
 			if _, err := d.store.Remove(j.ID); err != nil {
-				d.log.Warn("could not retire a job whose schedule became too frequent",
+				d.log.Warn("couldn't retire a job whose schedule became too frequent",
 					"job", j.ID, "err", err)
 				continue
 			}
@@ -337,7 +337,7 @@ func (d *Daemon) updateChanged(entries []scan.Entry, sources []string, cfg confi
 			continue
 		}
 		if err := d.store.Put(&refreshed); err != nil {
-			d.log.Warn("could not update a changed job", "job", j.ID, "err", err)
+			d.log.Warn("couldn't update a changed job", "job", j.ID, "err", err)
 			continue
 		}
 
@@ -388,7 +388,7 @@ func (d *Daemon) retireVanished(entries []scan.Entry, coverage []scan.Coverage, 
 		}
 
 		if _, err := d.store.Remove(j.ID); err != nil {
-			d.log.Warn("could not retire a vanished job", "job", j.ID, "err", err)
+			d.log.Warn("couldn't retire a vanished job", "job", j.ID, "err", err)
 			continue
 		}
 		d.releaseJob(j.ID)

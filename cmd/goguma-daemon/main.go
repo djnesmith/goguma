@@ -39,7 +39,7 @@ func main() {
 
 	layout := paths.MustResolve()
 	if err := layout.EnsureDirs(); err != nil {
-		fmt.Fprintf(os.Stderr, "goguma-daemon: cannot prepare %s: %v\n", layout.StateDir, err)
+		fmt.Fprintf(os.Stderr, "goguma-daemon: can't prepare %s: %v\n", layout.StateDir, err)
 		os.Exit(1)
 	}
 

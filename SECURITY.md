@@ -1,18 +1,50 @@
 # Security
 
+[README](README.md) ·
+[Architecture](Docs/ARCHITECTURE.md) ·
+[Mac app](macos/README.md) ·
+[getgoguma.com](https://getgoguma.com)
+
 goguma installs a small program that runs as root. This says what that program
-can do, what the rest of it reads, and where any of it goes.
+can do, what the rest of it reads and writes, and where any of it goes.
 
 Every claim here points at the file that makes it true. The whole thing is a
 few thousand lines of Go and Swift, so you can check any of it rather than
 take it on trust.
 
-## Nothing leaves your machine
+## Nothing about you leaves your machine
 
-There is one piece of code in goguma that can open a network connection:
-[`internal/daemon/webhook.go`](internal/daemon/webhook.go). It returns
-immediately unless you have set `webhook_url` yourself, and there is no default
-value, so on a machine nobody has configured it never runs.
+Two pieces of code in goguma can open a network connection, and neither one
+sends anything about you.
+
+[`internal/daemon/webhook.go`](internal/daemon/webhook.go) returns immediately
+unless you have set `webhook_url` yourself, and there is no default value, so
+on a machine nobody has configured it never runs.
+
+[`internal/advisory`](internal/advisory) can fetch a static file from
+getgoguma.com once a day, to say that a bug has been found or a fix is out. It
+is a plain GET with no query string, no identifier, no version number and no
+body, so it tells the other end exactly what any web server learns from a file
+being fetched. What comes back is checked against a signing key compiled into
+the binary, and can do exactly two things: display a sentence, and say a newer
+release exists. It carries no settings and can't change goguma's behaviour,
+because a server able to reach into a tool that runs a root helper is a remote
+control channel into your machine, and that isn't a thing this project will
+build. Turn it off for good with `goguma config set advisory_checks off`.
+
+It is on for new installs and **off** for anyone who installed before it
+existed, because upgrading isn't consent.
+
+**As shipped today it does nothing at all.** No published build has a signing
+key compiled into it, and with no key every advisory fails verification,
+genuine ones included. So the check is switched off at the source rather than
+left to fail: `Enabled()` in
+[`internal/advisory/key.go`](internal/advisory/key.go) is false when the key is
+empty, the daemon reports that to the app as `advisories_available`, and the
+app hides the setting rather than offering a switch that can't do anything.
+It becomes live only in a build that carries a key. If you would rather be told
+by email than by the program, that is
+[getgoguma.com/updates](https://getgoguma.com/updates).
 
 There is no account, no sign-in, no telemetry, no analytics, and no crash
 reporting. Your job names, your commands, your schedules and your sleep history
@@ -22,8 +54,8 @@ with `jobs.json` written `0600`, in
 
 ## What runs as root, and what it is allowed to do
 
-Blocking sleep and setting a wake alarm both need root. Everything else does
-not, so everything else runs as you.
+Blocking sleep and setting a wake alarm both need root. Everything else
+doesn't, so everything else runs as you.
 
 The privileged part is `goguma-helper`, and it answers exactly six messages:
 
@@ -39,7 +71,7 @@ The privileged part is `goguma-helper`, and it answers exactly six messages:
 Anything else is refused by name. There is no message that runs a command, no
 message that reads a file, and no message that takes a path.
 
-**It cannot be talked into running something.** The helper shells out only to
+**It can't be talked into running something.** The helper shells out only to
 `pmset` on macOS, or `systemd-inhibit` and `rtcwake` on Linux, and it builds
 those arguments itself. The only values a caller supplies are a boolean, a
 timestamp, and a reason string that is written to the log and never reaches a
@@ -55,16 +87,16 @@ refused. The check is `AllowOwnerOrRoot`, in
 [`internal/ipc/server.go`](internal/ipc/server.go).
 
 That check exists because the sleep block is worth guarding. A laptop held
-awake in a closed bag gets hot, and that is not something one user should be
+awake in a closed bag gets hot, and that isn't something one user should be
 able to do to another.
 
 ## It gives up on its own
 
-The helper releases the sleep block if the daemon stops talking to it, checked
-every ten seconds. If the daemon crashes, is killed, or is unloaded while a
-window is open, the machine goes back to sleeping normally rather than staying
-awake until someone notices. It also clears the block on the way out when it is
-shut down. Both live in
+The helper releases the sleep block if the background service stops talking to
+it, checked every ten seconds. If the service crashes, is killed, or is unloaded
+while a window is open, the machine goes back to sleeping normally rather than
+staying awake until someone notices. It also clears the block on the way out
+when it is shut down. Both live in
 [`internal/helper/service.go`](internal/helper/service.go).
 
 The safety cutouts sit on top of that: holds are released above 80°C or below
@@ -89,8 +121,39 @@ scanning the process table with `ps -Awwo pid=,args=`, which returns the full
 command line of every running process. Some programs put secrets in their
 arguments, so this is the most sensitive thing goguma looks at. It is matched
 against your own job's pattern, kept in memory, never written to disk and never
-sent anywhere. Jobs using the `goguma-mark` wrapper or a fixed window do not
+sent anywhere. Jobs using the `goguma-mark` wrapper or a fixed window don't
 scan at all.
+
+## What it writes
+
+Everything above is reading. There is exactly one thing goguma changes outside
+its own state directory, and it doesn't happen unless you ask for it job by
+job.
+
+`goguma import --register` offers to put the `goguma-mark` wrapper in front of
+a job, so the job reports its own start and exit instead of being guessed at
+from the process table. Accepting that for a cron job rewrites one line of your
+crontab; accepting it for a launchd job rewrites that job's plist and reloads
+it. `goguma import` with no flags only reports, and answering no to a job
+leaves it alone.
+
+Both writers work the same way, and both assume they will get it wrong:
+
+- the original is copied first, to `crontab.backup` or to `launchd-backup/`
+  inside goguma's state directory
+- only the one line, or the one plist key, is changed, and the wrapper path is
+  written absolute and quoted, because cron's `PATH` doesn't include
+  `~/.local/bin` and home directories can contain spaces
+- the result is read back and re-parsed, with `plutil -lint` for plists, and if
+  it doesn't verify the original goes straight back
+
+They are [`internal/cli/crontab_apply.go`](internal/cli/crontab_apply.go) and
+[`internal/cli/launchd_apply.go`](internal/cli/launchd_apply.go), and both have
+tests beside them.
+
+Nothing else writes outside `~/Library/Application Support/goguma`. The
+background service adopts jobs it finds by recording them in its own list, and
+never by editing the scheduler it found them in.
 
 ## Installing and removing it
 
@@ -101,13 +164,13 @@ without doing it. The password prompt is macOS's own `sudo`, in your terminal.
 `codesign --verify --strict` is run against the exact binary about to be
 copied, and the identity that signed it is printed. A binary altered after it
 was signed fails that check and the install stops. This is the one line in the
-output that a tampered copy could not produce, because it is macOS reading the
+output that a tampered copy couldn't produce, because it is macOS reading the
 bytes rather than goguma describing itself.
 The app opens Terminal for this rather than asking inside a window of its own,
 because a program asking for your password in its own text field is the shape
 of a phishing prompt, and it is a habit worth not teaching.
 
-`goguma uninstall` removes the daemon, the helper and the binaries. Your
+`goguma uninstall` removes the background service, the helper and the binaries. Your
 jobs, config and run history are kept, so reinstalling picks up where you left
 off. Add `--purge` to delete those too.
 
@@ -128,7 +191,7 @@ The authority chain reads `Developer ID Application: Juhyun Nam (735JVWA424)`,
 then Apple's own certification authority, then the Apple Root CA. Apple
 verified who I am before issuing that certificate, and the signature breaks if
 a single byte of the app changes after I sign it. A build that was tampered
-with on the way to you does not open.
+with on the way to you doesn't open.
 
 <!-- Jun: replace this paragraph with your own words. Who you are, what you
      work on, why you built this. Two or three sentences is plenty. Keep it

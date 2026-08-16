@@ -43,7 +43,7 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	if os.Geteuid() != 0 {
-		log.Error("the helper must run as root; it exists to perform the one operation the daemon cannot")
+		log.Error("the helper must run as root; it exists to perform the one operation the daemon can't")
 		os.Exit(1)
 	}
 
@@ -70,7 +70,7 @@ func main() {
 		ipc.WithLogger(log),
 	)
 	if err != nil {
-		log.Error("could not listen", "socket", *socketPath, "err", err)
+		log.Error("couldn't listen", "socket", *socketPath, "err", err)
 		os.Exit(1)
 	}
 

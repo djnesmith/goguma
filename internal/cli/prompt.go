@@ -51,7 +51,7 @@ func promptForJob(ctx *Context, name, cron, detection, match, command *string) e
 	r := ctx.Out
 
 	r.Line(r.Bold("Registering a job for goguma to wake the machine for."))
-	r.Line(r.Muted("goguma does not run the job, whatever runs it now still does."))
+	r.Line(r.Muted("goguma doesn't run the job, whatever runs it now still does."))
 	r.Blank()
 
 	if *name == "" {
@@ -86,7 +86,7 @@ func promptForJob(ctx *Context, name, cron, detection, match, command *string) e
 			s, perr := schedule.Parse(v, time.Local)
 			if perr != nil {
 				r.Printf("    %s %s\n", r.Warn(r.Sym().Warn),
-					"I could not read that as a schedule.")
+					"I couldn't read that as a schedule.")
 				r.Printf("    %s\n", r.Muted("try: "+strings.Join(schedule.HumanExamples(), " · ")))
 				continue
 			}
@@ -121,8 +121,8 @@ func promptForJob(ctx *Context, name, cron, detection, match, command *string) e
 			r.Printf("    %s%s%s\n", r.Accent(key+" "+label), pad, r.Muted(note))
 		}
 		opt("[1]", "it announces itself", "exact, one edit to how the job is launched")
-		opt("[2]", "watch for a process", "no edits, but cannot see exit codes")
-		opt("[3]", "just wake, do not watch", "for jobs run inside another app")
+		opt("[2]", "watch for a process", "no edits, but can't see exit codes")
+		opt("[3]", "just wake, don't watch", "for jobs run inside another app")
 		v, err := ask("  Choice [1/2/3, default 1]:  ")
 		if err != nil {
 			return err
@@ -205,10 +205,10 @@ func promptForMatch(ctx *Context, command string, match *string) error {
 	}
 	switch {
 	case !resp.Valid:
-		return fmt.Errorf("that is not a valid pattern: %s", resp.Error)
+		return fmt.Errorf("that isn't a valid pattern: %s", resp.Error)
 	case len(resp.Matches) == 0:
 		r.Printf("    %s\n", r.Muted(
-			"nothing matches right now, expected if the job is not running"))
+			"nothing matches right now, expected if the job isn't running"))
 	default:
 		r.Printf("    %s matches %d process(es) right now\n",
 			r.Good(r.Sym().OK), len(resp.Matches))
