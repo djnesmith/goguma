@@ -1,6 +1,7 @@
 package power
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -704,3 +705,42 @@ func readSysfsInt(path string) (int64, error) {
 	}
 	return n, nil
 }
+
+// SleepNow suspends the machine via systemd, which is already how this
+// platform inhibits and schedules.
+func (p *linuxPlatform) SleepNow() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "systemctl", "suspend").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("systemctl suspend: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// UserIdle has no portable source here.
+//
+// X11 has XScreenSaver, Wayland has nothing standard, and a headless server
+// has no concept of it at all. Reporting a wrong idle time would be worse than
+// reporting none: the caller treats an error as "someone may be there" and
+// declines to sleep, which is the safe direction. In practice the problem this
+// exists for is a macOS one, where a scheduled wake is classified as
+// user-initiated and the desktop stack wakes up with it.
+func (p *linuxPlatform) UserIdle() (time.Duration, error) {
+	return 0, ErrUnsupported
+}
+
+// LastWakeAt has no cheap equivalent here.
+//
+// /sys/power has no last-wake timestamp, and the journal query that would
+// answer it costs about what `pmset -g log` costs on macOS, which is the very
+// thing this exists to avoid. Unsupported means the caller falls back to the
+// tick-gap heuristic, which is what every platform used before.
+func (p *linuxPlatform) LastWakeAt() (time.Time, error) {
+	return time.Time{}, ErrUnsupported
+}
+
+// PowerOnRunsJobs: an encrypted root filesystem raises the same question here,
+// but the answer depends on the initramfs and whether the key is in the TPM,
+// which is not worth guessing at. Unqualified yes, and the warning stays quiet.
+func (p *linuxPlatform) PowerOnRunsJobs() (bool, string) { return true, "" }

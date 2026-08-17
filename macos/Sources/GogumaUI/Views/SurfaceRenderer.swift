@@ -75,6 +75,17 @@ enum SurfaceRenderer {
         window.isOpaque = true
         window.orderFrontRegardless()
 
+        // Nothing focused, the same as `WindowCoordinator` does for the real
+        // window as soon as it shows one.
+        //
+        // AppKit hands first responder to the first text field in a new window,
+        // which in Settings is the temperature box, so every render of that
+        // surface came out with an accent ring round a field nobody had
+        // clicked, and it reached the README that way. The real window has
+        // never had the problem; this window was just missing the same line.
+        // After ordering front, because that is when the assignment happens.
+        window.makeFirstResponder(nil)
+
         // Let layout and the first render settle: lists and forms populate a
         // frame or two after the window appears. `RunLoop.run` is unavailable
         // from an async context, so yield through the main-actor scheduler

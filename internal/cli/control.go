@@ -124,12 +124,17 @@ Settings:
   cutout_rearm_margin_pct  headroom above the cutout, 1-50 (default 5)
   webhook_url              POST target for problem events
   notify_on_missed_job     notify when a job is never detected
-  use_wake_or_power_on     also power on a machine that is shut down
+  use_wake_or_power_on     also power on a machine that is shut down. Does
+                           nothing on a FileVault Mac, which stops at the
+                           unlock screen with nothing running
   min_import_interval      shortest schedule worth a wake. 0 (the default)
                            covers everything, however often it fires
   auto_adopt               schedulers watched for new jobs. 'all' restores the
                            default (everything adoptable), 'off' disables it,
                            or name sources comma-separated.
+  sleep_after_wake         put the machine back to sleep after a job goguma
+                           woke it for, when nobody is at the keyboard
+                           (default on)
   advisory_checks          check getgoguma.com once a day for word of a bug or
                            a fix. Off for anyone who installed before it
                            existed. Does nothing in a build with no signing key
@@ -203,6 +208,7 @@ func configGet(ctx *Context, args []string) error {
 		{"webhook_url", orNone(r, c.WebhookURL)},
 		{"notify_on_missed_job", fmt.Sprintf("%t", c.NotifyOnMissedJob)},
 		{"use_wake_or_power_on", fmt.Sprintf("%t", c.UseWakeOrPowerOn)},
+		{"sleep_after_wake", fmt.Sprintf("%t", c.SleepAfterWake)},
 		{"advisory_checks", fmt.Sprintf("%t", c.AdvisoryChecks)},
 		{"min_import_interval", c.MinImportInterval.String()},
 	})

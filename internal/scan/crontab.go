@@ -126,12 +126,53 @@ func looksLikeCronField(tok string) bool {
 	return true
 }
 
+// markWrapper is the name goguma's own wrapper binary is installed under.
+const markWrapper = "goguma-mark"
+
+// UnwrapMark returns the job name and the real command from a line goguma has
+// already wrapped, and reports whether the line was wrapped at all.
+//
+// The shape is `goguma-mark <job> -- <command>`, written by `import
+// --register`.
+func UnwrapMark(cmd string) (name, inner string, ok bool) {
+	fields := strings.Fields(cmd)
+	if len(fields) < 3 || basename(fields[0]) != markWrapper {
+		return "", "", false
+	}
+	sep := -1
+	for i, f := range fields[1:] {
+		if f == "--" {
+			sep = i + 1
+			break
+		}
+	}
+	if sep < 2 {
+		return "", "", false
+	}
+	return fields[1], strings.Join(fields[sep+1:], " "), true
+}
+
 // nameFromCommand derives a readable job name from a command line.
 func nameFromCommand(cmd string) string {
 	cmd = strings.TrimSpace(cmd)
 	// Drop shell redirection, which is noise for naming purposes.
 	if i := strings.IndexAny(cmd, ">|"); i > 0 {
 		cmd = strings.TrimSpace(cmd[:i])
+	}
+	// A line goguma wrapped is a job goguma already has, and the name it
+	// answers to is the one written into the wrapper.
+	//
+	// Without this the scanner reads its own handiwork as something new:
+	// `goguma-mark nightly-backup -- ...` became a second job called
+	// "goguma-mark-nightly-backup", scheduled at the same minute as the first,
+	// taking its own wake and its own hold. Worse, the duplicate could never be
+	// detected, because the wrapper announces the job under its real name, so
+	// it collected never-detected runs and eventually warned that the machine
+	// had been "woken and held awake for nothing" about a job goguma had
+	// invented for itself. `import --register` is the recommended path, so this
+	// was on the far side of the feature the README points people at.
+	if name, _, ok := UnwrapMark(cmd); ok {
+		return name
 	}
 	fields := strings.Fields(cmd)
 	if len(fields) == 0 {

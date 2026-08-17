@@ -19,7 +19,20 @@ func (a *fakeAssertion) Release() error { a.released++; return nil }
 // fakePlatform stands in for the OS. The manual keep-awake path is the first
 // daemon path a test drives that actually takes an idle assertion, and the
 // point of these tests is the policy around the hold, not the syscall under it.
-type fakePlatform struct{ assertions []*fakeAssertion }
+type fakePlatform struct {
+	assertions []*fakeAssertion
+
+	// For the sleep-back path: how many times the machine was told to sleep,
+	// what UserIdle reports, and whether reading it fails at all.
+	slept       int
+	sleepErr    error
+	userIdle    time.Duration
+	userIdleErr error
+	lastWake    time.Time
+	lastWakeErr error
+	powerOnOK   bool
+	powerOnWhy  string
+}
 
 func (p *fakePlatform) Name() string { return "fake" }
 
@@ -38,6 +51,23 @@ func (p *fakePlatform) SleepHistory(time.Duration) (*schedule.SleepHistory, erro
 func (p *fakePlatform) SupportsClamshellHold() bool { return true }
 
 func (p *fakePlatform) WakeScheduleSupported() (bool, string) { return true, "" }
+
+func (p *fakePlatform) SleepNow() error {
+	p.slept++
+	return p.sleepErr
+}
+
+func (p *fakePlatform) UserIdle() (time.Duration, error) {
+	return p.userIdle, p.userIdleErr
+}
+
+func (p *fakePlatform) LastWakeAt() (time.Time, error) {
+	return p.lastWake, p.lastWakeErr
+}
+
+func (p *fakePlatform) PowerOnRunsJobs() (bool, string) {
+	return p.powerOnOK, p.powerOnWhy
+}
 
 func keepAwakeDaemon(t *testing.T) (*Daemon, *fakePlatform) {
 	t.Helper()

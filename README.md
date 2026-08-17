@@ -29,32 +29,33 @@ anywhere, because as far as the scheduler is concerned nothing went wrong. You
 find out weeks later, when you notice the digest you set up has been arriving
 on some days and not others.
 
+goguma fixes that. It lives in the menu bar: what is being held awake and what
+for, when the next wake is and which job it is for, and how long each job has
+been taking. Keep the Mac awake, skip the next wake, or pause everything
+without ever opening a terminal window (Or use the CLI)!
+
+[**Download goguma for macOS**](https://github.com/junnam586/goguma/releases/latest)
+
 <div align="center">
 
 <img src="Docs/media/menubar.png" alt="The goguma menu bar popover, showing the next wake and the jobs it is watching" width="460">
 
 </div>
 
-It lives in the menu bar: what is being held awake and what for, when the next
-wake is and which job it is for, and how long each job has been taking. Keep
-the Mac awake, skip the next wake, or pause everything without ever opening a
-terminal window.
-
-[**Download goguma for macOS**](https://github.com/junnam586/goguma/releases/latest)
-
 ## Features
 
-- Finds the work already scheduled on your machine. You wrote none of this
-  down for goguma; it goes and reads what is there
-- Reads app schedulers too, for apps that run jobs from inside themselves
-  rather than through cron or launchd (`goguma scheduler add`)
-- Tells you which of those jobs have been missing runs, and how often
-- Wakes the machine right before each job fires, and sleeps again the moment
-  it exits
-- Learns how long each job takes, so the window fits the work instead of
+- goguma finds the jobs and automations already scheduled on your machine. You
+  don't have to do anything, goguma will find them on its own
+- goguma reads app schedulers too, for apps that run jobs from inside
+  themselves rather than through cron or launchd (`goguma scheduler add`)
+- goguma tells you which of those jobs have been missing runs, and how often
+- goguma wakes the machine right before each job fires, and sleeps again the
+  moment it exits
+- goguma learns how long each job takes, so the window fits the work instead of
   guessing
-- Ends a hold early if the machine gets hot or the battery gets low
-- Menu bar app for macOS, so it is all visible without the terminal
+- goguma ends a hold early if the machine gets hot or the battery gets low
+- goguma works on the menu bar app for macOS, so it is all visible without the
+  terminal
 
 ## Installation
 
@@ -160,12 +161,30 @@ A hold is released early if the CPU goes above 80°C or the battery drops
 below 10%, both configurable. So a laptop that is awake in a closed bag stops
 heating up, and one on battery doesn't run out of charge.
 
+<div align="center">
+
+<img src="Docs/media/safety.png" width="850" alt="The Safety section of goguma's settings, with sliders for the temperature and battery cutouts">
+
+</div>
+
 The 10% floor rises for jobs that are measured to cost more than that. A job
 that has been drawing 4% per run won't start one below 14%, so it can't
 strand the machine partway through.
 
 If a job hangs, a time limit learned from its previous runs ends the hold. The
 default backstop is five minutes.
+
+When goguma wakes the machine itself, it puts it back to sleep afterwards. It
+has to: macOS treats a scheduled wake as though you had opened the lid, so
+everything else on the machine wakes up too and can keep it up for hours after
+a job that took thirty seconds.
+
+It only does this when it actually watched the job finish, which means jobs
+wrapped in `goguma-mark`. A job goguma can't watch gets a fixed window and no
+more; sleeping the machine at the end of a guess could suspend a backup that
+was still running. That is one more reason to wrap the ones you care about.
+It also needs every hold closed and nobody at the keyboard for two minutes.
+Turn it off with `goguma config set sleep_after_wake off`.
 
 goguma installs one small program that runs as root, because blocking sleep and
 setting a wake alarm both need it. [SECURITY.md](SECURITY.md) says what that
@@ -215,6 +234,18 @@ or build it yourself from [`macos/`](macos/README.md) by running
 **Where can I read more?**
 Architecture notes are in [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md), and the
 Mac app has its own notes in [macos/README.md](macos/README.md).
+
+## Who made this
+
+My name is Juhyun (Jun) Nam. I'm a sophomore at Duke University, and I built
+goguma because my own automations weren't running at night.
+
+You can find me on
+[LinkedIn](https://www.linkedin.com/in/jun-nam-4ba16b326/), and I'm happy to
+answer any questions about goguma at
+[junnam586@gmail.com](mailto:junnam586@gmail.com). If it's a security issue
+rather than a question, [SECURITY.md](SECURITY.md#reporting-something) says how
+to report it.
 
 ## License
 

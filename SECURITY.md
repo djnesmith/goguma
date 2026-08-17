@@ -35,15 +35,20 @@ build. Turn it off for good with `goguma config set advisory_checks off`.
 It is on for new installs and **off** for anyone who installed before it
 existed, because upgrading isn't consent.
 
-**As shipped today it does nothing at all.** No published build has a signing
-key compiled into it, and with no key every advisory fails verification,
-genuine ones included. So the check is switched off at the source rather than
-left to fail: `Enabled()` in
+**A build with no key compiled in does nothing at all**, and every release
+before v0.1.0 was one. With no key every advisory fails verification, genuine
+ones included, so rather than leave it failing the check is switched off at the
+source: `Enabled()` in
 [`internal/advisory/key.go`](internal/advisory/key.go) is false when the key is
 empty, the daemon reports that to the app as `advisories_available`, and the
-app hides the setting rather than offering a switch that can't do anything.
-It becomes live only in a build that carries a key. If you would rather be told
-by email than by the program, that is
+app hides the setting rather than offering a switch that can't do anything. A
+build from source has no key either, unless you pass one.
+
+A feed that is absent is not an error. If nothing has been published there is
+nothing to fetch, the daily check finds a 404, and goguma says nothing, which
+is the same outcome as a feed with no notices in it.
+
+If you would rather be told by email than by the program, that is
 [getgoguma.com/updates](https://getgoguma.com/updates).
 
 There is no account, no sign-in, no telemetry, no analytics, and no crash
@@ -155,6 +160,23 @@ Nothing else writes outside `~/Library/Application Support/goguma`. The
 background service adopts jobs it finds by recording them in its own list, and
 never by editing the scheduler it found them in.
 
+**It also puts the machine back to sleep**, which is a change to the machine's
+state rather than to a file, and worth naming here for the same reason.
+
+goguma can't ask for a quiet wake: a scheduled wake is classified by macOS as
+user-initiated, so the whole system comes up and other software takes
+assertions of its own. Measured on one Mac, a 31-second job at 03:00 left it
+awake for six hours after goguma had already released. So after a wake goguma
+itself caused, and only where it watched the job start and exit, once every
+hold is closed and the keyboard and pointer have been idle for two minutes, it
+runs `pmset sleepnow`, the same thing the Apple menu does. A window that closed
+without seeing the job finish never triggers it, because the job may still be
+running. It's unprivileged, so this doesn't go through the helper and the
+privileged surface above is unchanged. Turn it off with `goguma config set
+sleep_after_wake off`. The conditions are in
+[`internal/daemon/sleepback.go`](internal/daemon/sleepback.go), and every one
+of them is a reason not to sleep.
+
 ## Installing and removing it
 
 `goguma install` prints what it is about to do, and `--dry-run` prints it
@@ -176,9 +198,10 @@ off. Add `--purge` to delete those too.
 
 ## Who made this
 
-One person wrote goguma. Every commit in the repository is under the same
-name, from the first one to the current one, and there is no organisation
-behind it and nobody else with push access.
+My name is Juhyun (Jun) Nam. I'm a sophomore at Duke University, and I built
+goguma because my own automations weren't running at night. Every commit in the
+repository is under the same name, from the first one to the current one, and
+there is no organisation behind it and nobody else with push access.
 
 The Mac app is signed with a Developer ID that Apple issued to me by name.
 That is checkable without trusting anything on this page:
@@ -193,13 +216,10 @@ verified who I am before issuing that certificate, and the signature breaks if
 a single byte of the app changes after I sign it. A build that was tampered
 with on the way to you doesn't open.
 
-<!-- Jun: replace this paragraph with your own words. Who you are, what you
-     work on, why you built this. Two or three sentences is plenty. Keep it
-     specific and checkable: this section is worth exactly as much as the
-     things in it someone could go and confirm. -->
-
-I read anything sent to me about this, and you can find me on
-[LinkedIn](https://www.linkedin.com/in/jun-nam-4ba16b326/).
+You can find me on
+[LinkedIn](https://www.linkedin.com/in/jun-nam-4ba16b326/), and I'm happy to
+answer any questions about goguma at
+[junnam586@gmail.com](mailto:junnam586@gmail.com).
 
 ## Reporting something
 

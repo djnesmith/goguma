@@ -116,6 +116,13 @@ homebrew_casks:
     repository:
       owner: junnam586
       name: homebrew-tap
+      # Named explicitly, or goreleaser signs the push with the Actions
+      # GITHUB_TOKEN, which is scoped to this repository and cannot write to the
+      # tap. That fails as `403 Resource not accessible by integration` on the
+      # very last step, after every artifact is built and uploaded, and takes
+      # the app job down with it. Setting the secret is not enough on its own;
+      # it has to be pointed at from here.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/junnam586/goguma
     description: Wakes your machine for scheduled jobs, then lets it sleep again
     # Skipped unless a token that can push to the tap is present, so a tag cut

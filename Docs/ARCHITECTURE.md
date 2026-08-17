@@ -420,6 +420,14 @@ So discovery is a `Provider` interface (`internal/scan/provider.go`) and adding
 a scheduler in Go is one new file. Each provider reports three things: whether
 it exists on this machine, *where* it looked, and what it found.
 
+One line goguma always skips is its own. `import --register` rewrites a
+crontab entry to `goguma-mark <job> -- <command>`, and the adoption sweep used
+to read that back as a job it had never seen, registering a second one called
+`goguma-mark-<job>` at the same minute with its own wake and its own hold. The
+duplicate could never be detected either, because the wrapper announces the job
+under its real name. `UnwrapMark` in `internal/scan/crontab.go` recognises the
+shape and adopts under the real name instead.
+
 Shipping a Go file per app doesn't scale to software goguma has never heard
 of, so there is a second path that needs no code at all.
 `internal/scan/manifest.go` reads small JSON manifests out of the state

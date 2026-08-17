@@ -29,8 +29,16 @@ struct SettingsWindowView: View {
     /// focus held privately inside the field, there was nothing else for the
     /// caret to move to and clicking away left it stuck in the box.
     @FocusState private var focus: FieldFocus?
+    // Seeded with what config.Default() ships, not with round numbers.
+    //
+    // These are placeholders for the instant before `loadFields()` runs, and
+    // the battery one was 20 against a shipped default of 10, so anyone opening
+    // Settings saw a figure that was wrong twice over: not their setting, and
+    // not the default either. It also put 20 into every rendered screenshot,
+    // because the offscreen renderer captures before `.task` fires.
+    // TestSettingsPlaceholdersMatchDefaults keeps these in step.
     @State private var thermalCutout: Double = 80
-    @State private var lowBatteryCutout: Double = 20
+    @State private var lowBatteryCutout: Double = 10
     @State private var webhookText = ""
     /// Persisted, like the popover's jobs disclosure. Someone who opens this
     /// once is usually coming back to it, and a disclosure that forgets makes
@@ -282,6 +290,27 @@ struct SettingsWindowView: View {
                     + "they finish and stays awake for a fixed stretch instead. Most jobs "
                     + "it finds by itself are like this, so this is what they cost."
             )
+
+            // Here rather than under Safety, because this section's own caption
+            // promises "how long it stays up", and this is the half of that
+            // sentence about afterwards.
+            unlabelledRow {
+                Toggle(
+                    "Put it back to sleep afterwards",
+                    isOn: Binding(
+                        get: { store.config?.sleepAfterWake ?? true },
+                        set: { apply("sleep_after_wake", $0 ? "on" : "off") }
+                    )
+                )
+                .disabled(store.config == nil)
+                .help(
+                    "macOS treats a scheduled wake as though you had opened the lid, so "
+                        + "everything else on the Mac wakes up too and can keep it up for "
+                        + "hours after a job that took thirty seconds. goguma only does this "
+                        + "for wakes it caused itself, once every job is finished and nobody "
+                        + "has touched the keyboard for two minutes."
+                )
+            }
         }
     }
 
@@ -550,7 +579,10 @@ struct SettingsWindowView: View {
                 )
                 .help(
                     "Off by default: silently powering on a Mac someone deliberately shut "
-                        + "down is a surprise most people wouldn't consent to."
+                        + "down is a surprise most people wouldn't consent to. It also does "
+                        + "nothing useful on a Mac with FileVault, which is most of them: "
+                        + "the machine powers on, stops at the unlock screen, and the job is "
+                        + "missed anyway. Waking a sleeping Mac is unaffected."
                 )
             }
         }

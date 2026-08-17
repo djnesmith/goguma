@@ -79,8 +79,13 @@ type Daemon struct {
 	// this a daemon stuck in a 45-second socket read is indistinguishable
 	// from a machine that slept for 45 seconds. Time spent running cannot be
 	// time spent asleep, so it is subtracted before the gap is judged.
-	busy      time.Duration
-	lastState power.State
+	busy time.Duration
+
+	// sleepBackAt is when to put the machine back to sleep after goguma woke
+	// it; zero means nothing pending. See sleepback.go.
+	sleepBackAt  time.Time
+	sleepBackJob string
+	lastState    power.State
 
 	// advisory is the last verified notice feed, or nil when none has been
 	// fetched, this build has no key compiled in, or the user turned it off.
@@ -340,6 +345,7 @@ func (d *Daemon) tick(ctx context.Context, now time.Time) {
 	d.pollSchedulerState(ctx, now)
 	d.enforceCeilings(now, cfg)
 	d.syncSleepBlock()
+	d.maybeSleepBack(now, cfg)
 	if !paused {
 		d.scheduleNextWake(now, cfg)
 	}
@@ -426,6 +432,7 @@ func (d *Daemon) openWindow(ctx context.Context, job *model.Job, fire, now time.
 		ceiling:        est.Ceiling,
 		detectDeadline: detectDeadlineFor(fire, est.Ceiling),
 		wokeMachine:    d.wokeForThis(now),
+		followsWake:    d.followsRecentWake(now),
 	}
 
 	// The unprivileged idle assertion is taken directly; the clamshell block
@@ -647,6 +654,11 @@ func (d *Daemon) finishHoldLocked(h *hold, now time.Time, outcome model.Outcome)
 	delete(d.holds, h.job.ID)
 	if !h.manual() {
 		d.served[h.job.ID] = h.fireAt
+	}
+	// Only once nothing else is holding: two jobs in the same window should
+	// sleep the machine when the second finishes, not when the first does.
+	if len(d.holds) == 0 {
+		d.armSleepBack(h, now, outcome)
 	}
 
 	// A manual keep-awake window is not a job execution, and stops here.

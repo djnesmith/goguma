@@ -55,6 +55,18 @@ type hold struct {
 	// goguma. This is the tool's value metric.
 	wokeMachine bool
 
+	// followsWake is true when the kernel says the machine woke moments before
+	// this window opened.
+	//
+	// Separate from wokeMachine, which is inferred from a gap in the daemon's
+	// own ticks and feeds the run history and the miss-risk figures. That
+	// inference misses a wake out of a light sleep, where the daemon keeps
+	// ticking and sees no gap: measured on a real run it was wrong for two
+	// wakes out of three. Changing it would have moved the meaning of "woken"
+	// everywhere it is already reported, so this is a second, narrower fact
+	// used for one decision.
+	followsWake bool
+
 	assertion power.IdleAssertion
 }
 

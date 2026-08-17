@@ -84,6 +84,16 @@ rather than a fixture. That is the point, and it is also the catch: check what
 is in the picture before committing it. `SurfaceRenderer.swift` explains why
 this isn't `ImageRenderer`.
 
+`Docs/media/safety.png` is the Safety block of the settings surface, cropped
+out of a full `--render settings` and padded at the foot. The renderer emits
+the whole pane, which is 2368px tall and far too much for one paragraph in a
+README, and the section is bounded by divider rules that look like a bad cut if
+the crop lands on one. The rule below Safety starts at y=1486 and the heading
+at y=1095, so the crop runs 1061 to 1483 and then gains 26 rows of the pane's
+own background at the bottom: the layout leaves only 45px under the last
+slider against 34px above the heading, which reads as bottom-heavy, and the
+background is a single flat colour so the join is invisible.
+
 For the jobs window that default is wrong twice over, so there is
 `Docs/media/demo-daemon.py`:
 
@@ -348,7 +358,7 @@ the runtime are called out; that is wasted battery, and the thing worth fixing.
 **Settings page.** `wake_buffer`, `default_ceiling`, `wake_only_hold`,
 `thermal_cutout_c` (70-95), `low_battery_cutout_pct` (5-50), `auto_adopt`,
 `webhook_url`, `notify_on_missed_job`, `use_wake_or_power_on`,
-`advisory_checks`, plus a **Sync Now** button, daemon version, helper connection and version, protocol version,
+`advisory_checks`, `sleep_after_wake`, plus a **Sync Now** button, daemon version, helper connection and version, protocol version,
 socket path, and last-updated. Text fields commit on Return; sliders on release.
 Every write goes through `config.set` and the config is re-read afterwards, so a
 value the daemon clamps shows its clamped value here rather than the one that

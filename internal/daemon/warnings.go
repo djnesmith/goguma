@@ -228,6 +228,24 @@ func (d *Daemon) refreshWarnings(st power.State, cfg config.Config) {
 		})
 	}
 
+	// A setting that promises something this machine cannot do.
+	//
+	// `use_wake_or_power_on` is off by default, so this only speaks to someone
+	// who went looking for it and turned it on, which is exactly the person who
+	// will otherwise conclude goguma is broken when the machine powers on at
+	// 03:00 and the job still does not run.
+	if cfg.UseWakeOrPowerOn {
+		if ok, why := d.plat.PowerOnRunsJobs(); !ok {
+			out = append(out, model.Warning{
+				Kind: model.WarnPowerOnCannotRun,
+				Message: "'turn the Mac on if it's shut down' is on, but " + why +
+					". Waking a sleeping Mac still works normally; only powering on " +
+					"from off is affected",
+				Fix: "goguma config set use_wake_or_power_on off",
+			})
+		}
+	}
+
 	// Notices from goguma itself, last.
 	//
 	// Everything above is a fault on this machine and comes first; a released

@@ -96,6 +96,9 @@ var configSetters = map[string]func(*config.Config, string) error{
 	"auto_adopt_interval": func(c *config.Config, v string) error {
 		return setDur(&c.AutoAdoptInterval, v)
 	},
+	"sleep_after_wake": func(c *config.Config, v string) error {
+		return setBool(&c.SleepAfterWake, v, "sleep_after_wake")
+	},
 	"advisory_checks": func(c *config.Config, v string) error {
 		return setBool(&c.AdvisoryChecks, v, "advisory_checks")
 	},

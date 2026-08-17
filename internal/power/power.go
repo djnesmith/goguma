@@ -7,6 +7,7 @@
 package power
 
 import (
+	"errors"
 	"time"
 
 	"github.com/junnam586/goguma/internal/schedule"
@@ -48,7 +49,53 @@ type Platform interface {
 	// On Linux this is genuinely hardware-dependent (PRD §12.3), so it is a
 	// runtime probe rather than a compile-time assumption.
 	WakeScheduleSupported() (bool, string)
+
+	// SleepNow asks the machine to sleep immediately.
+	//
+	// Needed because goguma cannot ask for a quiet wake. A scheduled wake is
+	// classified by macOS as user-initiated, so the whole machine comes up and
+	// iCloud, Spotlight and the rest take their own assertions; measured on one
+	// Mac, a 31-second job left it awake for six hours after goguma had already
+	// released. Its own maintenance wakes are a different, constrained class
+	// that returns to sleep in 45 seconds, and third parties cannot request
+	// one. So the only thing in a position to undo a goguma wake is goguma.
+	SleepNow() error
+
+	// PowerOnRunsJobs reports whether booting this machine from off would
+	// actually get scheduled jobs run, and if not, why not.
+	//
+	// `use_wake_or_power_on` schedules `wakeorpoweron` instead of `wake`, and
+	// the setting reads as though powering on were equivalent to waking. It is
+	// not. A FileVault machine boots to an unlock screen with the OS not yet
+	// running, so nothing fires until someone types a password, and the toggle
+	// silently promises something it cannot do. Reported rather than guessed,
+	// because the answer differs per machine.
+	PowerOnRunsJobs() (bool, string)
+
+	// LastWakeAt reports when the machine last woke from sleep.
+	//
+	// The OS's own record, not an inference. goguma used to decide "did I wake
+	// this machine" by watching for a gap in its own ticks, which misses a wake
+	// out of a light sleep: the daemon keeps ticking through it, sees no gap,
+	// and concludes it woke nothing. Measured on a real run, that was wrong for
+	// two wakes out of three, and each time it left the machine awake that
+	// goguma had itself brought up.
+	//
+	// Cheap on purpose, because this is consulted whenever a window opens.
+	// `pmset -g log` carries the same truth and takes about seven seconds.
+	LastWakeAt() (time.Time, error)
+
+	// UserIdle reports how long since the last keyboard or pointer event.
+	//
+	// Separate from ReadState because it is only consulted before sleeping the
+	// machine, and ReadState runs on every tick where it would be pure cost.
+	// Returning an error means "cannot tell", which callers must treat as
+	// "someone may be there" rather than as zero.
+	UserIdle() (time.Duration, error)
 }
+
+// ErrUnsupported is returned by Platform operations a system cannot perform.
+var ErrUnsupported = errors.New("not supported on this platform")
 
 // State is a sample of machine conditions.
 type State struct {

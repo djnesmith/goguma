@@ -14,6 +14,7 @@ package cli
 // fail.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -371,5 +372,66 @@ func TestRecordingsAreMadeAgainstSandboxData(t *testing.T) {
 	if !strings.Contains(mac, "demo-daemon.py") {
 		t.Error("macos/README.md does not mention demo-daemon.py, so the next person " +
 			"to regenerate the jobs screenshot will render their own jobs into it")
+	}
+}
+
+// TestSettingsPlaceholdersMatchDefaults keeps the Settings pane's initial
+// values in step with config.Default().
+//
+// They are only placeholders, shown for the instant before the pane reads the
+// real config, so being wrong is nearly invisible in use. It is not invisible
+// in a screenshot: the offscreen renderer captures before that read happens,
+// so whatever is hardcoded here is what lands in the docs. The battery
+// placeholder was 20 against a shipped default of 10, and it went into a
+// picture that sat next to a paragraph in the README saying 10.
+func TestSettingsPlaceholdersMatchDefaults(t *testing.T) {
+	d := config.Default()
+	src := readDoc(t, repoRoot(t), "macos/Sources/GogumaUI/Views/SettingsWindowView.swift")
+
+	for _, c := range []struct {
+		decl string
+		want string
+		name string
+	}{
+		{"@State private var thermalCutout: Double =", fmt.Sprintf("%.0f", d.ThermalCutoutC), "thermal_cutout_c"},
+		{"@State private var lowBatteryCutout: Double =", fmt.Sprintf("%d", d.LowBatteryCutoutPct), "low_battery_cutout_pct"},
+	} {
+		i := strings.Index(src, c.decl)
+		if i < 0 {
+			t.Errorf("could not find %q in SettingsWindowView.swift", c.decl)
+			continue
+		}
+		rest := src[i+len(c.decl):]
+		if end := strings.IndexAny(rest, "\n"); end >= 0 {
+			rest = rest[:end]
+		}
+		if got := strings.TrimSpace(rest); got != c.want {
+			t.Errorf("Settings seeds %s with %s, but config.Default() ships %s; "+
+				"the difference ends up in every rendered screenshot", c.name, got, c.want)
+		}
+	}
+}
+
+// TestTheTapPushUsesItsOwnToken.
+//
+// The cask block named the tap repository and never said which credential to
+// push with, so goreleaser used the Actions GITHUB_TOKEN, which is scoped to
+// this repository alone. v0.1.0 died on it: `403 Resource not accessible by
+// integration` on the final step, after every artifact had been built and
+// uploaded, which then skipped the app job and left a release with no disk
+// image in it. Having the secret set is not enough; it has to be referenced.
+func TestTheTapPushUsesItsOwnToken(t *testing.T) {
+	cfg := readDoc(t, repoRoot(t), ".goreleaser.yaml")
+	i := strings.Index(cfg, "homebrew_casks:")
+	if i < 0 {
+		t.Fatal("no homebrew_casks block in .goreleaser.yaml")
+	}
+	block := cfg[i:]
+	if !strings.Contains(block, "HOMEBREW_TAP_GITHUB_TOKEN") {
+		t.Error("the cask block never references HOMEBREW_TAP_GITHUB_TOKEN, so the push " +
+			"will fall back to the Actions token and 403 on the last step of a release")
+	}
+	if !strings.Contains(block, "token:") {
+		t.Error("the cask repository has no token: field")
 	}
 }

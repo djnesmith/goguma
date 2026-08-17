@@ -1100,6 +1100,14 @@ struct DaemonConfig: Codable, Sendable, Hashable {
     /// Whether goguma fetches its signed notice feed once a day.
     var advisoryChecks: Bool
 
+    /// Whether goguma puts the machine back to sleep after a wake it caused.
+    ///
+    /// Defaults to true everywhere it is absent, which matters: a daemon too
+    /// old to send the key is one that does not have the behaviour either, and
+    /// showing the switch off would be right for that daemon but wrong for
+    /// every current one. True matches config.Default().
+    var sleepAfterWake: Bool
+
     /// Scheduler sources watched for automatic adoption.
     ///
     /// The three states are distinct and all meaningful:
@@ -1130,6 +1138,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         webhookURL = ""
         notifyOnMissedJob = false
         advisoryChecks = false
+        sleepAfterWake = true
         autoAdopt = nil
         autoAdoptInterval = .zero
     }
@@ -1151,6 +1160,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         case webhookURL = "webhook_url"
         case notifyOnMissedJob = "notify_on_missed_job"
         case advisoryChecks = "advisory_checks"
+        case sleepAfterWake = "sleep_after_wake"
         case autoAdopt = "auto_adopt"
         case autoAdoptInterval = "auto_adopt_interval"
     }
@@ -1173,6 +1183,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         webhookURL = c.value(.webhookURL, "")
         notifyOnMissedJob = c.value(.notifyOnMissedJob, false)
         advisoryChecks = c.value(.advisoryChecks, false)
+        sleepAfterWake = c.value(.sleepAfterWake, true)
         // `optional` yields nil for both absent and JSON null, and `.some([])`
         // for an empty array, exactly the distinction this field needs.
         autoAdopt = c.optional(.autoAdopt, as: [String].self)

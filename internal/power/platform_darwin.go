@@ -53,6 +53,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -276,4 +277,110 @@ func parseTherm(out string) bool {
 		}
 	}
 	return false
+}
+
+// SleepNow puts the Mac to sleep the same way the Apple menu does.
+//
+// `pmset sleepnow` rather than IOPMSleepSystem: the IOKit call needs root, and
+// the whole point of keeping this out of the helper is that goguma's
+// privileged surface stays at the five messages SECURITY.md lists. The command
+// overrides idle-sleep assertions, which is exactly what is needed here, since
+// the assertions in the way are cloudd's `SystemIsActive` rather than anything
+// claiming the machine must stay up.
+func (p *darwinPlatform) SleepNow() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "pmset", "sleepnow").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pmset sleepnow: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// UserIdle reads HIDIdleTime, which is nanoseconds since the last keyboard or
+// pointer event.
+//
+// Read on demand rather than sampled every tick: `ioreg` walks a device tree
+// and ReadState is documented as having to stay cheap.
+func (p *darwinPlatform) UserIdle() (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ioreg", "-c", "IOHIDSystem", "-d", "4").Output()
+	if err != nil {
+		return 0, fmt.Errorf("reading HIDIdleTime: %w", err)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.Contains(line, "HIDIdleTime") {
+			continue
+		}
+		i := strings.LastIndex(line, "=")
+		if i < 0 {
+			continue
+		}
+		ns, err := strconv.ParseInt(strings.TrimSpace(line[i+1:]), 10, 64)
+		if err != nil {
+			continue
+		}
+		return time.Duration(ns), nil
+	}
+	// Not found is "cannot tell", never "nobody is there".
+	return 0, fmt.Errorf("HIDIdleTime not present in ioreg output")
+}
+
+// waketimeRe pulls the seconds out of `kern.waketime`, which prints as
+// "{ sec = 1786951887, usec = 427662 } Mon Aug 17 15:31:27 2026".
+var waketimeRe = regexp.MustCompile(`sec\s*=\s*(\d+)`)
+
+// LastWakeAt reads kern.waketime, the kernel's own record of the last wake.
+func (p *darwinPlatform) LastWakeAt() (time.Time, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "sysctl", "-n", "kern.waketime").Output()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("reading kern.waketime: %w", err)
+	}
+	m := waketimeRe.FindSubmatch(out)
+	if m == nil {
+		return time.Time{}, fmt.Errorf("kern.waketime not in the expected form: %q",
+			strings.TrimSpace(string(out)))
+	}
+	sec, err := strconv.ParseInt(string(m[1]), 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("kern.waketime seconds unparseable: %w", err)
+	}
+	// Zero means the machine has not slept since boot, which is a real answer
+	// and not an error: nothing has woken, so nothing goguma did woke it.
+	if sec == 0 {
+		return time.Time{}, nil
+	}
+	return time.Unix(sec, 0), nil
+}
+
+// PowerOnRunsJobs is false on a FileVault machine.
+//
+// `pmset schedule poweron` genuinely powers the Mac on. What it cannot do is
+// get past the unlock screen: with FileVault enabled the volume is still
+// locked, macOS has not finished booting, and neither cron nor launchd exists
+// yet to run anything. The machine lights up, waits for a password, and the
+// job is missed exactly as it would have been while asleep, except now the
+// battery has paid for a boot.
+//
+// FileVault is on by default on current Macs, so this is the common case
+// rather than the exotic one.
+func (p *darwinPlatform) PowerOnRunsJobs() (bool, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "fdesetup", "status").Output()
+	if err != nil {
+		// Unknown. Claiming it works would be the damaging direction, so this
+		// says nothing rather than reassuring.
+		return true, ""
+	}
+	if strings.Contains(string(out), "FileVault is On") {
+		return false, "FileVault is on, so a machine that is powered on stops at the " +
+			"unlock screen and no job runs until someone types the password"
+	}
+	// Even unlocked, a per-user LaunchAgent waits for a login. cron and
+	// LaunchDaemons do run, so this is a qualified yes rather than a no.
+	return true, ""
 }

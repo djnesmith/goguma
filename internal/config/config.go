@@ -149,6 +149,25 @@ type Config struct {
 	// stops waking the Mac and nothing tells the user a fix was published.
 	// `goguma config set advisory_checks off` ends it permanently.
 	AdvisoryChecks bool `json:"advisory_checks"`
+
+	// SleepAfterWake puts the machine back to sleep once goguma is done with a
+	// wake it caused itself.
+	//
+	// goguma cannot ask for a quiet wake. A scheduled wake is classified by
+	// macOS as user-initiated, so the machine comes up in full and iCloud,
+	// Spotlight and the rest take assertions of their own. Measured on one Mac:
+	// a 31-second job at 03:00 left it awake until morning, six hours, with
+	// cloudd holding 160 assertions. goguma had released after 2m 1s and did
+	// nothing wrong; it just has no way to ask for the constrained kind of wake
+	// macOS gives its own maintenance, which returns to sleep in 45 seconds.
+	//
+	// Nothing else is in a position to fix it, because nothing else knows the
+	// wake was for a job rather than for the user. So this is on by default,
+	// including for existing installs: a tool whose pitch is "sleeps otherwise"
+	// leaving the machine up all night is the promise being broken, not a
+	// preference being changed. Turn it off with
+	// `goguma config set sleep_after_wake off`.
+	SleepAfterWake bool `json:"sleep_after_wake"`
 }
 
 // Default returns the shipped configuration.
@@ -174,6 +193,7 @@ func Default() Config {
 		AutoAdoptInterval:    model.Duration(2 * time.Minute),
 		MinImportInterval:    0,
 		AdvisoryChecks:       true,
+		SleepAfterWake:       true,
 		EventLogMaxBytes:     10 << 20,
 	}
 }

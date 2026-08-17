@@ -134,6 +134,14 @@ const (
 	WarnCeilingHits    WarningKind = "ceiling_hits"
 	WarnScheduleParse  WarningKind = "schedule_parse"
 	WarnCommandChanged WarningKind = "command_changed"
+	// WarnPowerOnCannotRun: `use_wake_or_power_on` is on, but this machine
+	// would stop at an unlock screen and run nothing.
+	//
+	// The setting reads as though powering on were equivalent to waking. On a
+	// FileVault machine it is not: the Mac lights up, waits for a password, and
+	// the job is missed exactly as it would have been asleep, except a boot has
+	// been paid for. FileVault is on by default on current Macs.
+	WarnPowerOnCannotRun WarningKind = "power_on_cannot_run"
 	// WarnUncovered: scheduled jobs exist on this machine that goguma is
 	// not waking for. Silence here is the worst failure it has: the user
 	// installed a tool to stop missing jobs and is still missing them.
