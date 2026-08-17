@@ -1,0 +1,216 @@
+#!/bin/bash
+#
+# Publishes site/ to the gh-pages branch, which is what getgoguma.com serves.
+#
+# Deploying by hand is how a stray `rm -rf` once took out a directory that only
+# differed by case, so this never deletes anything in the working tree and never
+# switches branches: it builds the commit from a temporary worktree and pushes
+# that.
+#
+# Usage:
+#   site/deploy.sh            # show exactly what would be published, change nothing
+#   site/deploy.sh --push     # publish it
+#
+# The asset list is derived from the HTML rather than by copying assets/ wholesale,
+# so a file that stopped being referenced stops being published, and a file that is
+# referenced but missing is an error here rather than a 404 in front of a user.
+set -euo pipefail
+
+SITE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$SITE/.." && pwd)"
+PUSH=0
+[[ "${1:-}" == "--push" ]] && PUSH=1
+
+PAGES=(index.html updates/index.html)
+# Working branch name for the orphan commit. Never pushed under this name, and
+# deleted at both ends of the run; see the note by `git branch -D` below.
+STAGE_BRANCH="gh-pages-staging"
+
+cd "$SITE"
+for page in "${PAGES[@]}"; do
+    [[ -f "$page" ]] || { echo "error: $page is missing" >&2; exit 1; }
+done
+
+# Every local file the pages ask for: src=, href=, url(...) and og:image content=.
+# Absolute URLs and anchors are skipped; a relative path is a file that has to exist.
+refs=$(
+    cat "${PAGES[@]}" \
+    | grep -oE '(src|href)="[^"]+"|url\("[^"]+"\)|content="assets/[^"]+"' \
+    | sed -E 's/^(src|href|content)="//; s/^url\("//; s/"\)?$//' \
+    | grep -vE '^(https?:|mailto:|#|/|data:)' \
+    | sed 's|^\.\./||' \
+    | grep -vE '/$|^\.\.$' \
+    | sort -u
+)
+# Links ending in `/` are page routes, not files: `updates/` is served from
+# `updates/index.html`, which is already in PAGES. Treating one as a missing
+# asset made a correct page fail the publish.
+
+# The advisory feed, which no page links to.
+#
+# Every other file here is discovered by reading the HTML, which is the right
+# default: an asset that stops being referenced stops being published. This one
+# has no referrer by design. It is fetched by the daemon at a URL compiled into
+# the binary, so it has to be named or it would never ship, and every install
+# would go on asking for a file that is not there.
+EXTRA=(advisories.json)
+
+MISSING=0
+FILES=("${PAGES[@]}")
+for e in "${EXTRA[@]}"; do
+    if [[ -f "$e" ]]; then
+        FILES+=("$e")
+    else
+        echo "error: $e is missing" >&2
+        exit 1
+    fi
+done
+for r in $refs; do
+    if [[ -f "$r" ]]; then
+        FILES+=("$r")
+    else
+        echo "error: $r is referenced but does not exist" >&2
+        MISSING=1
+    fi
+done
+[[ $MISSING -eq 0 ]] || exit 1
+
+# Sorted and de-duplicated, because both pages share the potato.
+# `mapfile` is bash 4; macOS ships bash 3.2, so this is the portable form.
+FILES=($(printf '%s\n' "${FILES[@]}" | sort -u))
+
+# The site quotes commands and settings at people. Check they are real.
+#
+# Same class of check as internal/cli/docs_test.go. That file could now cover
+# these pages too, because site/ is tracked; it could not when this was written,
+# and the reason given here was that the directory does not exist in CI.
+#
+# This stays anyway, because the two catch different moments. A Go test compares
+# the copy to the source it sits beside. This compares it to the binary built
+# from this working tree, at the instant the pages are about to go out, which is
+# the last point at which being wrong is still private.
+#
+# It catches a setting renamed out from under the copy, or a command that no
+# longer exists. It cannot catch a claim that is merely untrue, which is a
+# different problem and needs a person.
+#
+# The repo build first, then whatever is installed. These pages ship alongside
+# this source, so this source is what they have to agree with; an older binary
+# on PATH would check the copy against the wrong product.
+GOGUMA_BIN="$REPO/bin/goguma"
+[[ -x "$GOGUMA_BIN" ]] || GOGUMA_BIN="$(command -v goguma || true)"
+if [[ -x "$GOGUMA_BIN" ]]; then
+    # Both of these print to stderr on their no-argument path, so both streams
+    # are captured. Discarding stderr left an empty string and made every name
+    # look unknown.
+    HELP_TEXT="$("$GOGUMA_BIN" help 2>&1 || true)"
+    CONFIG_TEXT="$("$GOGUMA_BIN" config 2>&1 || true)"
+    if ! python3 - "$HELP_TEXT" "$CONFIG_TEXT" "${PAGES[@]}" <<'PYCHECK'
+import html, re, sys
+
+help_text, config_text, pages = sys.argv[1], sys.argv[2], sys.argv[3:]
+
+# Only <code> elements and the terminal block's data-copy attribute. Prose is
+# deliberately not searched: an earlier version of this check matched on
+# "goguma runs in the background" and asked whether `runs` was a command.
+snippets = []
+for page in pages:
+    body = open(page, encoding="utf-8").read()
+    for m in re.finditer(r"<code[^>]*>(.*?)</code>", body, re.S):
+        snippets.append(html.unescape(re.sub(r"<[^>]+>", "", m.group(1))).strip())
+    for m in re.finditer(r'data-copy="([^"]*)"', body):
+        snippets.extend(html.unescape(m.group(1)).splitlines())
+
+# `goguma help` lists one command per line, indented, name first.
+commands = {m.group(1) for m in re.finditer(r"^\s{4,}([a-z][a-z-]+)\s{2,}\S", help_text, re.M)}
+# `goguma config` lists settings the same way.
+settings = {m.group(1) for m in re.finditer(r"^\s{2,}([a-z][a-z_]+)\s{2,}\S", config_text, re.M)}
+
+problems = []
+for snip in snippets:
+    snip = snip.strip()
+    if not snip.startswith("goguma "):
+        continue
+    m = re.match(r"^goguma config set ([a-z_]+)", snip)
+    if m:
+        if m.group(1) not in settings:
+            problems.append(f"{snip!r}: {m.group(1)} is not a setting `goguma config` lists")
+        continue
+    m = re.match(r"^goguma ([a-z][a-z-]+)", snip)
+    if m and m.group(1) not in commands:
+        problems.append(f"{snip!r}: {m.group(1)} is not a command `goguma help` lists")
+
+for p in problems:
+    print("error: the site quotes " + p, file=sys.stderr)
+sys.exit(1 if problems else 0)
+PYCHECK
+    then
+        echo "nothing was published" >&2
+        exit 1
+    fi
+    echo "Checked the commands and settings the pages quote."
+else
+    echo "note: no goguma binary found, skipping the command/setting check." >&2
+fi
+
+echo "Would publish ${#FILES[@]} files to gh-pages:"
+total=0
+for f in "${FILES[@]}"; do
+    size=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f")
+    total=$((total + size))
+    printf "  %7s  %s\n" "$((size / 1024))K" "$f"
+done
+echo "  ------- $((total / 1024))K total"
+
+if [[ $PUSH -eq 0 ]]; then
+    echo
+    echo "Nothing was changed. Run 'site/deploy.sh --push' to publish."
+    exit 0
+fi
+
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+cd "$REPO"
+# A previous run's leftovers, cleared before anything else.
+#
+# `git checkout --orphan` fails outright if the branch already exists, and the
+# first successful deploy left one behind. Every run after it then died on that
+# line inside a subshell whose output was suppressed: the script printed its
+# file list, said "Preparing worktree", and stopped, looking exactly like a
+# deploy that had worked. It had not, and the site sat stale.
+git worktree prune
+git branch -D "$STAGE_BRANCH" >/dev/null 2>&1 || true
+
+git worktree add --detach "$WORK" >/dev/null
+if ! (
+    set -e
+    cd "$WORK"
+    git checkout --orphan "$STAGE_BRANCH" >/dev/null
+    git rm -rf . >/dev/null 2>&1 || true
+
+    for f in "${FILES[@]}"; do
+        mkdir -p "$(dirname "$f")"
+        cp "$SITE/$f" "$f"
+    done
+
+    # The custom domain and the Jekyll opt-out live only on the branch, so they
+    # are carried across rather than being regenerated from anything.
+    git show gh-pages:CNAME > CNAME 2>/dev/null || echo "getgoguma.com" > CNAME
+    touch .nojekyll
+
+    git add -A
+    git -c user.name="$(git config user.name)" \
+        -c user.email="$(git config user.email)" \
+        commit -q -m "Publish the site"
+    git push -f origin HEAD:gh-pages
+); then
+    git worktree remove --force "$WORK" >/dev/null 2>&1 || true
+    git branch -D "$STAGE_BRANCH" >/dev/null 2>&1 || true
+    echo "error: nothing was published" >&2
+    exit 1
+fi
+git worktree remove --force "$WORK" >/dev/null
+git branch -D "$STAGE_BRANCH" >/dev/null 2>&1 || true
+echo
+echo "Published. getgoguma.com updates within a minute or two."
