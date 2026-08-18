@@ -126,6 +126,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <!-- Menu bar app: no Dock icon, no app switcher entry. The delegate also
          sets this at runtime so a loose binary behaves the same way. -->
     <key>LSUIElement</key>                   <true/>
+    <!-- Declared even though setup now opens a .command file rather than
+         scripting Terminal. Without this key macOS refuses an Apple Event
+         outright, with no consent dialog and no error the user can see, which
+         is exactly how "Set up goguma" came to do nothing at all. -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>goguma opens Terminal so you can watch its setup run and enter your password there, rather than being asked for it inside a menu bar window.</string>
     <key>NSHighResolutionCapable</key>       <true/>
 </dict>
 </plist>

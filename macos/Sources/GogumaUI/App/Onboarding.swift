@@ -51,38 +51,66 @@ enum Onboarding {
 
     /// Opens Terminal and runs the bundled installer.
     ///
-    /// Deliberately Terminal rather than running it in-process. Installing the
-    /// privileged helper needs `sudo`, and the CLI already refuses to guess at
-    /// that: it prints "Run this in Terminal: a password cannot be entered
-    /// without one" and stops. Driving a password prompt from a menu bar popover
-    /// would mean either an authorization dialog the user cannot connect to
-    /// anything they typed, or asking for their password inside an app window,
-    /// which is exactly the shape of a phishing prompt and a habit no tool
-    /// should teach. Terminal shows the real `sudo`, the real steps, and the
-    /// output when it goes wrong.
+    /// Terminal rather than in-process, deliberately. Installing the privileged
+    /// helper needs `sudo`, and the CLI refuses to guess at that: driving a
+    /// password prompt from a menu bar popover means either an authorization
+    /// dialog the user cannot connect to anything they typed, or asking for a
+    /// password inside an app window, which is the shape of a phishing prompt
+    /// and a habit no tool should teach. Terminal shows the real `sudo`, the
+    /// real steps, and the output when it goes wrong.
+    ///
+    /// Via a `.command` file rather than AppleScript, which is what this used to
+    /// do and why the button appeared to do nothing at all. Telling Terminal to
+    /// `do script` is an Apple Event, and sending one requires
+    /// `NSAppleEventsUsageDescription` in the bundle's Info.plist. That key was
+    /// missing, so macOS refused the event outright: no consent dialog, no
+    /// Terminal, no error the user could see. Opening a document needs no such
+    /// permission, and a `.command` file is a document macOS opens in Terminal.
     @MainActor
     static func runInstaller() {
         guard let cli = bundledCLI else { return }
 
-        // Quoted for the shell: the bundle lives wherever it was dragged, and
-        // "/Users/x/Downloads/My Apps/goguma.app" is a perfectly ordinary path.
+        let dir = FileManager.default.temporaryDirectory
+        let script = dir.appending(path: "goguma-setup.command")
+
+        // Quoted: the bundle lives wherever it was dragged, and
+        // "/Users/x/Downloads/My Apps/goguma.app" is an ordinary path.
         let quoted = "'" + cli.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        let script = """
-            tell application "Terminal"
-                activate
-                do script "clear && \(quoted) install"
-            end tell
+        let body = """
+            #!/bin/bash
+            clear
+            \(quoted) install
+            status=$?
+            echo
+            if [ $status -eq 0 ]; then
+              echo "Setup finished. You can close this window."
+            else
+              echo "Setup did not finish. The output above says why."
+            fi
             """
 
-        guard let apple = NSAppleScript(source: script) else { return }
-        var error: NSDictionary?
-        apple.executeAndReturnError(&error)
-        if let error {
-            // Automating Terminal needs consent the user may have refused, and
-            // a button that silently does nothing reads as a broken app. Fall
-            // back to revealing the binary so there is still a way forward.
-            NSLog("goguma: couldn't drive Terminal (\(error)); revealing the CLI instead")
+        do {
+            try body.write(to: script, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: script.path
+            )
+        } catch {
+            // Nothing left that can open a terminal for them, so show them the
+            // binary instead: a button that does nothing reads as a broken app,
+            // and a Finder window at least says where the thing is.
+            NSLog("goguma: couldn't write the setup script (\(error)); revealing the CLI")
             NSWorkspace.shared.activateFileViewerSelecting([cli])
+            return
+        }
+
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        NSWorkspace.shared.open(script, configuration: config) { _, error in
+            guard let error else { return }
+            NSLog("goguma: couldn't open the setup script (\(error)); revealing the CLI")
+            DispatchQueue.main.async {
+                NSWorkspace.shared.activateFileViewerSelecting([cli])
+            }
         }
     }
 }

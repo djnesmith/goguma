@@ -554,3 +554,47 @@ func TestMinimumMacOSVersionAgreesEverywhere(t *testing.T) {
 		}
 	}
 }
+
+// The bundle declares what it needs to script another app.
+//
+// "Set up goguma" opened Terminal by sending it an Apple Event, and macOS
+// refuses that outright from a bundle with no NSAppleEventsUsageDescription:
+// no consent dialog, no Terminal, no error anywhere the user can see. The
+// button did nothing at all, on the one screen a new install shows first.
+//
+// Setup no longer needs the event, but the key stays declared and this keeps it
+// declared, because the failure it produces is silent and therefore the kind
+// that survives a long time before anybody works out what is wrong.
+func TestTheAppBundleCanScriptTerminal(t *testing.T) {
+	root := repoRoot(t)
+	script := readDoc(t, root, "macos/scripts/make-app.sh")
+	if !strings.Contains(script, "NSAppleEventsUsageDescription") {
+		t.Error("make-app.sh builds an Info.plist with no NSAppleEventsUsageDescription;\n" +
+			"any Apple Event the app sends will be refused silently")
+	}
+}
+
+// The uninstaller clears the preferences domain the app actually writes to.
+//
+// Go cannot read Swift's bundle identifier, so the domain is spelled twice.
+// Getting it wrong means uninstall leaves goguma.hasPresentedFirstRun behind,
+// and the next install opens to nothing: an icon in the menu bar, no popover,
+// and no reason for the person to click it.
+func TestUninstallClearsTheAppsPreferences(t *testing.T) {
+	root := repoRoot(t)
+
+	// The plist writes $BUNDLE_ID, so the value comes from the assignment
+	// rather than from the template that interpolates it.
+	script := readDoc(t, root, "macos/scripts/make-app.sh")
+	m := regexp.MustCompile(`BUNDLE_ID="([^"]+)"`).FindStringSubmatch(script)
+	if m == nil {
+		t.Fatal("make-app.sh no longer defines BUNDLE_ID")
+	}
+	want := strings.TrimSpace(m[1])
+
+	uninstaller := readDoc(t, root, "internal/install/launchd_darwin.go")
+	if !strings.Contains(uninstaller, `uiPreferenceDomain = "`+want+`"`) {
+		t.Errorf("the app's bundle id is %q, but the uninstaller clears a different domain.\n"+
+			"Preferences it misses outlive the app and suppress the first-run popover.", want)
+	}
+}

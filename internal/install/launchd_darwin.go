@@ -267,6 +267,13 @@ func waitUntilUnloaded(serviceTarget string, privileged bool) {
 }
 
 // Uninstall removes everything BuildPlan creates.
+// uiPreferenceDomain is the menu bar app's UserDefaults suite.
+//
+// Duplicated from the app's bundle identifier because Go cannot read Swift's,
+// and pinned by TestUninstallClearsTheAppsPreferences so the two cannot drift
+// apart silently.
+const uiPreferenceDomain = "glass.goguma.ui"
+
 func Uninstall(l paths.Layout, keepState bool) []error {
 	var errs []error
 
@@ -291,6 +298,20 @@ func Uninstall(l paths.Layout, keepState bool) []error {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, fmt.Errorf("removing %s: %w", path, err))
 		}
+	}
+
+	// The menu bar app's own preferences.
+	//
+	// Not part of StateDir, so `--purge` never reached them, and they outlive
+	// the app being dragged to the Trash. One of them is
+	// `goguma.hasPresentedFirstRun`, which is what stops the popover
+	// introducing itself: leaving it set means a fresh install on a machine
+	// that once had goguma opens to nothing at all and the person is left with
+	// an icon and no reason to click it. Removed on any uninstall, not only
+	// --purge, because it is not state anybody wants kept.
+	if err := exec.Command("defaults", "delete", uiPreferenceDomain).Run(); err != nil {
+		// Nothing to delete is the ordinary case, and not worth reporting.
+		_ = err
 	}
 
 	for _, path := range []string{l.HelperPlist(), l.HelperBinary} {
