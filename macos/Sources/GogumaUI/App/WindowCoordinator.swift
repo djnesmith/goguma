@@ -375,12 +375,16 @@ enum MainPage {
     var sizesItsOwnHeight: Bool {
         switch self {
         case .jobs: false
-        // Settings measured itself while it was one column of every setting
-        // goguma has, where the height genuinely depended on whether Advanced
-        // was open. It is tabbed now and has a fixed height, so the second
-        // layout pass this describes is gone, and with it the pause before the
-        // pane appeared and the jump once it had.
-        case .settings: false
+        // Back to measuring, now that measuring is cheap.
+        //
+        // A fixed height has to fit the tallest tab, which left every shorter
+        // one with a band of dead surface under the status bar: about 100pt of
+        // nothing below "Connected" on the tab the pane opens on. The double
+        // layout this describes was expensive when the pane was 1266pt of every
+        // setting at once. A tab is a few hundred points and measures in
+        // nothing, so the pane can fit its content again and each tab gets the
+        // window it actually needs.
+        case .settings: true
         }
     }
 }

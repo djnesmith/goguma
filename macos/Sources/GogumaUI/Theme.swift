@@ -106,7 +106,16 @@ enum Theme {
         /// Alias for `divider`, kept so call sites do not churn.
         static let separator = divider
         /// Fill behind a raised panel. Used sparingly; hairlines are preferred.
-        static let cardFill = adaptive(light: 0xFFFFFF, dark: 0x1D242A)
+        /// Cards, panels and the selected tab.
+        ///
+        /// Tinted, not white. Pure white on the lavender surface reads as a
+        /// hole punched in the page rather than as a panel resting on it: the
+        /// two are far enough apart in lightness to look like different
+        /// materials, and the white wins every time, which is why the "next
+        /// wake" row drew the eye before the thing it was reporting did. This
+        /// sits a step above the surface in the same hue, which is what makes
+        /// it read as the same page.
+        static let cardFill = adaptive(light: 0xEDE6F4, dark: 0x1D242A)
 
         // MARK: State roles
         //

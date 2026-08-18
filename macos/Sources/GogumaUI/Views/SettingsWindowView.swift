@@ -85,9 +85,12 @@ struct SettingsWindowView: View {
                 // background and its own scroll view, so the pane looked like a
                 // different application from every other window, and a settings
                 // list short enough to fit scrolled anyway. Laying it out
-                // directly keeps the arctic surface and makes the height
-                // honest: if it ever stops fitting, that is a signal there are
-                // too many settings, not a reason to add a scrollbar.
+                // directly keeps the surface goguma uses everywhere else. The
+                // note here used to say that a pane which stopped fitting meant
+                // there were too many settings rather than too few scrollbars.
+                // It stopped fitting, at 1266pt against a 1000pt laptop, and
+                // both readings were wrong: the settings are fine, showing all
+                // of them at once was not. Hence the tabs.
                 // One `Grid` for the whole pane, not a stack per section.
                 //
                 // Mac settings put labels in a right-aligned column against a
@@ -106,7 +109,11 @@ struct SettingsWindowView: View {
                 Grid(
                     alignment: .leadingFirstTextBaseline,
                     horizontalSpacing: Theme.Space.sm,
-                    verticalSpacing: Theme.Space.xs
+                    // sm, not xs. Four points is right between two lines of one control,
+                    // and wrong for a column of separate decisions: three checkboxes at
+                    // that spacing read as one block of text with boxes in it rather than
+                    // as three things you can each answer.
+                    verticalSpacing: Theme.Space.sm
                 ) {
                     switch tab {
                     case .timing: timingSection
@@ -170,7 +177,7 @@ struct SettingsWindowView: View {
         // content means the pane fits either state exactly, and opening the
         // disclosure grows the window rather than revealing space that was
         // always there.
-        // No longer measures itself; see MainPage.sizesItsOwnHeight.
+        .modifier(FitsWindowHeight())
         // Paint whatever height we are actually given, even if it exceeds the
         // content. The window is sized from the measurement above, so normally
         // the two agree, but when a host asks for more (the offscreen renderer
@@ -248,10 +255,18 @@ struct SettingsWindowView: View {
     ) -> some View {
         GridRow {
             VStack(alignment: .leading, spacing: Theme.Space.xxs) {
-                Text(title)
-                    .font(Theme.Typography.title)
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
+                // The heading is dropped when the tab above already carries it.
+                //
+                // "Timing" as a title directly under a tab labelled "Timing" is
+                // the same word twice in 40pt of vertical space, and it cost the
+                // pane a line of height on every tab to say nothing. The caption
+                // stays: that is the part which says what the group is for.
+                if title.lowercased() != tab.title.lowercased() {
+                    Text(title)
+                        .font(Theme.Typography.title)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 if let caption {
                     Text(caption)
                         .font(Theme.Typography.caption)
