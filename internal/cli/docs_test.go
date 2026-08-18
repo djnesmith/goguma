@@ -43,6 +43,7 @@ var docFiles = []string{
 	"README.md",
 	"SECURITY.md",
 	"Docs/ARCHITECTURE.md",
+	"Docs/CODING-AGENTS.md",
 	"macos/README.md",
 }
 

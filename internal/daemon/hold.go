@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"strings"
 	"time"
 
 	"github.com/junnam586/goguma/internal/config"
@@ -109,7 +110,16 @@ func (h *hold) hardDeadline(cfg config.Config) time.Time {
 // It is the one hold with no registered job behind it, so every path that
 // treats a closed window as evidence about a job (run history, the ceiling
 // estimator, job statistics) has to skip it.
-func (h *hold) manual() bool { return h.job.ID == model.KeepAwakeJobID }
+//
+// `goguma run` holds count as manual for the same reasons. The command's
+// runtime is a fact about whatever the user chose to wrap, not about a
+// registered job, and there is no job for it to be evidence about: nothing
+// with a run id is in jobs.json. Treating them as manual is also what keeps
+// them out of armSleepBack, which is correct twice over, because a wrapped
+// command is user-initiated rather than something goguma woke the machine for.
+func (h *hold) manual() bool {
+	return h.job.ID == model.KeepAwakeJobID || strings.HasPrefix(h.job.ID, model.RunHoldPrefix)
+}
 
 // view converts to the wire representation.
 func (h *hold) view() model.Hold {

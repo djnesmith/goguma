@@ -47,6 +47,18 @@ const (
 	OpMarkStart Op = "mark.start"
 	OpMarkEnd   Op = "mark.end"
 
+	// `goguma run` -> daemon. A command wrapped by the CLI, holding sleep off
+	// for exactly as long as it runs.
+	//
+	// Three ops rather than two because the hold is leased. If the wrapper is
+	// killed outright it never gets to send run.end, and a hold nobody can
+	// close is the one failure the safety chapter exists to prevent. So the
+	// hold expires on its own unless renewed, and the wrapper renews it while
+	// the command is alive. See internal/daemon/runhold.go.
+	OpRunStart Op = "run.start"
+	OpRunRenew Op = "run.renew"
+	OpRunEnd   Op = "run.end"
+
 	// Daemon -> helper. Deliberately tiny: the helper holds no policy, so
 	// these are the entire privileged surface of the product.
 	OpHelperSetSleepBlocked Op = "helper.set_sleep_blocked"
@@ -206,6 +218,44 @@ type KeepAwakeResp struct {
 	// adjusted, so the caller can say so rather than appearing to ignore what
 	// the user typed.
 	Clamped bool `json:"clamped,omitempty"`
+}
+
+// RunStartReq opens an ephemeral hold for a command the CLI is wrapping.
+//
+// Label is what the hold is called in `goguma status` and the event log. It is
+// display only: the daemon assigns the id, so a caller cannot pick one that
+// collides with another run or with a registered job.
+type RunStartReq struct {
+	Label string `json:"label"`
+}
+
+// RunStartResp carries the new hold's id and its lease.
+//
+// Lease is how long the hold survives with no renewal, and is chosen by the
+// daemon rather than the caller: it is a safety bound, and a client that could
+// set it could set it to a week.
+type RunStartResp struct {
+	ID    string         `json:"id"`
+	Lease model.Duration `json:"lease"`
+}
+
+// RunRenewReq extends one run hold's lease from now.
+type RunRenewReq struct {
+	ID string `json:"id"`
+}
+
+// RunRenewResp reports whether the hold was still open to renew. False means
+// it had already lapsed or been released, which the wrapper reports rather
+// than silently continuing to believe it is holding.
+type RunRenewResp struct {
+	Held bool `json:"held"`
+}
+
+// RunEndReq closes a run hold. ExitCode is recorded in the event log only; a
+// run hold is not a job execution and produces no run history.
+type RunEndReq struct {
+	ID       string `json:"id"`
+	ExitCode *int   `json:"exit_code,omitempty"`
 }
 
 // MatchTestReq asks the daemon to evaluate a pattern against the live process

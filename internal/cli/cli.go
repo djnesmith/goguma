@@ -73,6 +73,7 @@ func init() {
 	register(cmdSync)
 	register(cmdTestMatch)
 	register(cmdConfig)
+	register(cmdRun)
 	register(cmdAwake)
 	register(cmdSkipNext)
 	register(cmdSleepNow)
@@ -130,6 +131,12 @@ func Main(args []string) int {
 		// not be reported as "goguma: flag: help requested" with a exit code of 1.
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
+		}
+		// `goguma run` wraps somebody else's command, and its exit status is
+		// that command's. Flattening it to 1 would break anything checking for
+		// a particular code, and would report a failure goguma did not have.
+		if code, ok := ExitCode(err); ok {
+			return code
 		}
 		render.Errorf("%v", err)
 		return 1
@@ -240,7 +247,7 @@ func helpGroups() []helpGroup {
 		{"getting started", []string{"install", "import", "add", "sync", "scheduler"}},
 		{"everyday", []string{"status", "list", "history"}},
 		{"managing jobs", []string{"edit", "group", "remove", "enable", "disable", "test-match"}},
-		{"control", []string{"awake", "skip-next", "sleep-now", "pause", "resume"}},
+		{"control", []string{"run", "awake", "skip-next", "sleep-now", "pause", "resume"}},
 		{"maintenance", []string{"config", "doctor", "uninstall", "version"}},
 	}
 }

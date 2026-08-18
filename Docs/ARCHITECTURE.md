@@ -307,6 +307,42 @@ minutes past fire time. A machine that has just woken from deep sleep can take
 tens of seconds to run cron, and a job wrongly declared missing produces a loud
 warning about a match pattern that is actually fine.
 
+### Wrapped commands: `goguma run`
+
+Some work has no fire time and no schedule. A coding agent runs for as long as
+it runs; a long build takes what it takes. `goguma run -- <command>` holds sleep
+off for exactly as long as the command does, then releases.
+
+It exists because such work cannot be watched from outside. An agent waiting on
+a model response is a process blocked on a socket, and looks identical to one
+doing nothing: measured on one machine, four agent processes used 0.32s, 0.25s,
+0.50s and 0.05s of CPU over ten wall seconds, and the busiest figure belonged to
+an idle session while the one actively working used less. The work is not
+happening locally, so there is nothing local to observe. The command therefore
+announces itself, exactly as `goguma-mark` does for a scheduled job.
+
+Each run gets its own entry in the hold map, under an id from
+`model.RunHoldPrefix`, rather than sharing the single manual keep-awake slot.
+Two terminals can each be running something, and the second must not release the
+first's hold by starting; the machine stays awake until the last finishes.
+
+**The hold is leased, and that is the whole safety design.** The wrapper sends
+`run.end` when the command exits, but a wrapper that is `SIGKILL`ed, or whose
+machine loses power, never gets to. A hold with nothing left able to close it is
+the failure §7 exists to prevent. So the hold expires by default after 90
+seconds and survives only while something keeps renewing it; the wrapper renews
+at a third of that, so two consecutive failures still leave a live command held.
+A hold is also capped at 12 hours however often it is renewed, which covers the
+other case: a live wrapper attached to something that will never finish.
+
+Run holds count as `manual()`, which is the single gate that keeps them out of
+run history, the ceiling estimator, per-job statistics, and sleep-back. A
+wrapped command's runtime is a fact about whatever the user chose to wrap rather
+than evidence about any registered job, and there is no job for it to be
+evidence about. Keeping them out of sleep-back is right for a second reason: a
+wrapped command is user-initiated, so finishing one is never a reason to put the
+machine to sleep.
+
 ---
 
 ## 6. Duration estimation
@@ -534,6 +570,12 @@ inside JSON strings is a class of bug worth designing out. Frames are capped at
 
 `protocol` is checked on both sides; a mismatch produces "client speaks vN,
 this daemon speaks vM" rather than a misrendered screen.
+
+New ops are added without bumping `protocol`, which is reserved for changes that
+break an existing shape. An older daemon meeting `run.start` answers that it
+does not know the op, and `goguma run` reports that and runs the command anyway
+rather than refusing to run somebody's build because a background service is out
+of date.
 
 **Authorization comes from the kernel, never from the wire.** The helper reads
 the peer's effective uid via `LOCAL_PEERCRED` (macOS) or `SO_PEERCRED` (Linux)

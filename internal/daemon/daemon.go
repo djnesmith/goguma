@@ -87,6 +87,12 @@ type Daemon struct {
 	sleepBackJob string
 	lastState    power.State
 
+	// runSeq numbers `goguma run` holds so two concurrent wrapped commands get
+	// separate entries in the hold map rather than one releasing the other.
+	// Guarded by mu. Not persisted: no hold survives a restart, so a counter
+	// that restarts with the daemon can never collide with a live one.
+	runSeq uint64
+
 	// advisory is the last verified notice feed, or nil when none has been
 	// fetched, this build has no key compiled in, or the user turned it off.
 	advisory *advisory.Feed

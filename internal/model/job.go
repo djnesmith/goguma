@@ -136,6 +136,9 @@ func (j *Job) Validate() error {
 	if j.ID == KeepAwakeJobID {
 		return fmt.Errorf("job %q uses %q, which is reserved for the manual keep-awake hold", j.Name, KeepAwakeJobID)
 	}
+	if strings.HasPrefix(j.ID, RunHoldPrefix) {
+		return fmt.Errorf("job %q starts with %q, which is reserved for `goguma run` holds", j.Name, RunHoldPrefix)
+	}
 	if strings.TrimSpace(j.Schedule) == "" {
 		return fmt.Errorf("job %q has no schedule", j.Name)
 	}
@@ -239,6 +242,19 @@ func (j *Job) Location() *time.Location {
 // job can collide with the manual hold. Validate refuses it outright for the
 // one path that bypasses Slug, a hand-written jobs.json.
 const KeepAwakeJobID = "__keep_awake__"
+
+// RunHoldPrefix begins the reserved ids of `goguma run` holds, one per wrapped
+// command.
+//
+// A prefix rather than a single id, because unlike the manual keep-awake window
+// these are not mutually exclusive: two terminals can each be running an agent,
+// and the second must not release the first's hold by starting. Each gets its
+// own entry, and the machine stays awake until the last of them finishes.
+//
+// It shares the __name__ shape, and the reasoning, with KeepAwakeJobID: Slug
+// trims leading underscores, so no name a user can type reaches this namespace.
+// The colon is a second guard, being a character Slug replaces outright.
+const RunHoldPrefix = "__run__:"
 
 // Slug converts a human name into a filesystem- and IPC-safe id.
 //

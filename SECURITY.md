@@ -108,6 +108,18 @@ The safety cutouts sit on top of that: holds are released above 80°C or below
 10% battery, and a job that hangs is bounded by a limit learned from its own
 previous runs.
 
+**A wrapped command cannot strand a hold either.** `goguma run -- <command>`
+holds sleep off for as long as your command runs, which means the thing that
+would release it is a process that can be killed. So the hold is leased rather
+than trusted: it expires after 90 seconds unless something keeps renewing it,
+and the wrapper renews while the command is alive. Kill the wrapper, pull the
+power, and the hold lapses on its own instead of waiting for someone to notice.
+It is also capped at 12 hours however long the command runs, and the cutouts
+above apply to it exactly as they apply to a job's. The command itself runs as
+you, with no shell in between, and nothing about it reaches the privileged
+helper; the surface above is unchanged. See
+[`internal/daemon/runhold.go`](internal/daemon/runhold.go).
+
 ## What it reads
 
 To know when to wake, goguma reads what is already scheduled:

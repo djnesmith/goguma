@@ -180,6 +180,28 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 		}
 		return d.testMatch(ctx, req.Pattern), nil
 
+	case ipc.OpRunStart:
+		var req ipc.RunStartReq
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, err
+		}
+		return d.StartRun(req.Label, time.Now())
+
+	case ipc.OpRunRenew:
+		var req ipc.RunRenewReq
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, err
+		}
+		return d.RenewRun(req.ID, time.Now()), nil
+
+	case ipc.OpRunEnd:
+		var req ipc.RunEndReq
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, err
+		}
+		d.EndRun(req.ID, req.ExitCode, time.Now())
+		return nil, nil
+
 	case ipc.OpMarkStart:
 		var req ipc.MarkStartReq
 		if err := json.Unmarshal(payload, &req); err != nil {
