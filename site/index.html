@@ -1736,7 +1736,7 @@ goguma install">Copy</button>
 <span class="c">  → holding sleep off while claude runs</span><br>
 <span class="c">  → released, 41m 12s</span></div>
   </div>
-  <p class="note rise" style="margin-top:22px">Inside an editor there is no command to wrap, so the editor says so instead. <a href="https://github.com/junnam586/goguma/blob/main/Docs/CODING-AGENTS.md">Claude Code, Cursor, Copilot and Codex</a>.</p>
+  <p class="note rise" style="margin-top:22px">Inside an editor there is no command to wrap, so the editor says so instead &mdash; set up on install for <a href="https://github.com/junnam586/goguma/blob/main/Docs/CODING-AGENTS.md">Claude Code, Codex and Cursor</a>.</p>
   </div>
 </div></section>
 
@@ -1757,9 +1757,10 @@ goguma install">Copy</button>
     <details><summary>Isn't this just <code>caffeinate</code>?</summary>
       <div class="ans"><p>No. <code>caffeinate</code> stops a Mac sleeping, so you have to leave it running all night for a 3am job. goguma lets it sleep and wakes it at 2:58.</p>
       <p>It also can't hold a closed lid awake. <code>caffeinate</code> blocks idle sleep, and shutting the lid isn't idle sleep, so it stops the moment you close the laptop. That is the case an agent or a long build needs most.</p></div></details>
-    <details><summary>Can I keep a coding agent running with the lid shut?</summary>
-      <div class="ans"><p>Yes. Wrap it and sleep is held off for exactly as long as it runs, then released: <code>goguma run -- claude -p "..."</code>. Its output and exit status pass straight through, so nothing else changes.</p>
-      <p>An agent inside an editor gives you no command to wrap, and it can't be recognised from outside either: the process is there whether or not it is working, and CPU doesn't separate the two, because an agent waiting on a model is a process waiting on a socket. So the editor reports it instead, through a hook that <a href="https://github.com/junnam586/goguma/blob/main/Docs/CODING-AGENTS.md">Claude Code, Cursor, Copilot and Codex</a> all support.</p></div></details>
+        <details><summary>Can I keep a coding agent running with the lid shut?</summary>
+      <div class="ans"><p>Yes, and it is set up for you. Installing goguma configures Claude Code, Codex and Cursor to say when they are working, so the Mac stays awake until they finish and sleeps once they do. <code>goguma hooks</code> shows what is in place; <code>goguma hooks remove</code> undoes it.</p>
+      <p>It stops when the agent stops, not on a timer, and two editors open hold separately so the one that finishes first doesn't sleep the machine under the other. For anything you start yourself, wrap it: <code>goguma run -- claude -p "..."</code>.</p>
+      <p>This is needed because an agent can't be recognised from outside: its process is there whether or not it's working, and processor use doesn't separate the two, because an agent waiting on a model is a process waiting on a socket.</p></div></details>
     <details><summary>Why not just <code>sudo pmset -a disablesleep 1</code>?</summary>
       <div class="ans"><p>That is the mechanism goguma uses, and for one run you are sitting next to, it is enough.</p>
       <p>It is a global setting that outlives the process that set it, and logout, and reboot. Forget to clear it and the Mac never sleeps again. goguma guarantees the other half: released when the command exits, when the background service dies, at 10% battery, and at 80&deg;C.</p></div></details>
