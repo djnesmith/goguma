@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"github.com/junnam586/goguma/internal/agenthooks"
 	"os"
 	"path/filepath"
 	"strings"
@@ -369,6 +370,12 @@ be reconstructed, so throwing it away is opt-in.
 			}
 			r.Printf("  %s %s%s\n", r.Muted("·"), a, marker)
 		}
+		for _, h := range agenthooks.Harnesses {
+			if h.Present() && agenthooks.Inspect(h, gogumaBinDir()).Installed {
+				r.Printf("  %s %s %s\n", r.Muted("·"), shortenHome(h.Path()),
+					r.Muted("(goguma's line only)"))
+			}
+		}
 		if keepState {
 			r.Printf("  %s %s %s\n", r.Muted("·"), l.StateDir, r.Good("(kept)"))
 		} else {
@@ -394,6 +401,16 @@ be reconstructed, so throwing it away is opt-in.
 		// already gone. Best-effort: a daemon that is not running has
 		// nothing registered to cancel through it.
 		_ = callDaemon(ctx, ipc.OpPause, nil, nil)
+
+		// Take goguma's line back out of every agent it was added to, before
+		// the binary it names stops existing.
+		//
+		// Left behind, that line is a command that cannot run, fired on every
+		// prompt and every tool call of an agent that has nothing to do with
+		// goguma any more. Uninstalling a tool must not leave the tools around
+		// it worse off, and this is the only thing goguma writes that lives
+		// outside its own directories.
+		removeAgentHooks(ctx)
 
 		errs := install.Uninstall(l, keepState)
 		for _, e := range errs {
@@ -452,4 +469,30 @@ func reportHelperSignature(r *render.Renderer) error {
 		r.Printf("  %s %s\n", r.Good(r.Sym().OK), r.Muted("the helper is "+desc))
 	}
 	return nil
+}
+
+// removeAgentHooks strips goguma's hook from every agent that has it.
+//
+// Best effort and quiet about nothing to do: an uninstall should not fail
+// because somebody else's config file is read-only, and most machines have no
+// coding agent on them at all.
+func removeAgentHooks(ctx *Context) {
+	r := ctx.Out
+	binDir := gogumaBinDir()
+	for _, h := range agenthooks.Harnesses {
+		if !h.Present() || !agenthooks.Inspect(h, binDir).Installed {
+			continue
+		}
+		doc, err := agenthooks.ReadConfig(h.Path())
+		if err != nil {
+			r.Problem(fmt.Sprintf("couldn't read %s to remove goguma's hook", shortenHome(h.Path())), err.Error())
+			continue
+		}
+		if _, err := agenthooks.WriteConfig(h.Path(), agenthooks.Apply(doc, h, binDir, true)); err != nil {
+			r.Problem(fmt.Sprintf("couldn't remove goguma's hook from %s", shortenHome(h.Path())), err.Error())
+			continue
+		}
+		r.Printf("%s %s\n", r.Good(r.Sym().OK),
+			r.Muted("removed goguma's line from "+h.Name))
+	}
 }

@@ -253,3 +253,47 @@ func containsCmd(cmds []string, want string) bool {
 	}
 	return false
 }
+
+// TestRemovingLeavesNoCommandPointingAtAMissingBinary is the uninstall case.
+//
+// goguma's line names an absolute path to a binary that uninstalling deletes.
+// Left behind, it is a command that cannot run, fired on every prompt and every
+// tool call of an agent which has nothing to do with goguma any more. A tool
+// that leaves the tools around it worse off than it found them is a tool people
+// are right not to try.
+func TestRemovingLeavesNoCommandPointingAtAMissingBinary(t *testing.T) {
+	for _, h := range Harnesses {
+		t.Run(h.ID, func(t *testing.T) {
+			installed := Apply(map[string]any{}, h, "/opt/bin", false)
+			if len(CommandsIn(installed, h)) == 0 {
+				t.Fatal("nothing was installed to remove")
+			}
+			after := Apply(installed, h, "/opt/bin", true)
+			for _, c := range CommandsIn(after, h) {
+				if strings.Contains(c, Marker) {
+					t.Errorf("a goguma command survived removal: %q", c)
+				}
+				if strings.Contains(c, "/opt/bin") {
+					t.Errorf("a command still names goguma's install directory: %q", c)
+				}
+			}
+		})
+	}
+}
+
+// TestRemovingWorksEvenIfGogumaMovedSinceInstalling.
+//
+// The entry carries whatever path goguma had when it was written. Somebody who
+// installed with Homebrew, moved to the app, and then uninstalled would
+// otherwise leave the first one behind for ever, because removal would be
+// looking for a command naming the second.
+func TestRemovingWorksEvenIfGogumaMovedSinceInstalling(t *testing.T) {
+	h := claudeHarness(t)
+	old := Apply(map[string]any{}, h, "/usr/local/bin", false)
+	after := Apply(old, h, "/Users/someone/.local/bin", true)
+	for _, c := range CommandsIn(after, h) {
+		if strings.Contains(c, Marker) {
+			t.Errorf("an entry from the old location survived: %q", c)
+		}
+	}
+}
