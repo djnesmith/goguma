@@ -27,6 +27,45 @@ jobs:
       - name: test
         run: go test ./... -count=1
 
+      # The certificate is imported here as well as in the app job below, and
+      # deliberately not factored out: the two run on separate runners, so each
+      # needs its own keychain and neither can borrow the other's. The steps are
+      # identical on purpose, so a change to one is obviously owed to the other.
+      - name: check signing credentials
+        id: creds
+        env:
+          CERT: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+        run: |
+          if [ -z "$CERT" ]; then
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::MACOS_CERTIFICATE_P12 is not set, so the archives"
+            echo "::warning::will be ad-hoc signed and 'goguma install' will not"
+            echo "::warning::be able to name who signed the helper."
+          else
+            echo "have=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: import the Developer ID certificate
+        if: steps.creds.outputs.have == 'true'
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$CERT_P12" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security import /tmp/cert.p12 -k build.keychain -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          # Without this, codesign blocks on a UI prompt that nothing can answer
+          # and the job hangs until it times out.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          rm -f /tmp/cert.p12
+          security find-identity -v -p codesigning build.keychain
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
@@ -44,6 +83,10 @@ jobs:
           # cannot break a build. The private half signs the feed and must
           # never be here.
           GOGUMA_ADVISORY_PUBKEY: ${{ secrets.GOGUMA_ADVISORY_PUBKEY }}
+          # Read by macos/scripts/sign-binary.sh, the post-build hook that signs
+          # each darwin binary before it is archived. Unset means ad-hoc, which
+          # is what every build did before this existed.
+          SIGN_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
 
   # The download: a signed, notarized, stapled disk image containing the menu
   # bar app, with the command line tools bundled inside it.

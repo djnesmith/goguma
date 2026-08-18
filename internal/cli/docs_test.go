@@ -435,3 +435,57 @@ func TestTheTapPushUsesItsOwnToken(t *testing.T) {
 		t.Error("the cask repository has no token: field")
 	}
 }
+
+// Every shipped binary is Developer ID signed, and the release can say so.
+//
+// v0.1.0 shipped four ad-hoc signed binaries, because .goreleaser.yaml had no
+// signing step and only the app bundle was ever signed. `codesign --verify
+// --strict` passed on all four, which is the trap: an ad-hoc signature is a
+// real signature, so the check that was supposed to catch this reported success
+// with no identity behind it.
+//
+// What that cost is specific. `goguma install` runs codesign against the helper
+// before copying it in as root and prints who signed it, and SECURITY.md offers
+// that line as the one part of the output a tampered copy could not produce.
+// For anyone installing from an archive it printed nothing worth reading, so
+// the claim held only for people who took the app.
+//
+// This counts rather than reads, because the regression is a fifth binary added
+// without a hook, and a count catches that where an inspection of the four we
+// have today would not.
+func TestEveryShippedBinaryIsSignedAtRelease(t *testing.T) {
+	root := repoRoot(t)
+	rel := readDoc(t, root, ".goreleaser.yaml")
+
+	builds := strings.Count(rel, "\n  - id: ")
+	hooks := strings.Count(rel, "hooks: &sign_darwin") + strings.Count(rel, "hooks: *sign_darwin")
+	if builds == 0 {
+		t.Fatal(".goreleaser.yaml declares no builds, so this test is not reading it")
+	}
+	if hooks != builds {
+		t.Errorf("%d builds but %d signing hooks: every build must sign what it produces", builds, hooks)
+	}
+
+	// A hook goreleaser cannot execute fails the release at the first binary,
+	// which is better than shipping unsigned, but only just.
+	script := filepath.Join(root, "macos", "scripts", "sign-binary.sh")
+	fi, err := os.Stat(script)
+	if err != nil {
+		t.Fatalf("the signing hook named by .goreleaser.yaml is missing: %v", err)
+	}
+	if fi.Mode()&0o111 == 0 {
+		t.Errorf("%s is not executable, so goreleaser cannot run it", script)
+	}
+
+	// The script exits cleanly when it has no identity, so that nobody's fork
+	// is blocked by a certificate they cannot have. The cost of that kindness is
+	// that a workflow which forgets to pass one produces ad-hoc archives and
+	// nothing anywhere fails. This is the thing that fails.
+	wf := readDoc(t, root, ".github/workflows/release.yml")
+	if !strings.Contains(wf, "SIGN_ID:") {
+		t.Error("release.yml never sets SIGN_ID, so the signing hook would quietly no-op")
+	}
+	if !strings.Contains(wf, "MACOS_CERTIFICATE_P12") {
+		t.Error("release.yml never imports a certificate into the archive job")
+	}
+}
