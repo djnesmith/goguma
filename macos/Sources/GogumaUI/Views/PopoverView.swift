@@ -243,7 +243,7 @@ struct PopoverView: View {
         switch store.state {
         case .disconnected: "goguma isn't running"
         case .paused: "paused"
-        case .cutout: store.status?.cutout?.kind.label ?? "safety cutout"
+        case .cutout: store.status?.cutout?.kind.label ?? "let the Mac sleep"
         case .holding:
             if let hold = store.status?.primaryHold, hold.isManual {
                 // Not "holding for manual keep-awake"; the user asked for
@@ -351,16 +351,16 @@ struct PopoverView: View {
             // that does not exist and will never arrive.
             if hold.isManual {
                 guard let until = store.status?.keepAwakeUntil.meaningful else {
-                    return "You asked for this. Safety cutouts still apply."
+                    return "You asked for this. It still sleeps if the Mac gets hot or the battery runs low."
                 }
-                return "Until \(Format.clock(until)). Safety cutouts still apply."
+                return "Until \(Format.clock(until)). It still sleeps if the Mac gets hot or the battery runs low."
             }
             // A wrapped command is running by definition: goguma started it.
             // It is not waiting to appear, it was never going to be found in
             // the process table, and its deadline is a renewing lease rather
             // than a ceiling worth counting down.
             if hold.isWrappedCommand {
-                return "Until it finishes. Safety cutouts apply."
+                return "Until it finishes. Sleeps anyway if the Mac gets hot or the battery runs low."
             }
             var parts: [String] = []
             // Wake-only jobs are never observed, so "waiting for the job to
@@ -819,7 +819,7 @@ struct PopoverView: View {
             .disabled(store.isPerformingAction || store.connection.blocksContent)
             .help(
                 "Hold sleep off for a fixed time whether or not a job is running. "
-                    + "Safety cutouts still apply."
+                    + "It still sleeps if the Mac gets hot or the battery runs low."
             )
         }
     }

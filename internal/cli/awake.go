@@ -78,7 +78,7 @@ forgotten if the background service restarts, and it is never recorded as a job 
 			r.Printf("  %s\n", r.Muted(fmt.Sprintf("adjusted to the %s-%s range",
 				model.HumanDuration(daemon.MinKeepAwake), model.HumanDuration(daemon.MaxKeepAwake))))
 		}
-		r.Printf("  %s\n", r.Muted("safety cutouts still apply · release early with: goguma awake off"))
+		r.Printf("  %s\n", r.Muted("still sleeps if it gets hot or low on battery · release early with: goguma awake off"))
 		return nil
 	},
 }

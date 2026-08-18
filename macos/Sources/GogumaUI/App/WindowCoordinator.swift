@@ -183,8 +183,25 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     private func size(for page: MainPage) -> CGSize {
         switch page {
         case .jobs: jobsSize ?? Theme.Surface.jobsWindowSize
-        case .settings: Theme.Surface.settingsWindowSize
+        case .settings:
+            // Opened at the height this tab measured last time, so there is no
+            // band of empty surface for the frame or two before the pane
+            // corrects it. The constant is only ever the first-ever open.
+            CGSize(
+                width: Theme.Surface.settingsWindowSize.width,
+                height: settingsHeightForCurrentTab()
+            )
         }
+    }
+
+    /// The height to open Settings at: what its current tab measured last time,
+    /// or the constant if it has never been opened.
+    private func settingsHeightForCurrentTab() -> CGFloat {
+        let tab = UserDefaults.standard.string(forKey: "settings.tab") ?? "timing"
+        let stored = UserDefaults.standard.double(forKey: "settings.height.\(tab)")
+        // A stored zero means never measured, and anything implausible is not
+        // worth opening a window at.
+        return stored > 120 ? CGFloat(stored) : Theme.Surface.settingsWindowSize.height
     }
 
     /// One history window, retargeted rather than duplicated: opening history

@@ -218,7 +218,8 @@ has the detail.
 
 The hold is leased, so a wrapper that is killed outright cannot strand it: it
 lapses by itself rather than waiting for someone to notice. Nothing here is
-recorded as a job run, and every safety cutout below still applies.
+recorded as a job run, and the machine still sleeps if it overheats or the
+battery runs low, exactly as it does for a scheduled job.
 
 ## Safety
 

@@ -44,9 +44,6 @@ struct SettingsWindowView: View {
     /// once is usually coming back to it, and a disclosure that forgets makes
     /// them find it again every launch. It also makes the expanded pane
     /// renderable, which is how the layout crash below was reproduced.
-    // Advanced is its own tab now, so there is no collapsed state to
-    // return to and nothing gained by opening with its contents hidden.
-    @AppStorage("settings.showAdvanced") private var showAdvanced = true
 
     /// Which group of settings is on screen.
     ///
@@ -161,7 +158,7 @@ struct SettingsWindowView: View {
                 // A collapsed disclosure is its own bottom margin: it carries
                 // the padding that makes it a hit target, and adding a full
                 // pane margin under that is what made the gap conspicuous.
-                .padding(.bottom, showAdvanced ? Theme.Space.md : Theme.Space.xs)
+                .padding(.bottom, Theme.Space.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -368,10 +365,10 @@ struct SettingsWindowView: View {
                         + "whether or not it is working, so it has to say so. This adds one "
                         + "line to Claude Code, Codex and Cursor's own settings, beside "
                         + "whatever is already there, and the machine stays awake until the "
-                        + "agent stops rather than for a fixed time. The limits below still "
-                        + "apply: it sleeps anyway if the Mac gets too hot or the battery "
-                        + "runs low. Turning this off takes that line back out, and an agent "
-                        + "stops when the lid closes."
+                        + "agent stops rather than for a fixed time. The limits on the "
+                        + "Safety tab still apply: it sleeps anyway if the Mac gets too hot "
+                        + "or the battery runs low. Turning this off takes that line back "
+                        + "out, and an agent stops when the lid closes."
                 )
             }
         }
@@ -620,7 +617,7 @@ struct SettingsWindowView: View {
     }
 
     private var alertsSection: some View {
-        settingsSection("Alerts", nil) {
+        settingsSection("Alerts", "What goguma tells you about, and how.") {
             unlabelledRow {
                 Toggle(
                     "Tell me when a job gets missed",
@@ -664,46 +661,23 @@ struct SettingsWindowView: View {
     /// behind a disclosure and says what it is for.
     @ViewBuilder
     private var advancedSection: some View {
-        // A full-width row, not a `DisclosureGroup`.
+        // A caption, like every other tab has.
         //
-        // `DisclosureGroup` only takes a click on its chevron and the few
-        // characters of its label, about 70pt of target in a 500pt-wide pane,
-        // and the chevron itself is 8pt. Missing it does nothing, so the
-        // control reads as broken rather than as missed. The whole row is the
-        // button now, which is what the popover's Jobs disclosure already does.
+        // This was a disclosure row, from when Advanced was the last section of
+        // one long column and had to be collapsible to keep the pane's height
+        // down. It is a tab now: there is nothing to collapse it out of, and a
+        // control that only ever hides the thing you navigated to is a control
+        // with no correct use.
         GridRow {
-            Button {
-                withAnimation(Theme.motion(reduced: reduceMotion)) { showAdvanced.toggle() }
-            } label: {
-                HStack(spacing: Theme.Space.xs) {
-                    Image(systemName: Theme.Icon.disclosure)
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.textTertiary)
-                        .rotationEffect(.degrees(showAdvanced ? 90 : 0))
-                    Text("Advanced")
-                        .font(Theme.Typography.rowLabel)
-                        .foregroundStyle(Theme.Colors.textPrimary)
-                    Spacer(minLength: 0)
-                }
-                // The row's whole width and a real height: a hit area that
-                // matches what the eye reads as the control.
-                //
-                // Padding rather than a minHeight. The grid aligns rows on the
-                // first text baseline, so a minHeight taller than the label
-                // hung entirely below it: 1.5pt above "Advanced" and 15 below,
-                // which collapsed is the last thing in the pane and read as a
-                // band of empty surface above the status bar.
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Theme.Space.sm)
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Advanced")
-            .accessibilityHint(showAdvanced ? "Collapses advanced settings" : "Expands advanced settings")
-            .gridCellColumns(2)
+            Text("Settings most people never need to change.")
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, Theme.Space.xxs)
+                .gridCellColumns(2)
         }
 
-        if showAdvanced {
+        Group {
             GridRow {
                 VStack(alignment: .leading, spacing: Theme.Space.xs) {
                     Text("Post problems to a URL")
@@ -878,7 +852,6 @@ struct SettingsWindowView: View {
         webhookText = config.webhookURL
         // A webhook that is already set should be visible rather than hidden
         // behind a collapsed disclosure, or it looks like it was lost.
-        if !config.webhookURL.isEmpty { showAdvanced = true }
         thermalCutout = Self.thermalRange.contains(config.thermalCutoutC)
             ? config.thermalCutoutC
             : Self.thermalRange.lowerBound
@@ -1066,6 +1039,26 @@ private struct FitsWindowHeight: ViewModifier {
             .background(WindowReader { window = $0 })
     }
 
+    /// Remembers what a tab measured, so the next open starts at that size.
+    ///
+    /// The measurement can only happen once the pane has been laid out, and by
+    /// then the window is on screen at whatever size it was opened with. A
+    /// constant that fits the tallest tab therefore showed a band of empty
+    /// surface under every shorter one for the frame or two before the resize
+    /// landed. Storing the real number means the second open of a tab, and
+    /// every one after it, starts at the height it is going to end at.
+    static func remember(_ height: CGFloat, forTab tab: String) {
+        UserDefaults.standard.set(Double(height), forKey: "settings.height.\(tab)")
+    }
+
+    /// The height a tab measured last time, if it ever has.
+    static func rememberedHeight(forTab tab: String) -> CGFloat? {
+        let h = UserDefaults.standard.double(forKey: "settings.height.\(tab)")
+        // A stored zero means "never measured", and anything implausible is
+        // not worth opening a window at.
+        return h > 120 ? CGFloat(h) : nil
+    }
+
     /// Resizes the window to fit the content, on the next runloop pass.
     ///
     /// Never synchronously. This is called from `onChange` of a
@@ -1081,6 +1074,9 @@ private struct FitsWindowHeight: ViewModifier {
     /// flag drops that echo rather than letting it settle over several frames.
     private func resize(to height: CGFloat) {
         guard let window, height > 0, !resizing else { return }
+        // Recorded even when no resize follows, because the value is wanted for
+        // the *next* open rather than for this one.
+        Self.remember(height, forTab: UserDefaults.standard.string(forKey: "settings.tab") ?? "timing")
         resizing = true
         DispatchQueue.main.async {
             defer { resizing = false }

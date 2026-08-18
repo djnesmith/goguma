@@ -285,15 +285,12 @@ final class StatusStore {
     /// is the battery-conscious part.
     func startPolling(immediately: Bool = true) {
         pollTask?.cancel()
-        let wasVisible = hasVisibleSurface
         pollTask = Task { [weak self] in
             if immediately {
                 await self?.refresh()
             }
             while !Task.isCancelled {
-                let interval = wasVisible
-                    ? Theme.Timing.activePollInterval
-                    : Theme.Timing.idlePollInterval
+                let interval = await self?.pollInterval ?? Theme.Timing.idlePollInterval
                 do {
                     try await Task.sleep(for: interval)
                 } catch {
@@ -303,6 +300,25 @@ final class StatusStore {
                 await self?.refresh()
             }
         }
+    }
+
+    /// How long to wait before the next poll.
+    ///
+    /// Read each time round rather than captured once, which was a bug of its
+    /// own: a loop started while nothing was on screen kept the idle interval
+    /// after a window opened, until something else restarted it.
+    ///
+    /// The middle case is why this exists. Thirty seconds is right for a
+    /// machine with nothing happening, and wrong for one that is holding sleep
+    /// off: opening the menu bar then showed state up to half a minute old, so
+    /// "holding for …" was missing at the moment of the click and appeared a
+    /// beat later when the refresh landed. While a hold is open the state is
+    /// both interesting and changing, and five seconds costs nothing on a
+    /// machine that is already awake because of it.
+    private var pollInterval: Duration {
+        if hasVisibleSurface { return Theme.Timing.activePollInterval }
+        if status?.holds.isEmpty == false { return Theme.Timing.holdingPollInterval }
+        return Theme.Timing.idlePollInterval
     }
 
     func stopPolling() {

@@ -752,6 +752,14 @@ enum Theme {
         /// Poll cadence while a popover or window is on screen.
         static let activePollInterval: Duration = .seconds(1)
         /// Cadence when only the menu bar item is visible.
+        /// While goguma is holding sleep off but nothing is on screen.
+        ///
+        /// Between the two: the machine is awake anyway, because that is what a
+        /// hold means, so the poll costs nothing it was not already spending.
+        /// At the idle interval the menu bar showed state up to thirty seconds
+        /// old at the moment it was clicked.
+        static let holdingPollInterval: Duration = .seconds(5)
+
         static let idlePollInterval: Duration = .seconds(30)
         /// Socket deadline for one request.
         static let socketTimeout: TimeInterval = 5
