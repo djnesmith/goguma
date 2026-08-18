@@ -311,6 +311,27 @@ struct SettingsWindowView: View {
                         + "has touched the keyboard for two minutes."
                 )
             }
+
+            // Beside "put it back to sleep afterwards", because both are about
+            // what goguma does with the machine when nobody asked it to.
+            unlabelledRow {
+                Toggle(
+                    "Keep coding agents running with the lid shut",
+                    isOn: Binding(
+                        get: { store.config?.agentHooks ?? true },
+                        set: { apply("agent_hooks", $0 ? "on" : "off") }
+                    )
+                )
+                .disabled(store.config == nil)
+                .help(
+                    "An agent cannot be recognised from outside: its process is there "
+                        + "whether or not it is working, so it has to say so. This adds one "
+                        + "line to Claude Code, Codex and Cursor's own settings, beside "
+                        + "whatever is already there, and the machine stays awake until the "
+                        + "agent stops rather than for a fixed time. Turning it off takes "
+                        + "that line back out."
+                )
+            }
         }
     }
 

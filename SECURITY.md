@@ -146,12 +146,17 @@ scan at all.
 Everything above is reading. Two things change files outside goguma's own state
 directory, and this is both of them.
 
-**Coding agent hooks.** `goguma hooks install` adds one command to the
-configuration of each coding agent it finds, so the agent reports when it is
-working and the machine stays awake until it stops. `goguma install` offers to
-do this and takes Enter for yes; answering no leaves every one of them alone.
-An install with no terminal to ask at, from a script or the app's own first run,
-goes ahead, and `goguma hooks remove` undoes it.
+**Coding agent hooks.** goguma adds one command to the configuration of each
+coding agent it finds, so the agent reports when it is working and the machine
+stays awake until it stops. This is on by default and is the one write on this
+page that is not asked about job by job, so it is worth being exact.
+
+It is a setting, `agent_hooks`, and the background service keeps every agent in
+line with it. Turning it off takes the configuration back out of every agent it
+was added to, rather than merely declining to add more; there is no state where
+the setting says one thing and your agents do another. `goguma config set
+agent_hooks off`, or the switch in the app's settings, and `goguma hooks` shows
+what is in place at any point.
 
 What goes in is a line calling `goguma agent-hook` on that agent's own
 prompt, tool-use and stop events, in `~/.claude/settings.json`,

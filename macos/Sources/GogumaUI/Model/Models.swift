@@ -1116,6 +1116,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
     var notifyOnMissedJob: Bool
     /// Whether goguma fetches its signed notice feed once a day.
     var advisoryChecks: Bool
+    var agentHooks: Bool
 
     /// Whether goguma puts the machine back to sleep after a wake it caused.
     ///
@@ -1155,6 +1156,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         webhookURL = ""
         notifyOnMissedJob = false
         advisoryChecks = false
+        agentHooks = true
         sleepAfterWake = true
         autoAdopt = nil
         autoAdoptInterval = .zero
@@ -1177,6 +1179,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         case webhookURL = "webhook_url"
         case notifyOnMissedJob = "notify_on_missed_job"
         case advisoryChecks = "advisory_checks"
+        case agentHooks = "agent_hooks"
         case sleepAfterWake = "sleep_after_wake"
         case autoAdopt = "auto_adopt"
         case autoAdoptInterval = "auto_adopt_interval"
@@ -1200,6 +1203,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         webhookURL = c.value(.webhookURL, "")
         notifyOnMissedJob = c.value(.notifyOnMissedJob, false)
         advisoryChecks = c.value(.advisoryChecks, false)
+        agentHooks = c.value(.agentHooks, true)
         sleepAfterWake = c.value(.sleepAfterWake, true)
         // `optional` yields nil for both absent and JSON null, and `.some([])`
         // for an empty array, exactly the distinction this field needs.

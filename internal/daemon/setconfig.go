@@ -102,6 +102,9 @@ var configSetters = map[string]func(*config.Config, string) error{
 	"advisory_checks": func(c *config.Config, v string) error {
 		return setBool(&c.AdvisoryChecks, v, "advisory_checks")
 	},
+	"agent_hooks": func(c *config.Config, v string) error {
+		return setBool(&c.AgentHooks, v, "agent_hooks")
+	},
 }
 
 // errUnadoptable explains why a source cannot be watched, listing the ones
@@ -155,6 +158,19 @@ func (d *Daemon) setConfig(req ipc.ConfigSetReq) (ipc.ConfigResp, error) {
 	d.mu.Unlock()
 
 	d.log.Info("configuration changed", "key", key, "value", req.Value)
+
+	// Applied here rather than only on the next start, so the toggle in the
+	// menu bar app does what it says the moment it is flipped. Off takes the
+	// configuration back out of every agent it was added to; there is no state
+	// where the setting says one thing and the agents do another.
+	if key == "agent_hooks" {
+		d.bg.Add(1)
+		go func() {
+			defer d.bg.Done()
+			d.reconcileAgentHooks(next)
+		}()
+	}
+
 	return ipc.ConfigResp{
 		Config:           next,
 		Warnings:         warnings,

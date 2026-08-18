@@ -172,6 +172,20 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 
+	// Coding agents, brought into line with the setting on every start.
+	//
+	// Off the critical path: this reads and possibly rewrites files belonging
+	// to other programs, and none of that should be able to delay the daemon
+	// answering its socket, still less stop it starting.
+	d.mu.RLock()
+	startCfg := d.cfg
+	d.mu.RUnlock()
+	d.bg.Add(1)
+	go func() {
+		defer d.bg.Done()
+		d.reconcileAgentHooks(startCfg)
+	}()
+
 	srv, err := ipc.Listen(
 		d.store.Layout().DaemonSocket(), 0o600, d.handle,
 		ipc.WithAuthz(ipc.AllowSelf()), ipc.WithLogger(d.log),

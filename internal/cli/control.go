@@ -135,6 +135,10 @@ Settings:
   sleep_after_wake         put the machine back to sleep after a job goguma
                            woke it for, when nobody is at the keyboard
                            (default on)
+  agent_hooks              keep coding agents reporting when they are working, so
+                           the machine stays awake until they stop. On by
+                           default. Turning it off takes the configuration back
+                           out of every agent it was added to
   advisory_checks          check getgoguma.com once a day for word of a bug or
                            a fix. Off for anyone who installed before it
                            existed. Does nothing in a build with no signing key
@@ -210,6 +214,7 @@ func configGet(ctx *Context, args []string) error {
 		{"use_wake_or_power_on", fmt.Sprintf("%t", c.UseWakeOrPowerOn)},
 		{"sleep_after_wake", fmt.Sprintf("%t", c.SleepAfterWake)},
 		{"advisory_checks", fmt.Sprintf("%t", c.AdvisoryChecks)},
+		{"agent_hooks", fmt.Sprintf("%t", c.AgentHooks)},
 		{"min_import_interval", c.MinImportInterval.String()},
 	})
 

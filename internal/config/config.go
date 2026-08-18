@@ -150,6 +150,21 @@ type Config struct {
 	// `goguma config set advisory_checks off` ends it permanently.
 	AdvisoryChecks bool `json:"advisory_checks"`
 
+	// AgentHooks keeps the coding agents on this machine configured to report
+	// when they are working, so sleep is held off while an agent runs and
+	// released when it stops.
+	//
+	// On by default and reconciled by the daemon rather than applied once at
+	// install: an agent installed next month gets set up without anyone having
+	// to remember, and turning this off takes the configuration back out rather
+	// than merely declining to add more.
+	//
+	// This is the only setting that writes to a file belonging to another
+	// program. What goes in is one command on that agent's own prompt, tool-use
+	// and stop events, beside whatever is already there, backed up first. See
+	// SECURITY.md and internal/agenthooks.
+	AgentHooks bool `json:"agent_hooks"`
+
 	// SleepAfterWake puts the machine back to sleep once goguma is done with a
 	// wake it caused itself.
 	//
@@ -193,6 +208,7 @@ func Default() Config {
 		AutoAdoptInterval:    model.Duration(2 * time.Minute),
 		MinImportInterval:    0,
 		AdvisoryChecks:       true,
+		AgentHooks:           true,
 		SleepAfterWake:       true,
 		EventLogMaxBytes:     10 << 20,
 	}

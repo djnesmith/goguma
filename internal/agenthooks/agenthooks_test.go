@@ -1,4 +1,4 @@
-package cli
+package agenthooks
 
 import (
 	"encoding/json"
@@ -9,26 +9,26 @@ import (
 	"testing"
 )
 
-func claudeHarness(t *testing.T) harness {
+func claudeHarness(t *testing.T) Harness {
 	t.Helper()
-	for _, h := range harnesses {
-		if h.id == "claude-code" {
+	for _, h := range Harnesses {
+		if h.ID == "claude-code" {
 			return h
 		}
 	}
-	t.Fatal("claude-code harness is gone")
-	return harness{}
+	t.Fatal("claude-code Harness is gone")
+	return Harness{}
 }
 
-func cursorHarness(t *testing.T) harness {
+func cursorHarness(t *testing.T) Harness {
 	t.Helper()
-	for _, h := range harnesses {
-		if h.id == "cursor" {
+	for _, h := range Harnesses {
+		if h.ID == "cursor" {
 			return h
 		}
 	}
-	t.Fatal("cursor harness is gone")
-	return harness{}
+	t.Fatal("cursor Harness is gone")
+	return Harness{}
 }
 
 func decode(t *testing.T, s string) map[string]any {
@@ -56,7 +56,7 @@ func TestInstallKeepsWhatWasAlreadyThere(t *testing.T) {
 		}
 	}`)
 
-	after := applyHooks(before, h, "/opt/bin", false)
+	after := Apply(before, h, "/opt/bin", false)
 
 	// Unrelated settings are untouched.
 	if after["model"] != "opus" {
@@ -66,7 +66,7 @@ func TestInstallKeepsWhatWasAlreadyThere(t *testing.T) {
 		t.Error("permissions were lost")
 	}
 
-	cmds := commandsIn(after, h)
+	cmds := CommandsIn(after, h)
 	for _, want := range []string{"my-indexer", "notify-me"} {
 		if !containsCmd(cmds, want) {
 			t.Errorf("the user's own hook %q was dropped", want)
@@ -100,17 +100,17 @@ func TestInstallingTwiceChangesNothingTheSecondTime(t *testing.T) {
 	h := claudeHarness(t)
 	doc := decode(t, `{"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "mine"}]}]}}`)
 
-	once := applyHooks(doc, h, "/opt/bin", false)
+	once := Apply(doc, h, "/opt/bin", false)
 	first, _ := json.Marshal(once)
-	twice := applyHooks(once, h, "/opt/bin", false)
+	twice := Apply(once, h, "/opt/bin", false)
 	second, _ := json.Marshal(twice)
 
 	if string(first) != string(second) {
 		t.Errorf("a second install changed the file again:\n first: %s\nsecond: %s", first, second)
 	}
 	n := 0
-	for _, c := range commandsIn(twice, h) {
-		if strings.Contains(c, hookMarker) {
+	for _, c := range CommandsIn(twice, h) {
+		if strings.Contains(c, Marker) {
 			n++
 		}
 	}
@@ -133,7 +133,7 @@ func TestRemoveLeavesTheFileAsItWasFound(t *testing.T) {
 	original := decode(t, src)
 	working := decode(t, src)
 
-	after := applyHooks(applyHooks(working, h, "/opt/bin", false), h, "/opt/bin", true)
+	after := Apply(Apply(working, h, "/opt/bin", false), h, "/opt/bin", true)
 	if !reflect.DeepEqual(original, after) {
 		a, _ := json.Marshal(original)
 		b, _ := json.Marshal(after)
@@ -147,19 +147,19 @@ func TestRemoveLeavesTheFileAsItWasFound(t *testing.T) {
 func TestRemoveDropsAnEventItAddedEntirely(t *testing.T) {
 	h := claudeHarness(t)
 	doc := map[string]any{}
-	after := applyHooks(applyHooks(doc, h, "/opt/bin", false), h, "/opt/bin", true)
+	after := Apply(Apply(doc, h, "/opt/bin", false), h, "/opt/bin", true)
 	if len(after) != 0 {
 		b, _ := json.Marshal(after)
 		t.Errorf("remove left something behind in an untouched file: %s", b)
 	}
 }
 
-// TestCursorGetsItsOwnShape. Two harnesses, two spellings of the same idea, and
+// TestCursorGetsItsOwnShape. Two Harnesses, two spellings of the same idea, and
 // writing one into the other's file produces a config the tool ignores in
 // silence, which is the worst way for this to fail.
 func TestCursorGetsItsOwnShape(t *testing.T) {
 	h := cursorHarness(t)
-	doc := applyHooks(map[string]any{}, h, "/opt/bin", false)
+	doc := Apply(map[string]any{}, h, "/opt/bin", false)
 
 	if doc["version"] != 1 {
 		t.Errorf("version = %v, want 1; Cursor requires it", doc["version"])
@@ -179,7 +179,7 @@ func TestCursorGetsItsOwnShape(t *testing.T) {
 // must not quietly downgrade the file.
 func TestAnExistingVersionIsNotOverwritten(t *testing.T) {
 	h := cursorHarness(t)
-	doc := applyHooks(map[string]any{"version": float64(2)}, h, "/opt/bin", false)
+	doc := Apply(map[string]any{"version": float64(2)}, h, "/opt/bin", false)
 	if doc["version"] != float64(2) {
 		t.Errorf("version = %v, want the file's own 2", doc["version"])
 	}
@@ -195,7 +195,7 @@ func TestUnparseableConfigIsRefusedRatherThanReplaced(t *testing.T) {
 	if err := os.WriteFile(path, broken, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readJSONFile(path); err == nil {
+	if _, err := ReadConfig(path); err == nil {
 		t.Fatal("a broken config was read as if it were fine")
 	}
 	got, _ := os.ReadFile(path)
@@ -211,7 +211,7 @@ func TestWriteKeepsABackup(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"model":"opus"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	backup, err := writeJSONFile(path, map[string]any{"model": "sonnet"})
+	backup, err := WriteConfig(path, map[string]any{"model": "sonnet"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,15 +228,15 @@ func TestWriteKeepsABackup(t *testing.T) {
 }
 
 // TestHookCommandsAreAbsolute. A hook runs with whatever environment its
-// harness provides, and that frequently has no ~/.local/bin on PATH. A bare
+// Harness provides, and that frequently has no ~/.local/bin on PATH. A bare
 // `goguma` there fails silently: no hold, no error, no clue anywhere.
 func TestHookCommandsAreAbsolute(t *testing.T) {
-	renew, stop := hookCommands("/opt/bin")
+	renew, stop := Commands("/opt/bin")
 	for _, c := range []string{renew, stop} {
 		if !strings.HasPrefix(c, "/") {
 			t.Errorf("hook command is not absolute: %q", c)
 		}
-		if !strings.Contains(c, hookMarker) {
+		if !strings.Contains(c, Marker) {
 			t.Errorf("hook command %q does not carry the marker that identifies it as goguma's", c)
 		}
 	}
@@ -252,22 +252,4 @@ func containsCmd(cmds []string, want string) bool {
 		}
 	}
 	return false
-}
-
-// TestJoinAnd reads as a sentence, since this goes into one.
-func TestJoinAnd(t *testing.T) {
-	cases := []struct {
-		in   []string
-		want string
-	}{
-		{nil, ""},
-		{[]string{"Claude Code"}, "Claude Code"},
-		{[]string{"Claude Code", "Cursor"}, "Claude Code and Cursor"},
-		{[]string{"Claude Code", "Codex CLI", "Cursor"}, "Claude Code, Codex CLI and Cursor"},
-	}
-	for _, c := range cases {
-		if got := joinAnd(c.in); got != c.want {
-			t.Errorf("joinAnd(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
 }

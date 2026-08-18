@@ -302,16 +302,12 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 		r.Printf("  %s\n", r.Muted("the background service picks it up within a minute"))
 	}
 
-	// Coding agents, offered rather than assumed.
+	// Coding agents are the daemon's job, not the installer's.
 	//
-	// This writes into a file belonging to another program, and every other
-	// write goguma makes is something the user said yes to first. Doing this
-	// one silently would make the promise on the security page conditional,
-	// which is worth more than the two seconds the question costs.
-	//
-	// It defaults to yes and takes Enter for an answer, so the seamless path is
-	// still the one you get by not thinking about it.
-	setUpAgentHooks(ctx)
+	// It reconciles them against the agent_hooks setting on every start, so an
+	// agent installed next month is set up without anyone remembering to, and
+	// the toggle in the app takes effect where it is flipped. Doing it here as
+	// well would only mean doing it twice.
 
 	// A link, printed once, at the end.
 	//
@@ -456,85 +452,4 @@ func reportHelperSignature(r *render.Renderer) error {
 		r.Printf("  %s %s\n", r.Good(r.Sym().OK), r.Muted("the helper is "+desc))
 	}
 	return nil
-}
-
-// setUpAgentHooks configures whatever coding agents are on this machine so they
-// report their own activity, and says what it changed.
-//
-// Silent when there are none, which is most machines: a paragraph about agents
-// nobody has installed is noise in the one place a user is most likely to
-// actually read the output.
-func setUpAgentHooks(ctx *Context) {
-	r := ctx.Out
-	binDir := gogumaBinDir()
-
-	var found []harness
-	for _, h := range harnesses {
-		if h.present() {
-			found = append(found, h)
-		}
-	}
-	if len(found) == 0 {
-		return
-	}
-
-	r.Blank()
-	names := make([]string, 0, len(found))
-	for _, h := range found {
-		names = append(names, h.name)
-	}
-	r.Printf("%s found %s on this machine.\n", r.Good(r.Sym().OK), joinAnd(names))
-	r.Printf("  %s\n", r.Muted("goguma can hold sleep off while they work, lid closed, "+
-		"and let go when they stop."))
-	r.Printf("  %s\n", r.Muted("it adds one line to each one's own config, keeps what is "+
-		"already there, and backs it up first."))
-
-	// A script gets the useful default rather than a hang. Install is run from
-	// setup scripts and from the app's own first-run, neither of which has a
-	// terminal to answer with, and both of which want the thing that was asked
-	// for. Anyone who disagrees has `goguma hooks remove`.
-	if interactivePossible() {
-		ans, err := ask(fmt.Sprintf("  Set them up? [%s/n]: ", r.Bold("Y")))
-		if err == nil {
-			switch strings.ToLower(strings.TrimSpace(ans)) {
-			case "n", "no":
-				r.Printf("  %s\n", r.Muted("left alone · set up later with 'goguma hooks install'"))
-				return
-			}
-		}
-	}
-
-	var done []string
-	for _, h := range found {
-		doc, err := readJSONFile(h.path())
-		if err != nil {
-			r.Printf("%s couldn't set up %s: %s\n", r.Warn(r.Sym().Warn), h.name, err)
-			continue
-		}
-		if _, err := writeJSONFile(h.path(), applyHooks(doc, h, binDir, false)); err != nil {
-			r.Printf("%s couldn't set up %s: %s\n", r.Warn(r.Sym().Warn), h.name, err)
-			continue
-		}
-		done = append(done, h.name)
-	}
-	if len(done) == 0 {
-		return
-	}
-	r.Printf("%s %s will keep this machine awake while they work\n",
-		r.Good(r.Sym().OK), joinAnd(done))
-	r.Printf("  %s\n", r.Muted("restart them to take effect · undo with 'goguma hooks remove'"))
-}
-
-// joinAnd lists names the way a sentence does.
-func joinAnd(names []string) string {
-	switch len(names) {
-	case 0:
-		return ""
-	case 1:
-		return names[0]
-	case 2:
-		return names[0] + " and " + names[1]
-	default:
-		return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
-	}
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"github.com/junnam586/goguma/internal/agenthooks"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,8 @@ var cmdHooks = &Command{
 	Name:    "hooks",
 	Summary: "keep the machine awake while a coding agent works",
 	Usage: `goguma hooks
-goguma hooks install [<harness>...]
-goguma hooks remove [<harness>...]
+goguma hooks install [<agenthooks.Harness>...]
+goguma hooks remove [<agenthooks.Harness>...]
 
 Sets up your coding agents to tell goguma when they are working, so the machine
 stays awake until they finish and sleeps again once they do, including with the
@@ -77,12 +78,12 @@ Nothing here is recorded as a job run.`,
 //
 // Taken from the running binary rather than from a configured path, so the
 // command written into a hook is the one that actually exists. A hook runs with
-// whatever environment its harness provides, which often has no ~/.local/bin on
+// whatever environment its agenthooks.Harness provides, which often has no ~/.local/bin on
 // PATH, and a bare `goguma` there fails silently: no error, no hold, no clue.
 func gogumaBinDir() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return filepath.Join(expandHome("~/.local/bin"))
+		return filepath.Join(agenthooks.ExpandHome("~/.local/bin"))
 	}
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
@@ -90,22 +91,22 @@ func gogumaBinDir() string {
 	return filepath.Dir(exe)
 }
 
-func pickHarnesses(names []string) ([]harness, error) {
+func pickHarnesses(names []string) ([]agenthooks.Harness, error) {
 	if len(names) == 0 {
-		return harnesses, nil
+		return agenthooks.Harnesses, nil
 	}
-	var out []harness
+	var out []agenthooks.Harness
 	for _, n := range names {
 		found := false
-		for _, h := range harnesses {
-			if strings.EqualFold(h.id, n) || strings.EqualFold(h.name, n) {
+		for _, h := range agenthooks.Harnesses {
+			if strings.EqualFold(h.ID, n) || strings.EqualFold(h.Name, n) {
 				out, found = append(out, h), true
 				break
 			}
 		}
 		if !found {
 			return nil, fmt.Errorf("unknown agent %q; known ones are %s",
-				n, strings.Join(sortedHarnessIDs(), ", "))
+				n, strings.Join(agenthooks.SortedIDs(), ", "))
 		}
 	}
 	return out, nil
@@ -116,24 +117,24 @@ func hooksStatus(ctx *Context, binDir string) error {
 	sym := r.Sym()
 
 	var anyPresent, anyMissing bool
-	for _, h := range harnesses {
-		st := inspect(h, binDir)
+	for _, h := range agenthooks.Harnesses {
+		st := agenthooks.Inspect(h, binDir)
 		switch {
-		case !st.present:
-			r.Printf("  %s %-14s %s\n", r.Muted(sym.Idle), h.id, r.Muted("not installed on this machine"))
-		case st.err != nil:
+		case !st.Found:
+			r.Printf("  %s %-14s %s\n", r.Muted(sym.Idle), h.ID, r.Muted("not installed on this machine"))
+		case st.Err != nil:
 			anyPresent = true
-			r.Printf("  %s %-14s %s\n", r.Warn(sym.Warn), h.id, r.Warn(st.err.Error()))
-		case st.stale:
+			r.Printf("  %s %-14s %s\n", r.Warn(sym.Warn), h.ID, r.Warn(st.Err.Error()))
+		case st.Stale:
 			anyPresent, anyMissing = true, true
-			r.Printf("  %s %-14s %s\n", r.Warn(sym.Warn), h.id,
+			r.Printf("  %s %-14s %s\n", r.Warn(sym.Warn), h.ID,
 				r.Warn("configured, but for a goguma somewhere else; re-run install"))
-		case st.installed:
+		case st.Installed:
 			anyPresent = true
-			r.Printf("  %s %-14s %s\n", r.Good(sym.OK), h.id, r.Muted("holding sleep off while it works"))
+			r.Printf("  %s %-14s %s\n", r.Good(sym.OK), h.ID, r.Muted("holding sleep off while it works"))
 		default:
 			anyPresent, anyMissing = true, true
-			r.Printf("  %s %-14s %s\n", r.Muted(sym.Idle), h.id, r.Muted("found, not set up yet"))
+			r.Printf("  %s %-14s %s\n", r.Muted(sym.Idle), h.ID, r.Muted("found, not set up yet"))
 		}
 	}
 
@@ -149,26 +150,26 @@ func hooksStatus(ctx *Context, binDir string) error {
 	return nil
 }
 
-func hooksApply(ctx *Context, chosen []harness, binDir string, remove bool) error {
+func hooksApply(ctx *Context, chosen []agenthooks.Harness, binDir string, remove bool) error {
 	r := ctx.Out
 	sym := r.Sym()
 
 	var touched, skipped int
 	for _, h := range chosen {
-		if !h.present() {
+		if !h.Present() {
 			skipped++
 			continue
 		}
-		path := h.path()
-		doc, err := readJSONFile(path)
+		path := h.Path()
+		doc, err := agenthooks.ReadConfig(path)
 		if err != nil {
-			r.Printf("  %s %-14s %s\n", r.Warn(sym.Warn), h.id, r.Warn(err.Error()))
+			r.Printf("  %s %-14s %s\n", r.Warn(sym.Warn), h.ID, r.Warn(err.Error()))
 			continue
 		}
-		doc = applyHooks(doc, h, binDir, remove)
-		backup, err := writeJSONFile(path, doc)
+		doc = agenthooks.Apply(doc, h, binDir, remove)
+		backup, err := agenthooks.WriteConfig(path, doc)
 		if err != nil {
-			r.Printf("  %s %-14s %s\n", r.Danger(sym.Warn), h.id, r.Danger(err.Error()))
+			r.Printf("  %s %-14s %s\n", r.Danger(sym.Warn), h.ID, r.Danger(err.Error()))
 			continue
 		}
 		touched++
@@ -176,7 +177,7 @@ func hooksApply(ctx *Context, chosen []harness, binDir string, remove bool) erro
 		if remove {
 			verb = "no longer tells goguma anything"
 		}
-		r.Printf("  %s %-14s %s\n", r.Good(sym.OK), h.id, r.Muted(verb))
+		r.Printf("  %s %-14s %s\n", r.Good(sym.OK), h.ID, r.Muted(verb))
 		r.Printf("    %s\n", r.Muted(shortenHome(path)))
 		if backup != "" {
 			r.Printf("    %s\n", r.Muted("previous version kept at "+shortenHome(backup)))

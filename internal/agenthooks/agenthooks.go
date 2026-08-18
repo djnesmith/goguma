@@ -1,4 +1,4 @@
-package cli
+package agenthooks
 
 import (
 	"encoding/json"
@@ -9,19 +9,19 @@ import (
 	"strings"
 )
 
-// A harness is a coding agent goguma can be told about by, rather than have to
+// A Harness is a coding agent goguma can be told about by, rather than have to
 // watch for.
 //
 // Watching is not on the table. An agent waiting on a model is a process
 // blocked on a socket and is indistinguishable from one doing nothing; measured
 // across four of them, the busiest CPU figure belonged to an idle session. The
 // work is not local, so there is nothing local to see. Every one of these
-// harnesses runs shell commands at its own lifecycle events, which is the
-// harness saying what no observer could work out.
-type harness struct {
-	// id is what the user types; name is what they read.
-	id, name string
-	// dir is the harness's own config directory, and its presence is what
+// Harnesses runs shell commands at its own lifecycle events, which is the
+// Harness saying what no observer could work out.
+type Harness struct {
+	// ID is what the user types; Name is what they read.
+	ID, Name string
+	// dir is the Harness's own config directory, and its presence is what
 	// "installed" means here. Absent means the tool is not on this machine.
 	dir string
 	// file is the config to edit, inside dir.
@@ -39,44 +39,44 @@ type harness struct {
 	renewOn, stopOn []string
 }
 
-// harnesses is the set goguma knows how to configure.
+// Harnesses is the set goguma knows how to configure.
 //
 // Each entry's shape is taken from that vendor's own documentation, and the
 // Claude Code one was additionally checked against a working config on a real
 // machine. Nothing is guessed: a wrong shape here writes a broken config into
 // somebody's agent, which is a far worse failure than the sleep it prevents.
-var harnesses = []harness{
+var Harnesses = []Harness{
 	{
-		id: "claude-code", name: "Claude Code",
+		ID: "claude-code", Name: "Claude Code",
 		dir: "~/.claude", file: "settings.json", nested: true,
 		renewOn: []string{"UserPromptSubmit", "PostToolUse"},
 		stopOn:  []string{"Stop"},
 	},
 	{
-		id: "codex", name: "Codex CLI",
+		ID: "codex", Name: "Codex CLI",
 		dir: "~/.codex", file: "hooks.json", nested: true,
 		renewOn: []string{"UserPromptSubmit", "PostToolUse"},
 		stopOn:  []string{"Stop"},
 	},
 	{
-		id: "cursor", name: "Cursor",
+		ID: "cursor", Name: "Cursor",
 		dir: "~/.cursor", file: "hooks.json", nested: false, version: 1,
 		renewOn: []string{"beforeSubmitPrompt", "afterFileEdit"},
 		stopOn:  []string{"stop"},
 	},
 }
 
-func (h harness) path() string { return filepath.Join(expandHome(h.dir), h.file) }
+func (h Harness) Path() string { return filepath.Join(ExpandHome(h.dir), h.file) }
 
-// present reports whether this harness is installed, judged by its own config
+// present reports whether this Harness is installed, judged by its own config
 // directory rather than by a running process: an agent that is not running at
 // this second is still one to configure.
-func (h harness) present() bool {
-	st, err := os.Stat(expandHome(h.dir))
+func (h Harness) Present() bool {
+	st, err := os.Stat(ExpandHome(h.dir))
 	return err == nil && st.IsDir()
 }
 
-func expandHome(p string) string {
+func ExpandHome(p string) string {
 	if strings.HasPrefix(p, "~/") {
 		home, err := os.UserHomeDir()
 		if err == nil {
@@ -86,53 +86,56 @@ func expandHome(p string) string {
 	return p
 }
 
-// hookMarker identifies goguma's own entries.
+// Marker identifies goguma's own entries.
 //
 // The command string is the marker. Anything containing it is ours to add,
 // replace or remove, and everything else in the file is somebody's own work and
 // is never touched. A separate marker field would be tidier and would also be
 // silently dropped by any tool that rewrites its own config.
-const hookMarker = "goguma agent-hook"
+const Marker = "goguma agent-hook"
 
 // hookCommands returns the command for a renew event and for a stop event.
 //
-// Absolute, because a hook runs with whatever environment the harness gives it,
+// Absolute, because a hook runs with whatever environment the Harness gives it,
 // which frequently does not include ~/.local/bin on PATH. A bare `goguma` there
 // fails silently and the whole feature does nothing, with no error anywhere.
-func hookCommands(binDir string) (renew, stop string) {
+func Commands(binDir string) (renew, stop string) {
 	bin := filepath.Join(binDir, "goguma")
 	return bin + " agent-hook --event renew", bin + " agent-hook --event stop"
 }
 
-// hookState is what one harness looks like right now.
-type hookState struct {
-	h         harness
-	present   bool
-	installed bool
+// State is what one Harness looks like right now.
+type State struct {
+	H Harness
+	// Found is whether the agent is on this machine at all. Named Found rather
+	// than Present because Harness already has a Present method and a field
+	// shadowing it reads as a bug at every call site.
+	Found     bool
+	Installed bool
 	// stale is an installed entry whose command no longer matches, which
 	// happens when goguma moves. Reported separately because the fix is the
 	// same command but the message is not "already done".
-	stale bool
-	err   error
+	Stale bool
+	Err   error
 }
 
-// inspect reads one harness's config without changing it.
-func inspect(h harness, binDir string) hookState {
-	st := hookState{h: h, present: h.present()}
-	if !st.present {
+// inspect reads one Harness's config without changing it.
+func Inspect(h Harness, binDir string) State {
+	st := State{H: h, Found: h.Present()}
+	if !st.Found {
 		return st
 	}
-	doc, err := readJSONFile(h.path())
+	doc, err := ReadConfig(h.Path())
 	if err != nil {
-		st.err = err
+		st.Err = err
 		return st
 	}
-	renew, stop := hookCommands(binDir)
+	renew, stop := Commands(binDir)
 	want := map[string]bool{renew: true, stop: true}
 
 	found, matching := 0, 0
-	for _, cmd := range commandsIn(doc, h) {
-		if !strings.Contains(cmd, hookMarker) {
+	for _, cmd := range CommandsIn(doc, h) {
+		if !strings.Contains(cmd, Marker) {
 			continue
 		}
 		found++
@@ -140,14 +143,14 @@ func inspect(h harness, binDir string) hookState {
 			matching++
 		}
 	}
-	st.installed = found > 0
-	st.stale = found > 0 && matching < len(h.renewOn)+len(h.stopOn)
+	st.Installed = found > 0
+	st.Stale = found > 0 && matching < len(h.renewOn)+len(h.stopOn)
 	return st
 }
 
 // readJSONFile reads a config, treating "not there" as an empty document so a
-// harness with no config yet is configured rather than skipped.
-func readJSONFile(path string) (map[string]any, error) {
+// Harness with no config yet is configured rather than skipped.
+func ReadConfig(path string) (map[string]any, error) {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return map[string]any{}, nil
@@ -166,7 +169,7 @@ func readJSONFile(path string) (map[string]any, error) {
 }
 
 // commandsIn lists every hook command in a document, whoever wrote it.
-func commandsIn(doc map[string]any, h harness) []string {
+func CommandsIn(doc map[string]any, h Harness) []string {
 	var out []string
 	hooks, _ := doc["hooks"].(map[string]any)
 	for _, v := range hooks {
@@ -201,8 +204,8 @@ func commandsIn(doc map[string]any, h harness) []string {
 // marker, append fresh ones. A user's own hooks on the same event survive
 // untouched and keep their order, which matters because hooks on one event run
 // in the order they appear.
-func applyHooks(doc map[string]any, h harness, binDir string, remove bool) map[string]any {
-	renew, stop := hookCommands(binDir)
+func Apply(doc map[string]any, h Harness, binDir string, remove bool) map[string]any {
+	renew, stop := Commands(binDir)
 
 	if h.version != 0 {
 		if _, ok := doc["version"]; !ok {
@@ -248,7 +251,7 @@ func applyHooks(doc map[string]any, h harness, binDir string, remove bool) map[s
 	return doc
 }
 
-func blockIsGoguma(b any, h harness) bool {
+func blockIsGoguma(b any, h Harness) bool {
 	block, _ := b.(map[string]any)
 	if block == nil {
 		return false
@@ -257,17 +260,17 @@ func blockIsGoguma(b any, h harness) bool {
 		inner, _ := block["hooks"].([]any)
 		for _, i := range inner {
 			e, _ := i.(map[string]any)
-			if c, ok := e["command"].(string); ok && strings.Contains(c, hookMarker) {
+			if c, ok := e["command"].(string); ok && strings.Contains(c, Marker) {
 				return true
 			}
 		}
 		return false
 	}
 	c, _ := block["command"].(string)
-	return strings.Contains(c, hookMarker)
+	return strings.Contains(c, Marker)
 }
 
-func newHookBlock(h harness, cmd string) map[string]any {
+func newHookBlock(h Harness, cmd string) map[string]any {
 	if h.nested {
 		return map[string]any{
 			"hooks": []any{map[string]any{"type": "command", "command": cmd}},
@@ -283,7 +286,7 @@ func newHookBlock(h harness, cmd string) map[string]any {
 // is goguma editing a file that belongs to another program, and the only
 // acceptable version of that is one that cannot leave the file worse than it
 // found it.
-func writeJSONFile(path string, doc map[string]any) (backup string, err error) {
+func WriteConfig(path string, doc map[string]any) (backup string, err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
@@ -312,7 +315,7 @@ func writeJSONFile(path string, doc map[string]any) (backup string, err error) {
 	// Verify by reading it back. A config that does not parse is a broken
 	// agent, so the old one goes back rather than being left for the user to
 	// discover the next time they open the tool.
-	if _, err := readJSONFile(path); err != nil {
+	if _, err := ReadConfig(path); err != nil {
 		if backup != "" {
 			if b, rerr := os.ReadFile(backup); rerr == nil {
 				_ = os.WriteFile(path, b, 0o600)
@@ -323,10 +326,10 @@ func writeJSONFile(path string, doc map[string]any) (backup string, err error) {
 	return backup, nil
 }
 
-func sortedHarnessIDs() []string {
-	ids := make([]string, 0, len(harnesses))
-	for _, h := range harnesses {
-		ids = append(ids, h.id)
+func SortedIDs() []string {
+	ids := make([]string, 0, len(Harnesses))
+	for _, h := range Harnesses {
+		ids = append(ids, h.ID)
 	}
 	sort.Strings(ids)
 	return ids
