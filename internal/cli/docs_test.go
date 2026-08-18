@@ -519,3 +519,38 @@ func TestReservedHoldIdsMatchBetweenGoAndSwift(t *testing.T) {
 		}
 	}
 }
+
+// The minimum macOS version is the same everywhere it is stated.
+//
+// Package.swift is the authority: Swift's availability checker enforces it, and
+// nothing else here does. Every other mention is prose, and prose drifts. This
+// one drifted a long way. The manifest was moved from .v26 to .v14 deliberately,
+// with a note saying .v26 "locked the app to Macs updated in the last few months
+// for no reason anyone had checked" — and the release template and the app's own
+// README went on saying 26 afterwards. The release page is where somebody
+// decides whether goguma runs on their machine at all, so that stale line was
+// turning away most of the Macs in use.
+func TestMinimumMacOSVersionAgreesEverywhere(t *testing.T) {
+	root := repoRoot(t)
+
+	manifest := readDoc(t, root, "macos/Package.swift")
+	m := regexp.MustCompile(`\.macOS\(\.v(\d+)\)`).FindStringSubmatch(manifest)
+	if m == nil {
+		t.Fatal("Package.swift no longer declares a .macOS(.vNN) platform")
+	}
+	want := m[1]
+
+	// Any "macOS <number>" in a doc must be the version from the manifest. The
+	// toolchain lines name Xcode and Swift rather than macOS, so they do not
+	// collide with this.
+	pattern := regexp.MustCompile(`macOS (\d+)(?:\.\d+)?\+?`)
+	for _, f := range []string{"README.md", "macos/README.md", ".goreleaser.yaml", "SECURITY.md"} {
+		for _, hit := range pattern.FindAllStringSubmatch(readDoc(t, root, f), -1) {
+			if hit[1] != want {
+				t.Errorf("%s says %q, but macos/Package.swift targets macOS %s.\n"+
+					"The manifest is the authority: it is what the compiler enforces.",
+					f, hit[0], want)
+			}
+		}
+	}
+}

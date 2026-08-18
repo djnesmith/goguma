@@ -15,8 +15,11 @@ daemon; this is a viewer with buttons.
 
 ## Requirements
 
-- macOS 26.0 or later
-- Swift 6.3 / Xcode 26 toolchain
+- macOS 14 (Sonoma) or later to run it. `Package.swift` is the authority and
+  says `.macOS(.v14)`; this file said 26 for a while after that changed, which
+  is a good deal of the audience turned away by a stale line in a README
+- Swift 6.2 tools / Xcode 26 toolchain to build it, which is a different
+  question from what it runs on
 - The goguma daemon (optional: the app renders a clear "not running" state
   in every window when the daemon is absent)
 
@@ -84,15 +87,16 @@ rather than a fixture. That is the point, and it is also the catch: check what
 is in the picture before committing it. `SurfaceRenderer.swift` explains why
 this isn't `ImageRenderer`.
 
-`Docs/media/safety.png` is the Safety block of the settings surface, cropped
-out of a full `--render settings` and padded at the foot. The renderer emits
-the whole pane, which is 2368px tall and far too much for one paragraph in a
-README, and the section is bounded by divider rules that look like a bad cut if
-the crop lands on one. The rule below Safety starts at y=1486 and the heading
-at y=1095, so the crop runs 1061 to 1483 and then gains 26 rows of the pane's
-own background at the bottom: the layout leaves only 45px under the last
-slider against 34px above the heading, which reads as bottom-heavy, and the
-background is a single flat colour so the join is invisible.
+`Docs/media/safety.png` is a plain `--render settings` with the Safety tab
+selected, and needs no cropping.
+
+It used to need a great deal. The pane was one column of every setting goguma
+has, 2368px tall, so the picture had to be cut out of the middle of it by pixel
+coordinates that were re-derived by hand every time a row above it moved. Tabs
+made the section it wants the whole of what gets rendered.
+
+The tab is `@AppStorage`, so the renderer draws whichever was last opened. To
+capture a different one, change `tabRaw`'s default before building.
 
 For the jobs window that default is wrong twice over, so there is
 `Docs/media/demo-daemon.py`:
@@ -143,7 +147,7 @@ There are also two token-backed view modifiers (`themeCard()`, `themeRow()`,
 
 ```
 macos/
-├── Package.swift                 SwiftPM manifest (tools 6.2, Swift 6 mode, macOS 26)
+├── Package.swift                 SwiftPM manifest (tools 6.2, Swift 6 mode, macOS 14)
 ├── README.md
 ├── scripts/make-app.sh           Assembles build/goguma.app around the binary
 └── Sources/GogumaUI/
@@ -311,6 +315,16 @@ while holding; next wake and countdown; lid / power / battery / CPU temperature;
 daemon warnings, prominently; a compact job list with enable toggles (click a row
 for its history); and Skip next wake, Let it sleep now, Pause/Resume, Jobs,
 Settings, Quit.
+
+**Settings is tabbed.** Five groups, one on screen at a time, selected by a
+drawn bar rather than a `Picker(.segmented)`: the segmented control brings
+AppKit's greys and radii, and one control in the system palette on goguma's
+surface reads as part of a different application. The pane was a single column
+of everything until it reached 1266pt against roughly 1000pt of laptop, at which
+point its bottom could not be reached at all. It measures its own height, which
+is cheap now that a tab is a few hundred points; it was not when the measurement
+covered every setting at once, and that is what made the window appear slowly
+and then jump.
 
 **One main window, two pages.** Jobs and Settings are the same `NSWindow`,
 swapped by `WindowCoordinator.retarget(_:to:)` rather than opened as two. They

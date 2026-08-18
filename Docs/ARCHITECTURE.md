@@ -343,6 +343,44 @@ evidence about. Keeping them out of sleep-back is right for a second reason: a
 wrapped command is user-initiated, so finishing one is never a reason to put the
 machine to sleep.
 
+### Coding agents
+
+An agent inside an editor is the case `goguma run` cannot reach: there is no
+command to wrap, because the editor started it. It cannot be watched either, for
+the reason above, so it has to report itself, and every current harness can. All
+of them run shell commands at their own lifecycle events.
+
+goguma writes one command into each agent's own configuration, on its prompt,
+tool-use and stop events. The shapes differ (`~/.claude/settings.json` and
+`~/.codex/hooks.json` nest handlers under a matcher block, `~/.cursor/hooks.json`
+takes a flat array beside a `version`), so `internal/agenthooks` holds one
+description per harness and merges rather than writes: entries carrying goguma's
+marker are replaced, everything else is left in place and in order. A file that
+does not parse is refused rather than replaced, and every write is backed up and
+rolled back if the result does not verify.
+
+**Holds are keyed by session.** `RunStartReq.Key` opens or renews rather than
+opening afresh, so the same session reporting on every prompt and every tool call
+lands on the hold it already has instead of stacking up holds nothing will close.
+Two editors open therefore hold independently, and the one that finishes first
+releases only its own.
+
+**Stopping is what stops it, not a timer.** The stop event releases immediately.
+The lease is the backstop for a harness killed outright, and it is fifteen
+minutes rather than the ninety seconds `goguma run` uses: a wrapper renews on a
+timer it controls, while an agent renews on events it does not, and a model can
+think for minutes between tool calls with nothing happening locally. An event
+goguma does not recognise renews rather than releases, because harnesses add
+events and being wrong that way holds a working machine awake rather than
+sleeping it mid-run.
+
+**The daemon keeps it true, rather than the installer doing it once.** `agent_hooks`
+is a setting, on by default, reconciled on every daemon start and whenever it
+changes. An agent installed a month after goguma is set up without anyone
+remembering to; turning the setting off takes the configuration back out of every
+agent it was added to, which is what lets the switch live in the app's settings,
+since that sets config over IPC and never runs the CLI.
+
 ---
 
 ## 6. Duration estimation
