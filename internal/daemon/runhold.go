@@ -46,6 +46,29 @@ const runLease = 90 * time.Second
 // slept.
 const maxRun = 12 * time.Hour
 
+// agentLease is the default for a keyed hold, and the reason keyed holds take a
+// lease at all rather than inheriting runLease.
+//
+// `goguma run` renews on a timer it controls, so ninety seconds is generous. An
+// agent harness renews on events it does not control: a hook fires when a
+// prompt is submitted and when a tool call finishes, and between those a model
+// can think for minutes with nothing happening locally at all. A ninety-second
+// lease would drop the hold in the middle of exactly the work this exists for.
+//
+// Fifteen minutes is longer than any inference gap seen in practice and is also
+// the worst case for a hold outliving its agent, which only happens when the
+// harness dies without firing its stop hook. The ordinary path does not rely on
+// it: the stop hook releases immediately.
+const agentLease = 15 * time.Minute
+
+// maxLease bounds what a caller may ask for, since the request carries it.
+const maxLease = 30 * time.Minute
+
+// keyedRunID is the hold id for a named hold. The `k:` segment keeps the keyed
+// namespace clear of the counter that names anonymous ones, so a caller passing
+// the key "7" cannot collide with the seventh `goguma run`.
+func keyedRunID(key string) string { return model.RunHoldPrefix + "k:" + key }
+
 // runHoldJob is the synthetic job a wrapped command's hold hangs off.
 //
 // DetectNone for the same reason keepAwakeJob uses it: hold.deadline gives a
@@ -63,8 +86,46 @@ func runHoldJob(id, label string) *model.Job {
 	return &model.Job{ID: id, Name: name, Detection: model.DetectNone}
 }
 
-// StartRun opens a hold for a command the CLI is about to run.
-func (d *Daemon) StartRun(label string, now time.Time) (ipc.RunStartResp, error) {
+// StartRun opens a hold for a command the CLI is about to run, or renews the
+// keyed hold that command already has.
+func (d *Daemon) StartRun(req ipc.RunStartReq, now time.Time) (ipc.RunStartResp, error) {
+	label, key := req.Label, strings.TrimSpace(req.Key)
+
+	lease := runLease
+	if key != "" {
+		lease = agentLease
+	}
+	if want := req.Lease.D(); want > 0 {
+		lease = min(want, maxLease)
+	}
+
+	// A keyed hold that is already open is renewed rather than replaced. This
+	// is the whole point of the key: an agent reports the same session on every
+	// prompt and every tool call, and each of those must land on the hold that
+	// session already has. Done before the cutout check on purpose, because
+	// refusing to renew a hold that is already open would drop an agent
+	// mid-run, and the cutout has its own machinery for releasing what is
+	// already held.
+	if key != "" {
+		id := keyedRunID(key)
+		d.mu.Lock()
+		if h, ok := d.holds[id]; ok {
+			limit := h.openedAt.Add(maxRun)
+			next := now
+			if next.After(limit) {
+				next = limit
+			}
+			h.fireAt, h.ceiling = next, lease
+			d.mu.Unlock()
+			return ipc.RunStartResp{ID: id, Lease: model.Duration(lease)}, nil
+		}
+		d.mu.Unlock()
+	}
+	return d.openRunHold(label, key, lease, now)
+}
+
+// openRunHold creates a new run hold.
+func (d *Daemon) openRunHold(label, key string, lease time.Duration, now time.Time) (ipc.RunStartResp, error) {
 	// Refuse while a cutout is latched, exactly as KeepAwake does: once the
 	// latch is engaged evaluateCutouts stops firing, so a hold opened now
 	// would sit out its lease on a machine already judged too hot or too flat.
@@ -76,16 +137,21 @@ func (d *Daemon) StartRun(label string, now time.Time) (ipc.RunStartResp, error)
 			"a safety cutout is active (%s); holds stay suspended until conditions recover", cut.Detail)
 	}
 
-	d.mu.Lock()
-	d.runSeq++
-	id := fmt.Sprintf("%s%d", model.RunHoldPrefix, d.runSeq)
-	d.mu.Unlock()
+	var id string
+	if key != "" {
+		id = keyedRunID(key)
+	} else {
+		d.mu.Lock()
+		d.runSeq++
+		id = fmt.Sprintf("%s%d", model.RunHoldPrefix, d.runSeq)
+		d.mu.Unlock()
+	}
 
 	job := runHoldJob(id, label)
 
 	// Assertion first, outside the lock: HoldIdleSleep is the slow part and
 	// holding d.mu across it stalls every tick and status call.
-	h := &hold{job: job, fireAt: now, openedAt: now, ceiling: runLease,
+	h := &hold{job: job, fireAt: now, openedAt: now, ceiling: lease,
 		batteryStart: batteryLevel(d.lastState)}
 	if a, err := d.plat.HoldIdleSleep("goguma: " + job.Name); err != nil {
 		d.log.Error("couldn't hold idle sleep for a wrapped command", "err", err)
@@ -94,16 +160,25 @@ func (d *Daemon) StartRun(label string, now time.Time) (ipc.RunStartResp, error)
 	}
 
 	d.mu.Lock()
+	// Lost a race with a concurrent open for the same key: keep the one that
+	// is already there, and release this assertion rather than orphaning it.
+	if prev, exists := d.holds[id]; exists {
+		d.mu.Unlock()
+		if h.assertion != nil {
+			_ = h.assertion.Release()
+		}
+		return ipc.RunStartResp{ID: id, Lease: model.Duration(prev.ceiling)}, nil
+	}
 	d.holds[id] = h
 	d.mu.Unlock()
 
 	d.syncSleepBlock()
-	d.log.Info("run hold opened", "id", id, "label", job.Name, "lease", runLease)
+	d.log.Info("run hold opened", "id", id, "label", job.Name, "lease", lease)
 	d.event(store.Event{
 		Kind: store.EventWindowOpened, JobID: id, JobName: job.Name,
 		Message: "holding sleep off for a wrapped command",
 	})
-	return ipc.RunStartResp{ID: id, Lease: model.Duration(runLease)}, nil
+	return ipc.RunStartResp{ID: id, Lease: model.Duration(lease)}, nil
 }
 
 // RenewRun extends a run hold's lease from now, reporting whether there was

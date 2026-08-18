@@ -227,6 +227,26 @@ type KeepAwakeResp struct {
 // collides with another run or with a registered job.
 type RunStartReq struct {
 	Label string `json:"label"`
+
+	// Key names a hold that can be reopened by name instead of created afresh.
+	//
+	// `goguma run` leaves it empty: each wrapped command is its own hold, and
+	// two of them must not collapse into one. An agent harness needs the
+	// opposite. It reports the same session repeatedly, once per prompt and
+	// once per tool call, and every one of those has to land on the hold that
+	// session already has rather than pile up a new one that nothing will ever
+	// close. Keyed by session, so several agents still hold independently and
+	// one finishing releases only its own.
+	Key string `json:"key,omitempty"`
+
+	// Lease overrides how long the hold survives without renewal. Clamped by
+	// the daemon; zero takes the default.
+	//
+	// A wrapped command renews on a timer and needs no more than the default.
+	// An agent renews on events it does not control: a model can think for
+	// minutes between tool calls, and a lease shorter than that gap drops the
+	// hold under an agent that is still working.
+	Lease model.Duration `json:"lease,omitempty"`
 }
 
 // RunStartResp carries the new hold's id and its lease.
@@ -256,6 +276,11 @@ type RunRenewResp struct {
 type RunEndReq struct {
 	ID       string `json:"id"`
 	ExitCode *int   `json:"exit_code,omitempty"`
+
+	// Key releases a keyed hold without the caller having kept its id. A hook
+	// fires as a fresh process each time and remembers nothing between calls,
+	// so the session name is the only handle it has.
+	Key string `json:"key,omitempty"`
 }
 
 // MatchTestReq asks the daemon to evaluate a pattern against the live process

@@ -74,6 +74,8 @@ func init() {
 	register(cmdTestMatch)
 	register(cmdConfig)
 	register(cmdRun)
+	register(cmdAgentHook)
+	register(cmdHooks)
 	register(cmdAwake)
 	register(cmdSkipNext)
 	register(cmdSleepNow)
@@ -247,7 +249,7 @@ func helpGroups() []helpGroup {
 		{"getting started", []string{"install", "import", "add", "sync", "scheduler"}},
 		{"everyday", []string{"status", "list", "history"}},
 		{"managing jobs", []string{"edit", "group", "remove", "enable", "disable", "test-match"}},
-		{"control", []string{"run", "awake", "skip-next", "sleep-now", "pause", "resume"}},
+		{"control", []string{"run", "hooks", "awake", "skip-next", "sleep-now", "pause", "resume"}},
 		{"maintenance", []string{"config", "doctor", "uninstall", "version"}},
 	}
 }

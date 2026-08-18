@@ -47,60 +47,60 @@ The idle session used more CPU than the working one, because the work is not
 happening on your machine. An agent waiting for a model is a process blocked on
 a socket, and looks exactly like one doing nothing.
 
-So the harness has to say so, and every major one can. All four run shell
-commands at lifecycle events:
-
-| Harness | Events | Config |
-|---|---|---|
-| Claude Code | `UserPromptSubmit`, `PostToolUse`, `Stop` | `~/.claude/settings.json` |
-| Cursor | `beforeSubmitPrompt`, `postToolUse`, `sessionEnd` | `hooks.json` |
-| GitHub Copilot | `userPromptSubmitted`, `postToolUse`, `agentStop` | `.github/hooks/*.json` |
-| Codex CLI | `UserPromptSubmit`, `PostToolUse`, `Stop` | `hooks.json` (experimental) |
-
-The command to run is the same everywhere:
+So the agent says so instead, and `goguma install` sets that up for every agent
+it finds. There is nothing to do. To check, add or undo it by hand:
 
 ```sh
-~/.local/bin/goguma awake 15m
+goguma hooks              # what is set up
+goguma hooks install      # set up everything found
+goguma hooks remove       # take it back out
 ```
 
-Claude Code, in `~/.claude/settings.json`:
+| Harness | Configured in | Events used |
+|---|---|---|
+| Claude Code | `~/.claude/settings.json` | `UserPromptSubmit`, `PostToolUse`, `Stop` |
+| Codex CLI | `~/.codex/hooks.json` | `UserPromptSubmit`, `PostToolUse`, `Stop` |
+| Cursor | `~/.cursor/hooks.json` | `beforeSubmitPrompt`, `afterFileEdit`, `stop` |
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "~/.local/bin/goguma awake 15m" }] }
-    ],
-    "PostToolUse": [
-      { "hooks": [{ "type": "command", "command": "~/.local/bin/goguma awake 15m" }] }
-    ]
-  }
-}
+Restart the agent afterwards; hooks are read when it starts.
+
+### How it behaves
+
+**It stops when the agent stops, not on a timer.** The stop event releases the
+hold immediately. Prompts and tool calls renew it, so an agent that works for
+four hours holds for four hours, and one that finishes in twenty seconds
+releases in twenty seconds.
+
+**Each session holds separately.** Two editors open is ordinary, and the one
+that finishes first must not sleep the machine under the one still going. The
+hold is keyed by the session id the harness reports, so it doesn't.
+
+**A crashed agent cannot strand the hold.** The stop event is the ordinary path,
+and a harness killed outright never fires it. So the hold is leased: fifteen
+minutes without a word from that session and it lapses by itself. Fifteen rather
+than one, because a model can think for minutes between tool calls with nothing
+happening locally, and a shorter lease would drop the hold in the middle of
+exactly the work this exists for.
+
+**An event goguma has not heard of renews rather than releases.** Harnesses add
+events; being wrong in that direction keeps a working machine awake, and being
+wrong in the other sleeps it mid-run.
+
+**Your existing hooks are kept.** goguma adds one line beside them, backs the
+file up first, and puts the original back if the result does not parse. See
+[Security](../SECURITY.md#what-it-writes).
+
+### If your agent is somewhere else
+
+Anything you launch from a terminal can be wrapped whether or not it has hooks:
+
+```sh
+goguma run -- codex exec "refactor the auth module"
 ```
 
-The other three take the same command at the events named above. Their exact
-file shapes differ and each vendor documents its own; the part that matters here
-is that it is one shell command with no arguments to get wrong.
-
-### Why a rolling window, and why nothing on stop
-
-`goguma awake` replaces its window rather than extending it, so calling it again
-pushes the deadline out instead of stacking. That gives two properties worth
-having:
-
-**Hooking `PostToolUse` as well as the prompt makes it a heartbeat.** A session
-that submits one prompt and then works for forty minutes keeps renewing itself
-every time the agent runs a tool, so the window follows the work rather than
-being a guess made at the start.
-
-**Nothing is hooked to stop, deliberately.** Two editor windows share one
-machine, and `goguma awake off` from the session that finished first would
-release the hold out from under the one still running. Letting the window lapse
-costs up to fifteen idle minutes and cannot cut anybody's session short.
-
-If a single tool call runs longer than the window with nothing else firing, the
-hold lapses early. Lengthen it if that happens to you, or use `goguma run` for
-that particular job, which has no window at all.
+An agent running in a browser tab, or one of the cloud agents, needs nothing at
+all. The work is happening on somebody else's server, so your Mac sleeping does
+not interrupt it, and there is nothing local to hold awake.
 
 ## What still applies
 

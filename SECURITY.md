@@ -143,11 +143,31 @@ scan at all.
 
 ## What it writes
 
-Everything above is reading. There is exactly one thing goguma changes outside
-its own state directory, and it doesn't happen unless you ask for it job by
-job.
+Everything above is reading. Two things change files outside goguma's own state
+directory, and this is both of them.
 
-`goguma import --register` offers to put the `goguma-mark` wrapper in front of
+**Coding agent hooks.** `goguma hooks install` adds one command to the
+configuration of each coding agent it finds, so the agent reports when it is
+working and the machine stays awake until it stops. `goguma install` does this
+for you, without asking, which is the one write on this page that is not
+per-item consent, so it is worth being exact about what it is.
+
+What goes in is a line calling `goguma agent-hook` on that agent's own
+prompt, tool-use and stop events, in `~/.claude/settings.json`,
+`~/.codex/hooks.json` or `~/.cursor/hooks.json`. It runs nothing that would not
+have run anyway and sends nothing anywhere: it opens and closes a sleep hold on
+the local socket. Hooks you already have are kept, in their existing order,
+alongside it. A copy of the file is written first, and if the rewritten file
+does not parse, the original is put back. A configuration goguma cannot read is
+refused rather than replaced.
+
+`goguma hooks remove` takes out exactly what it added, leaving the rest of the
+file as it was, and `goguma hooks` shows what is in place without changing
+anything. There is no third state: goguma either has one line in that file or
+none.
+
+**Wrapping a scheduled job.** `goguma import --register` offers to put the
+`goguma-mark` wrapper in front of
 a job, so the job reports its own start and exit instead of being guessed at
 from the process table. Accepting that for a cron job rewrites one line of your
 crontab; accepting it for a launchd job rewrites that job's plist and reloads

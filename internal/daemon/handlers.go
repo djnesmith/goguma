@@ -185,7 +185,7 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 		if err := json.Unmarshal(payload, &req); err != nil {
 			return nil, err
 		}
-		return d.StartRun(req.Label, time.Now())
+		return d.StartRun(req, time.Now())
 
 	case ipc.OpRunRenew:
 		var req ipc.RunRenewReq
@@ -199,7 +199,11 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 		if err := json.Unmarshal(payload, &req); err != nil {
 			return nil, err
 		}
-		d.EndRun(req.ID, req.ExitCode, time.Now())
+		id := req.ID
+		if id == "" && req.Key != "" {
+			id = keyedRunID(req.Key)
+		}
+		d.EndRun(id, req.ExitCode, time.Now())
 		return nil, nil
 
 	case ipc.OpMarkStart:

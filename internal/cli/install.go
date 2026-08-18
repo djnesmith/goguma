@@ -302,6 +302,17 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 		r.Printf("  %s\n", r.Muted("the background service picks it up within a minute"))
 	}
 
+	// Coding agents, set up without being asked about.
+	//
+	// Deliberately not a prompt. The whole point is that somebody who installs
+	// goguma and then closes their laptop while an agent works gets what they
+	// expected, and a question they have to understand before answering is
+	// exactly the confusion this exists to remove. It is also the mildest thing
+	// goguma writes anywhere: one command per event in a file the agent already
+	// reads, alongside whatever is there, backed up first, and undone in full
+	// by `goguma hooks remove`. Nothing runs that would not have run anyway.
+	setUpAgentHooks(ctx)
+
 	// A link, printed once, at the end.
 	//
 	// Not a prompt: an install that has just asked for a root password is the
@@ -445,4 +456,46 @@ func reportHelperSignature(r *render.Renderer) error {
 		r.Printf("  %s %s\n", r.Good(r.Sym().OK), r.Muted("the helper is "+desc))
 	}
 	return nil
+}
+
+// setUpAgentHooks configures whatever coding agents are on this machine so they
+// report their own activity, and says what it changed.
+//
+// Silent when there are none, which is most machines: a paragraph about agents
+// nobody has installed is noise in the one place a user is most likely to
+// actually read the output.
+func setUpAgentHooks(ctx *Context) {
+	r := ctx.Out
+	binDir := gogumaBinDir()
+
+	var found []harness
+	for _, h := range harnesses {
+		if h.present() {
+			found = append(found, h)
+		}
+	}
+	if len(found) == 0 {
+		return
+	}
+
+	r.Blank()
+	var done []string
+	for _, h := range found {
+		doc, err := readJSONFile(h.path())
+		if err != nil {
+			r.Printf("%s couldn't set up %s: %s\n", r.Warn(r.Sym().Warn), h.name, err)
+			continue
+		}
+		if _, err := writeJSONFile(h.path(), applyHooks(doc, h, binDir, false)); err != nil {
+			r.Printf("%s couldn't set up %s: %s\n", r.Warn(r.Sym().Warn), h.name, err)
+			continue
+		}
+		done = append(done, h.name)
+	}
+	if len(done) == 0 {
+		return
+	}
+	r.Printf("%s %s will keep this machine awake while they work\n",
+		r.Good(r.Sym().OK), strings.Join(done, " and "))
+	r.Printf("  %s\n", r.Muted("restart them to take effect · undo with 'goguma hooks remove'"))
 }

@@ -41,8 +41,8 @@ goguma run -- claude -p "refactor the auth module"
 
 Sleep is held off for exactly as long as that command runs, lid closed included,
 then released. For an agent inside an editor, where there is no command to wrap,
-[Docs/CODING-AGENTS.md](Docs/CODING-AGENTS.md) has a hook for Claude Code,
-Cursor, Copilot and Codex.
+goguma sets that up on install: Claude Code, Codex and Cursor report when they
+are working, and the machine stays awake until they stop.
 
 goguma fixes both. It lives in the menu bar: what is being held awake and what
 for, when the next wake is and which job it is for, and how long each job has
@@ -71,6 +71,8 @@ without ever opening a terminal window (Or use the CLI)!
 - goguma ends a hold early if the machine gets hot or the battery gets low
 - goguma holds the machine awake for work that has no schedule at all, with
   `goguma run -- <command>`, for as long as that command takes and no longer
+- goguma keeps a coding agent running with the lid shut, set up for you on
+  install, and stops the moment the agent does rather than on a timer
 - goguma keeps the lid-closed case working, which `caffeinate` cannot do, so an
   agent or a build carries on after you shut the laptop
 - goguma works on the menu bar app for macOS, so it is all visible without the
@@ -200,9 +202,18 @@ model is a process blocked on a socket. Measured across four agent processes ove
 ten seconds, the busiest figure belonged to an **idle** session and the one
 actually working used less.
 
-So the editor reports it instead. Claude Code, Cursor, Copilot and Codex all run
-shell commands at session lifecycle events, and all four take the same one.
-[Docs/CODING-AGENTS.md](Docs/CODING-AGENTS.md) has the recipes.
+So the editor reports it instead, and `goguma install` sets that up for every
+agent on the machine. There is nothing to configure:
+
+```sh
+goguma hooks      # what is set up, and what isn't
+```
+
+Claude Code, Codex and Cursor are covered. Each session holds separately, so two
+editors at once don't release each other, and the hold ends when the agent does
+rather than on a timer. Your existing hooks are kept and a backup is written;
+`goguma hooks remove` undoes it. [Docs/CODING-AGENTS.md](Docs/CODING-AGENTS.md)
+has the detail.
 
 The hold is leased, so a wrapper that is killed outright cannot strand it: it
 lapses by itself rather than waiting for someone to notice. Nothing here is
@@ -272,11 +283,17 @@ goguma can watch the process table for it instead (`--detection pattern
 (`--detection none`).
 
 **Can I use this to keep an agent running with the lid closed?**
-Yes, and that is the case it is best at. `goguma run -- <command>` holds sleep
-off for exactly as long as the command runs. For an agent inside an editor there
-is no command to wrap, so the editor reports it through a hook instead;
-[Docs/CODING-AGENTS.md](Docs/CODING-AGENTS.md) covers Claude Code, Cursor,
-Copilot and Codex.
+Yes, and it is set up for you. `goguma install` configures Claude Code, Codex
+and Cursor to report when they are working, so the machine stays awake until
+they finish and sleeps once they do. `goguma hooks` shows what is in place and
+`goguma hooks remove` undoes it. For anything you launch yourself, wrap it:
+`goguma run -- <command>`.
+
+**Does it keep the machine awake the whole time an editor is open?**
+No. It holds while an agent is actually working and releases when that session
+stops, not on a timer. A browser tab running a web agent needs nothing at all:
+that work is on someone else's server, so your Mac sleeping doesn't interrupt
+it.
 
 **Isn't that just `caffeinate`?**
 `caffeinate` holds off idle sleep, and a closed lid is not idle sleep, so it
