@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/junnam586/goguma/internal/ipc"
@@ -112,16 +113,34 @@ func printStatus(r *render.Renderer, st model.Status) {
 			// configured: a scheduler that reports its own runs makes a
 			// DetectNone job observed in practice, and calling that "not
 			// watched" while we are watching it is simply false.
+			// A wrapped command is running by definition: `goguma run` opened
+			// this hold around a process it started. It is not "waiting to
+			// start" and it was never going to be observed in the process
+			// table, so both of the phrases below are wrong for it.
+			isRun := strings.HasPrefix(h.JobID, model.RunHoldPrefix)
+
 			detail := r.Muted("waiting for the job to start")
-			if !h.Detected && h.Detection == model.DetectNone {
+			switch {
+			case isRun:
+				detail = fmt.Sprintf("running for %s", r.Bold(elapsed))
+			case !h.Detected && h.Detection == model.DetectNone:
 				detail = r.Muted("not watched, holding the full window")
-			} else if h.Detected {
+			case h.Detected:
 				detail = fmt.Sprintf("running for %s", r.Bold(elapsed))
 				if h.PID > 0 {
 					detail += r.Muted(fmt.Sprintf(" (pid %d)", h.PID))
 				}
 			}
 			r.Printf("  %s %s · %s\n", r.Good(sym.Bullet), r.Accent(h.JobName), detail)
+
+			// A run hold's deadline is a lease, renewed every thirty seconds
+			// for as long as the command is alive. Printing it as a ceiling
+			// counts down to a moment that will not arrive, and reads as a hold
+			// about to expire under a command that has an hour left to run.
+			if isRun {
+				r.Printf("      %s\n", r.Muted("held until the command exits"))
+				continue
+			}
 
 			ceilNote := fmt.Sprintf("ceiling %s, %s left",
 				h.Ceiling, model.HumanDuration(remain))

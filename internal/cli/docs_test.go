@@ -490,3 +490,32 @@ func TestEveryShippedBinaryIsSignedAtRelease(t *testing.T) {
 		t.Error("release.yml never imports a certificate into the archive job")
 	}
 }
+
+// The reserved hold ids are spelled the same in Go and in Swift.
+//
+// Both are duplicated by necessity: the app ships independently of the daemon
+// and cannot import a Go constant. Until now the only thing holding them
+// together was a comment saying "mirrors model.KeepAwakeJobID", and a comment
+// does not fail when somebody changes one side.
+//
+// Drift here is quiet and ugly. The app decides how to describe a hold from its
+// id: get the keep-awake id wrong and a manual window is described as a job
+// that never appeared; get the run prefix wrong and a wrapped command shows a
+// countdown to a lease that keeps being renewed, reading as a hold about to
+// lapse under something with an hour left to run.
+func TestReservedHoldIdsMatchBetweenGoAndSwift(t *testing.T) {
+	root := repoRoot(t)
+	swift := readDoc(t, root, "macos/Sources/GogumaUI/Model/Models.swift")
+
+	for _, c := range []struct{ name, goValue string }{
+		{"keepAwakeJobID", model.KeepAwakeJobID},
+		{"runHoldPrefix", model.RunHoldPrefix},
+	} {
+		want := fmt.Sprintf("static let %s = %q", c.name, c.goValue)
+		if !strings.Contains(swift, want) {
+			t.Errorf("Models.swift does not declare %s as %q.\n"+
+				"Go and Swift must agree, and the Go side is the source of truth.\n"+
+				"expected the line: %s", c.name, c.goValue, want)
+		}
+	}
+}

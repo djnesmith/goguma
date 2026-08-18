@@ -549,6 +549,23 @@ struct Hold: Codable, Sendable, Hashable, Identifiable {
     /// none of them are true here.
     var isManual: Bool { jobID == Self.keepAwakeJobID }
 
+    /// The reserved id prefix `goguma run` opens a hold under, one per wrapped
+    /// command. Mirrors `model.RunHoldPrefix`.
+    static let runHoldPrefix = "__run__:"
+
+    /// True for a hold around a command `goguma run` is wrapping.
+    ///
+    /// Distinct from `isManual`, which the daemon also counts these as: that
+    /// governs run history and sleep-back, while this governs wording. A
+    /// wrapped command genuinely is running, so the manual phrasing ("you asked
+    /// for this, until 14:30") is as wrong for it as the job phrasing is.
+    ///
+    /// It matters most for the deadline. A run hold's is a 90-second lease
+    /// renewed for as long as the process lives, so rendering it as "ceiling in
+    /// 1m 27s" counts down to a moment that will not arrive and reads as a hold
+    /// about to lapse under a command with an hour left.
+    var isWrappedCommand: Bool { jobID.hasPrefix(Self.runHoldPrefix) }
+
     enum CodingKeys: String, CodingKey {
         case jobID = "job_id"
         case jobName = "job_name"

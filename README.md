@@ -2,7 +2,7 @@
 
 # 🍠 goguma
 
-**Wakes your machine for scheduled jobs,<br>and lets it sleep otherwise.**
+**Wakes your machine for scheduled jobs, holds it awake<br>while long work finishes, and lets it sleep otherwise.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
@@ -11,6 +11,7 @@
 [getgoguma.com](https://getgoguma.com) ·
 [Download](https://github.com/junnam586/goguma/releases/latest) ·
 [Security](SECURITY.md) ·
+[Coding agents](Docs/CODING-AGENTS.md) ·
 [Architecture](Docs/ARCHITECTURE.md) ·
 [Updates](https://getgoguma.com/updates)
 
@@ -29,7 +30,21 @@ anywhere, because as far as the scheduler is concerned nothing went wrong. You
 find out weeks later, when you notice the digest you set up has been arriving
 on some days and not others.
 
-goguma fixes that. It lives in the menu bar: what is being held awake and what
+There is a second version of the same problem, and it is newer. Work that has
+no schedule at all still takes as long as it takes: a coding agent chewing
+through a refactor, a long build, a big sync. Close the lid and the machine
+sleeps underneath it, and you come back to a session that stopped halfway.
+
+```sh
+goguma run -- claude -p "refactor the auth module"
+```
+
+Sleep is held off for exactly as long as that command runs, lid closed included,
+then released. For an agent inside an editor, where there is no command to wrap,
+[Docs/CODING-AGENTS.md](Docs/CODING-AGENTS.md) has a hook for Claude Code,
+Cursor, Copilot and Codex.
+
+goguma fixes both. It lives in the menu bar: what is being held awake and what
 for, when the next wake is and which job it is for, and how long each job has
 been taking. Keep the Mac awake, skip the next wake, or pause everything
 without ever opening a terminal window (Or use the CLI)!
@@ -54,6 +69,10 @@ without ever opening a terminal window (Or use the CLI)!
 - goguma learns how long each job takes, so the window fits the work instead of
   guessing
 - goguma ends a hold early if the machine gets hot or the battery gets low
+- goguma holds the machine awake for work that has no schedule at all, with
+  `goguma run -- <command>`, for as long as that command takes and no longer
+- goguma keeps the lid-closed case working, which `caffeinate` cannot do, so an
+  agent or a build carries on after you shut the laptop
 - goguma works on the menu bar app for macOS, so it is all visible without the
   terminal
 
@@ -155,6 +174,40 @@ goguma scheduler add cowork ~/Library/Application\ Support/Cowork/tasks.json
 
 `goguma help` lists all commands, and `goguma help <command>` explains one.
 
+### Long jobs and coding agents
+
+Everything above is about work with a schedule. For work without one, wrap it:
+
+```sh
+goguma run -- claude -p "refactor the auth module"
+goguma run -- make -j8 release
+goguma run --label nightly -- rsync -a ~/work backup:/work
+```
+
+Sleep is held off for exactly as long as the command runs and released when it
+exits, so the window is the work rather than a guess. Output, input and exit
+status pass straight through, which means this can go in front of anything
+without changing what it does or what reads it.
+
+**It keeps working with the lid shut**, which is the part `caffeinate` cannot
+do: `caffeinate` holds off idle sleep and a closed lid is not idle sleep. goguma
+goes through its helper for that.
+
+An agent running inside an editor never gives you a command to wrap, and it
+cannot be watched from outside either. The process is there whether or not it is
+doing anything, and CPU does not separate the two, because an agent waiting on a
+model is a process blocked on a socket. Measured across four agent processes over
+ten seconds, the busiest figure belonged to an **idle** session and the one
+actually working used less.
+
+So the editor reports it instead. Claude Code, Cursor, Copilot and Codex all run
+shell commands at session lifecycle events, and all four take the same one.
+[Docs/CODING-AGENTS.md](Docs/CODING-AGENTS.md) has the recipes.
+
+The hold is leased, so a wrapper that is killed outright cannot strand it: it
+lapses by itself rather than waiting for someone to notice. Nothing here is
+recorded as a job run, and every safety cutout below still applies.
+
 ## Safety
 
 A hold is released early if the CPU goes above 80°C or the battery drops
@@ -179,12 +232,16 @@ has to: macOS treats a scheduled wake as though you had opened the lid, so
 everything else on the machine wakes up too and can keep it up for hours after
 a job that took thirty seconds.
 
-It only does this when it actually watched the job finish, which means jobs
-wrapped in `goguma-mark`. A job goguma can't watch gets a fixed window and no
-more; sleeping the machine at the end of a guess could suspend a backup that
-was still running. That is one more reason to wrap the ones you care about.
-It also needs every hold closed and nobody at the keyboard for two minutes.
-Turn it off with `goguma config set sleep_after_wake off`.
+It only does this when it actually watched the job finish. That covers more
+than it sounds: a job wrapped in `goguma-mark`, one whose process it can match,
+and one whose own scheduler reports the run, which is how an adopted job with no
+wrapper at all still qualifies.
+
+What never qualifies is a window that closed without seeing anything, because
+the job may still be running and sleeping the machine at the end of a guess
+could suspend a backup mid-write. It also needs every hold closed and nobody at
+the keyboard for two minutes. Turn it off with
+`goguma config set sleep_after_wake off`.
 
 goguma installs one small program that runs as root, because blocking sleep and
 setting a wake alarm both need it. [SECURITY.md](SECURITY.md) says what that
@@ -213,6 +270,25 @@ writes. See [Installing and removing it](SECURITY.md#installing-and-removing-it)
 goguma can watch the process table for it instead (`--detection pattern
 --match "restic.*backup"`), or hold the machine awake for a fixed window
 (`--detection none`).
+
+**Can I use this to keep an agent running with the lid closed?**
+Yes, and that is the case it is best at. `goguma run -- <command>` holds sleep
+off for exactly as long as the command runs. For an agent inside an editor there
+is no command to wrap, so the editor reports it through a hook instead;
+[Docs/CODING-AGENTS.md](Docs/CODING-AGENTS.md) covers Claude Code, Cursor,
+Copilot and Codex.
+
+**Isn't that just `caffeinate`?**
+`caffeinate` holds off idle sleep, and a closed lid is not idle sleep, so it
+stops the moment you shut the laptop. It also cannot wake a sleeping machine at
+all, which is the other half of what goguma does.
+
+**Why not just `sudo pmset -a disablesleep 1`?**
+That is the mechanism goguma uses, and for one supervised run it is enough. It
+is a global setting that survives the process exiting, logout and reboot, so
+forgetting to clear it means the machine never sleeps again. goguma guarantees
+the other half: released when the command exits, when the daemon dies, when the
+battery hits 10%, and when the machine hits 80°C.
 
 **Does anything leave my machine?**
 Nothing about you. There is no account, no telemetry and no analytics.

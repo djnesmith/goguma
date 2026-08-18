@@ -355,6 +355,13 @@ struct PopoverView: View {
                 }
                 return "Until \(Format.clock(until)). Safety cutouts still apply."
             }
+            // A wrapped command is running by definition: goguma started it.
+            // It is not waiting to appear, it was never going to be found in
+            // the process table, and its deadline is a renewing lease rather
+            // than a ceiling worth counting down.
+            if hold.isWrappedCommand {
+                return "Held until the command exits. Safety cutouts still apply."
+            }
             var parts: [String] = []
             // Wake-only jobs are never observed, so "waiting for the job to
             // appear" is a state they can never leave, the same objection
