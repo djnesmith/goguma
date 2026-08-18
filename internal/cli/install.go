@@ -302,15 +302,15 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 		r.Printf("  %s\n", r.Muted("the background service picks it up within a minute"))
 	}
 
-	// Coding agents, set up without being asked about.
+	// Coding agents, offered rather than assumed.
 	//
-	// Deliberately not a prompt. The whole point is that somebody who installs
-	// goguma and then closes their laptop while an agent works gets what they
-	// expected, and a question they have to understand before answering is
-	// exactly the confusion this exists to remove. It is also the mildest thing
-	// goguma writes anywhere: one command per event in a file the agent already
-	// reads, alongside whatever is there, backed up first, and undone in full
-	// by `goguma hooks remove`. Nothing runs that would not have run anyway.
+	// This writes into a file belonging to another program, and every other
+	// write goguma makes is something the user said yes to first. Doing this
+	// one silently would make the promise on the security page conditional,
+	// which is worth more than the two seconds the question costs.
+	//
+	// It defaults to yes and takes Enter for an answer, so the seamless path is
+	// still the one you get by not thinking about it.
 	setUpAgentHooks(ctx)
 
 	// A link, printed once, at the end.
@@ -479,6 +479,31 @@ func setUpAgentHooks(ctx *Context) {
 	}
 
 	r.Blank()
+	names := make([]string, 0, len(found))
+	for _, h := range found {
+		names = append(names, h.name)
+	}
+	r.Printf("%s found %s on this machine.\n", r.Good(r.Sym().OK), joinAnd(names))
+	r.Printf("  %s\n", r.Muted("goguma can hold sleep off while they work, lid closed, "+
+		"and let go when they stop."))
+	r.Printf("  %s\n", r.Muted("it adds one line to each one's own config, keeps what is "+
+		"already there, and backs it up first."))
+
+	// A script gets the useful default rather than a hang. Install is run from
+	// setup scripts and from the app's own first-run, neither of which has a
+	// terminal to answer with, and both of which want the thing that was asked
+	// for. Anyone who disagrees has `goguma hooks remove`.
+	if interactivePossible() {
+		ans, err := ask(fmt.Sprintf("  Set them up? [%s/n]: ", r.Bold("Y")))
+		if err == nil {
+			switch strings.ToLower(strings.TrimSpace(ans)) {
+			case "n", "no":
+				r.Printf("  %s\n", r.Muted("left alone · set up later with 'goguma hooks install'"))
+				return
+			}
+		}
+	}
+
 	var done []string
 	for _, h := range found {
 		doc, err := readJSONFile(h.path())
@@ -496,6 +521,20 @@ func setUpAgentHooks(ctx *Context) {
 		return
 	}
 	r.Printf("%s %s will keep this machine awake while they work\n",
-		r.Good(r.Sym().OK), strings.Join(done, " and "))
+		r.Good(r.Sym().OK), joinAnd(done))
 	r.Printf("  %s\n", r.Muted("restart them to take effect · undo with 'goguma hooks remove'"))
+}
+
+// joinAnd lists names the way a sentence does.
+func joinAnd(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " and " + names[1]
+	default:
+		return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+	}
 }

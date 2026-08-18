@@ -253,3 +253,21 @@ func containsCmd(cmds []string, want string) bool {
 	}
 	return false
 }
+
+// TestJoinAnd reads as a sentence, since this goes into one.
+func TestJoinAnd(t *testing.T) {
+	cases := []struct {
+		in   []string
+		want string
+	}{
+		{nil, ""},
+		{[]string{"Claude Code"}, "Claude Code"},
+		{[]string{"Claude Code", "Cursor"}, "Claude Code and Cursor"},
+		{[]string{"Claude Code", "Codex CLI", "Cursor"}, "Claude Code, Codex CLI and Cursor"},
+	}
+	for _, c := range cases {
+		if got := joinAnd(c.in); got != c.want {
+			t.Errorf("joinAnd(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

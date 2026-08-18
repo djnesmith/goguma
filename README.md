@@ -41,8 +41,8 @@ goguma run -- claude -p "refactor the auth module"
 
 Sleep is held off for exactly as long as that command runs, lid closed included,
 then released. For an agent inside an editor, where there is no command to wrap,
-goguma sets that up on install: Claude Code, Codex and Cursor report when they
-are working, and the machine stays awake until they stop.
+goguma offers to set that up on install: Claude Code, Codex and Cursor report
+when they are working, and the machine stays awake until they stop.
 
 goguma fixes both. It lives in the menu bar: what is being held awake and what
 for, when the next wake is and which job it is for, and how long each job has
@@ -71,8 +71,8 @@ without ever opening a terminal window (Or use the CLI)!
 - goguma ends a hold early if the machine gets hot or the battery gets low
 - goguma holds the machine awake for work that has no schedule at all, with
   `goguma run -- <command>`, for as long as that command takes and no longer
-- goguma keeps a coding agent running with the lid shut, set up for you on
-  install, and stops the moment the agent does rather than on a timer
+- goguma keeps a coding agent running with the lid shut, offered on install,
+  and stops the moment the agent does rather than on a timer
 - goguma keeps the lid-closed case working, which `caffeinate` cannot do, so an
   agent or a build carries on after you shut the laptop
 - goguma works on the menu bar app for macOS, so it is all visible without the
@@ -202,8 +202,8 @@ model is a process blocked on a socket. Measured across four agent processes ove
 ten seconds, the busiest figure belonged to an **idle** session and the one
 actually working used less.
 
-So the editor reports it instead, and `goguma install` sets that up for every
-agent on the machine. There is nothing to configure:
+So the editor reports it instead. `goguma install` offers this for every agent
+on the machine and takes Enter for yes, so the ordinary path is to do nothing:
 
 ```sh
 goguma hooks      # what is set up, and what isn't
@@ -283,9 +283,9 @@ goguma can watch the process table for it instead (`--detection pattern
 (`--detection none`).
 
 **Can I use this to keep an agent running with the lid closed?**
-Yes, and it is set up for you. `goguma install` configures Claude Code, Codex
-and Cursor to report when they are working, so the machine stays awake until
-they finish and sleeps once they do. `goguma hooks` shows what is in place and
+Yes, and installing offers to set it up. `goguma install` configures Claude
+Code, Codex and Cursor to report when they are working, so the machine stays
+awake until they finish and sleeps once they do. `goguma hooks` shows what is in place and
 `goguma hooks remove` undoes it. For anything you launch yourself, wrap it:
 `goguma run -- <command>`.
 

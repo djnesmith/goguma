@@ -148,9 +148,10 @@ directory, and this is both of them.
 
 **Coding agent hooks.** `goguma hooks install` adds one command to the
 configuration of each coding agent it finds, so the agent reports when it is
-working and the machine stays awake until it stops. `goguma install` does this
-for you, without asking, which is the one write on this page that is not
-per-item consent, so it is worth being exact about what it is.
+working and the machine stays awake until it stops. `goguma install` offers to
+do this and takes Enter for yes; answering no leaves every one of them alone.
+An install with no terminal to ask at, from a script or the app's own first run,
+goes ahead, and `goguma hooks remove` undoes it.
 
 What goes in is a line calling `goguma agent-hook` on that agent's own
 prompt, tool-use and stop events, in `~/.claude/settings.json`,

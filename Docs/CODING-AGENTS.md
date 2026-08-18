@@ -47,8 +47,9 @@ The idle session used more CPU than the working one, because the work is not
 happening on your machine. An agent waiting for a model is a process blocked on
 a socket, and looks exactly like one doing nothing.
 
-So the agent says so instead, and `goguma install` sets that up for every agent
-it finds. There is nothing to do. To check, add or undo it by hand:
+So the agent says so instead. `goguma install` offers this for every agent it
+finds and takes Enter for yes, so the ordinary path is to do nothing. To check,
+add or undo it afterwards:
 
 ```sh
 goguma hooks              # what is set up
