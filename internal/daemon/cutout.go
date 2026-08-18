@@ -135,14 +135,24 @@ func ShouldScheduleWake(st power.State, cfg config.Config, drainPct int) (bool, 
 	// Says which of the two reasons applies, because they call for different
 	// actions: a low battery wants charging, an expensive job wants a look at
 	// whether it should be waking the machine at all.
+	//
+	// Both are kept short enough to set in two lines of the popover's reason
+	// card, which is about 44 characters wide. At three lines the last one held
+	// two words ("at 15%)"), and Format.noWidow cannot help: it binds the final
+	// pair, so a message this long simply moves the pair down together rather
+	// than avoiding the orphan. The fix is the sentence, not the layout.
+	// TestSuppressedWakeReasonsFitTheCard holds the line.
 	if drainPct > minWakeMarginPct {
 		return false, fmt.Sprintf(
-			"battery is at %d%% and this job has been using about %d%% per run, "+
-				"which would take it under the %d%% floor where holds are released",
+			"battery is at %d%% and this job uses about %d%% per run, "+
+				"which would take it under %d%%",
 			st.BatteryPct, drainPct, cfg.LowBatteryCutoutPct)
 	}
+	// "on battery power" went: this branch is unreachable on AC, so it stated
+	// the one thing the reader could already be certain of, and it cost the
+	// seventeen characters that pushed the sentence onto a third line.
 	return false, fmt.Sprintf(
-		"battery is at %d%% on battery power, staying asleep to preserve charge "+
+		"battery is at %d%%, staying asleep to preserve charge "+
 			"(holds are released at %d%%)",
 		st.BatteryPct, cfg.LowBatteryCutoutPct)
 }

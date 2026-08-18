@@ -322,3 +322,68 @@ func TestBatteryThresholdIsUserConfigurable(t *testing.T) {
 		t.Error("25%% was allowed with a 30%% cutout")
 	}
 }
+
+// popoverReasonCols is roughly how many characters of the popover's reason card
+// fit on one line, measured off a rendered capture at the shipped font: the
+// longest line that held was "asleep to preserve charge (holds are released",
+// at 44.
+const popoverReasonCols = 44
+
+// TestSuppressedWakeReasonsFitTheCard keeps the held-back reason to two lines.
+//
+// It is not fussiness. The reason is shown verbatim, because it carries numbers
+// that a paraphrase would lose, and at three lines the last one held two words:
+// "at 15%)" on a line of its own under a full-width paragraph. Format.noWidow
+// cannot fix that, and reading its implementation shows why: it binds the final
+// two words with a non-breaking space, so an over-long sentence moves the pair
+// down together instead of leaving one behind. The orphan gets wider, not
+// rarer. The only real fix is a shorter sentence, and the only way that stays
+// fixed is a test that fails when one grows back.
+func TestSuppressedWakeReasonsFitTheCard(t *testing.T) {
+	cfg := config.Default()
+
+	cases := []struct {
+		name    string
+		st      power.State
+		drain   int
+		wantSub string
+	}{
+		{
+			name:    "flat battery, ordinary job",
+			st:      power.State{OnAC: false, BatteryPct: 9},
+			drain:   -1,
+			wantSub: "staying asleep",
+		},
+		{
+			name:    "a job that costs more than the margin",
+			st:      power.State{OnAC: false, BatteryPct: 19},
+			drain:   12,
+			wantSub: "per run",
+		},
+		{
+			// Three-digit-free but wide: every number at its longest.
+			name:    "the widest numbers these can carry",
+			st:      power.State{OnAC: false, BatteryPct: 100},
+			drain:   100,
+			wantSub: "per run",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, reason := ShouldScheduleWake(tc.st, cfg, tc.drain)
+			if ok {
+				t.Fatalf("expected the wake to be held back, got ok with reason %q", reason)
+			}
+			if !strings.Contains(reason, tc.wantSub) {
+				t.Errorf("reason %q does not mention %q", reason, tc.wantSub)
+			}
+			limit := 2 * popoverReasonCols
+			if len(reason) > limit {
+				t.Errorf("reason is %d characters, over the %d that fit two lines of the popover card:\n  %q\n"+
+					"a third line here holds only the last word or two, which reads as a layout bug",
+					len(reason), limit, reason)
+			}
+		})
+	}
+}
