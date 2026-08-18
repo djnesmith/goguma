@@ -138,7 +138,7 @@ func printStatus(r *render.Renderer, st model.Status) {
 			// counts down to a moment that will not arrive, and reads as a hold
 			// about to expire under a command that has an hour left to run.
 			if isRun {
-				r.Printf("      %s\n", r.Muted("held until the command exits"))
+				r.Printf("      %s\n", r.Muted("held until it finishes"))
 				continue
 			}
 

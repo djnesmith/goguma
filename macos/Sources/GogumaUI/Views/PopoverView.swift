@@ -360,7 +360,7 @@ struct PopoverView: View {
             // the process table, and its deadline is a renewing lease rather
             // than a ceiling worth counting down.
             if hold.isWrappedCommand {
-                return "Until the command exits. Cutouts apply."
+                return "Until it finishes. Safety cutouts apply."
             }
             var parts: [String] = []
             // Wake-only jobs are never observed, so "waiting for the job to
@@ -614,6 +614,7 @@ struct PopoverView: View {
                             .font(Theme.Typography.caption)
                     }
                     .buttonStyle(FooterButtonStyle())
+                    .pointingHand()
                     .padding(.top, Theme.Space.xs)
                     .padding(.leading, Theme.Space.sm)
                 }
@@ -917,10 +918,13 @@ struct PopoverView: View {
     private var footer: some View {
         HStack(spacing: Theme.Space.md) {
             footerButton("Jobs", icon: Theme.Icon.jobs) { coordinator.showJobs() }
+                .pointingHand()
             footerButton("Settings", icon: Theme.Icon.settings) { coordinator.showSettings() }
+                .pointingHand()
             Spacer(minLength: Theme.Space.sm)
             temperature
             footerButton("Quit", icon: Theme.Icon.quit) { coordinator.quit() }
+                .pointingHand()
         }
     }
 

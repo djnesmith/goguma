@@ -44,7 +44,27 @@ struct SettingsWindowView: View {
     /// once is usually coming back to it, and a disclosure that forgets makes
     /// them find it again every launch. It also makes the expanded pane
     /// renderable, which is how the layout crash below was reproduced.
-    @AppStorage("settings.showAdvanced") private var showAdvanced = false
+    // Advanced is its own tab now, so there is no collapsed state to
+    // return to and nothing gained by opening with its contents hidden.
+    @AppStorage("settings.showAdvanced") private var showAdvanced = true
+
+    /// Which group of settings is on screen.
+    ///
+    /// The pane used to be one column of every setting goguma has, and it
+    /// had outgrown the screen: 1266pt tall with Advanced closed, against
+    /// roughly 1000pt of laptop, so its bottom could not be reached at all.
+    /// The note where that layout was chosen said not fitting would be a
+    /// signal there were too many settings rather than a reason to add a
+    /// scrollbar. There are not too many settings. There are too many at
+    /// once.
+    ///
+    /// Tabs rather than a scroll view, because a scrollbar hides what
+    /// exists behind an interaction, and because a fixed height also
+    /// removes the measure-then-resize the window did on every open, which
+    /// is what made Settings seem slow to appear and then jump once it had.
+    @AppStorage("settings.tab") private var tabRaw = SettingsTab.timing.rawValue
+
+    var tab: SettingsTab { SettingsTab(rawValue: tabRaw) ?? .timing }
 
     /// Honoured for the Advanced disclosure. See `Theme.motion(reduced:)`.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -81,22 +101,27 @@ struct SettingsWindowView: View {
                 // A single grid measures the column once from the real strings,
                 // so the sections align with each other rather than each being
                 // internally consistent and mutually wrong.
+                tabBar
+
                 Grid(
                     alignment: .leadingFirstTextBaseline,
                     horizontalSpacing: Theme.Space.sm,
                     verticalSpacing: Theme.Space.xs
                 ) {
-                    timingSection
-                    sectionRule
-                    adoptionSection
-                    sectionRule
-                    safetySection
-                    sectionRule
-                    alertsSection
-                    sectionRule
-                    updatesSection
-                    sectionRule
-                    advancedSection
+                    switch tab {
+                    case .timing: timingSection
+                    case .jobs: adoptionSection
+                    case .safety: safetySection
+                    case .alerts:
+                        alertsSection
+                        sectionRule
+                        updatesSection
+                    case .advanced: advancedSection
+                    }
+                    // Shown on every tab. A setting goguma had to correct is not a fact
+                    // about the group it happens to sit in, and putting it behind the
+                    // right tab would make the one message that says something went
+                    // wrong the one message you have to go looking for.
                     if !store.configWarnings.isEmpty { warningsSection }
                 }
                 // Config writes no longer take this path.
@@ -145,7 +170,7 @@ struct SettingsWindowView: View {
         // content means the pane fits either state exactly, and opening the
         // disclosure grows the window rather than revealing space that was
         // always there.
-        .modifier(FitsWindowHeight())
+        // No longer measures itself; see MainPage.sizesItsOwnHeight.
         // Paint whatever height we are actually given, even if it exceeds the
         // content. The window is sized from the measurement above, so normally
         // the two agree, but when a host asks for more (the offscreen renderer
@@ -328,8 +353,10 @@ struct SettingsWindowView: View {
                         + "whether or not it is working, so it has to say so. This adds one "
                         + "line to Claude Code, Codex and Cursor's own settings, beside "
                         + "whatever is already there, and the machine stays awake until the "
-                        + "agent stops rather than for a fixed time. Turning it off takes "
-                        + "that line back out."
+                        + "agent stops rather than for a fixed time. The limits below still "
+                        + "apply: it sleeps anyway if the Mac gets too hot or the battery "
+                        + "runs low. Turning this off takes that line back out, and an agent "
+                        + "stops when the lid closes."
                 )
             }
         }
@@ -1069,5 +1096,90 @@ private struct WindowReader: NSViewRepresentable {
 
     func updateNSView(_ view: NSView, context _: Context) {
         if let window = view.window { onResolve(window) }
+    }
+}
+
+/// The groups the settings pane is divided into.
+///
+/// Five, following the sections the pane already had rather than inventing a
+/// new taxonomy: anyone who knew where a setting lived finds it in the same
+/// company. "Staying up to date" joins Alerts, because both are goguma telling
+/// you something rather than goguma doing something.
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case timing, jobs, safety, alerts, advanced
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .timing: "Timing"
+        case .jobs: "Jobs"
+        case .safety: "Safety"
+        case .alerts: "Alerts"
+        case .advanced: "Advanced"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .timing: "clock"
+        case .jobs: "list.bullet"
+        case .safety: "shield"
+        case .alerts: "bell"
+        case .advanced: "gearshape.2"
+        }
+    }
+}
+
+extension SettingsWindowView {
+    /// The row of groups across the top.
+    ///
+    /// Drawn rather than a `Picker(.segmented)`, for the same reason this pane
+    /// is not a `Form`: the segmented control brings AppKit's own greys and
+    /// corner radii, and one control in the system palette sitting on goguma's
+    /// surface reads as a piece of a different application.
+    @ViewBuilder
+    var tabBar: some View {
+        HStack(spacing: Theme.Space.xxs) {
+            ForEach(SettingsTab.allCases) { t in
+                Button { tabRaw = t.rawValue } label: {
+                    SettingsTabLabel(tab: t, selected: tab == t)
+                }
+                .buttonStyle(.plain)
+                .pointingHand()
+                .accessibilityLabel(t.title)
+                .accessibilityAddTraits(tab == t ? [.isSelected] : [])
+            }
+        }
+        .padding(.bottom, Theme.Space.sm)
+    }
+}
+
+/// One group's button.
+///
+/// Its own view because the whole bar in one expression is more than the Swift
+/// type checker will finish: it gave up on it outright.
+private struct SettingsTabLabel: View {
+    let tab: SettingsTab
+    let selected: Bool
+
+    var body: some View {
+        let fill: Color = selected ? Theme.Colors.cardFill : Color.clear
+        let ink: Color = selected ? Theme.Colors.heading : Theme.Colors.textSecondary
+
+        return HStack(spacing: Theme.Space.xxs) {
+            Image(systemName: tab.icon)
+                .font(Theme.Typography.caption)
+            Text(tab.title)
+                .font(Theme.Typography.rowLabel)
+        }
+        .padding(.horizontal, Theme.Space.sm)
+        .padding(.vertical, Theme.Space.xs)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(fill)
+        )
+        .foregroundStyle(ink)
+        .contentShape(.rect)
     }
 }

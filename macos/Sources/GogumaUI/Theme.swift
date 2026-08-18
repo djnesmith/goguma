@@ -128,7 +128,17 @@ enum Theme {
         /// `danger` at 6°/7°, so ember takes the one balanced slot between them
         /// (~15° from each in both modes) rather than leaning toward either.
         /// It stays off anything thermal for that reason; see `ember`.
-        static let stateHolding = ember
+        /// Holding sleep off.
+        ///
+        /// The brand purple, not `ember`. Ember is a tan that sits at 2.0:1 on
+        /// the light surface, documented as such where it is defined and well
+        /// under the 4.5:1 floor, and on the purple surface this app actually
+        /// uses it reads as a yellow smudge rather than as an accent. This is
+        /// the palette's own colour and clears the floor in both themes.
+        ///
+        /// `emberFill` still tints the menu bar glyph, where a 16pt shape on the
+        /// system's own bar is a different contrast problem from body text.
+        static let stateHolding = potatoSkin
         /// The user has paused goguma.
         static let statePaused = textSecondary
         /// A thermal or low-battery cutout has fired.
@@ -682,7 +692,14 @@ enum Theme {
         /// closed, and closed is how it always opens.
         static let settingsWidth: CGFloat = 520
         /// The height the window opens at, before the content reports its own.
-        static let settingsWindowSize = CGSize(width: 520, height: 520)
+        /// Fixed, and sized to the tallest tab rather than to the average.
+        ///
+        /// Advanced measures 572pt and Timing 504pt, so a window that fits the
+        /// average leaves part of Advanced unreachable, which is the bug this
+        /// layout exists to fix. The cost is a band of surface under the shorter
+        /// tabs; the status bar sits at the foot of the window and stops that
+        /// reading as a pane that failed to load.
+        static let settingsWindowSize = CGSize(width: 520, height: 600)
 
         static let editSheetWidth: CGFloat = 480
         static let editSheetMatchResultsHeight: CGFloat = 110

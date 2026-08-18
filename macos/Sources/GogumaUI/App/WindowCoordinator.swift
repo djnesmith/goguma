@@ -105,8 +105,15 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
                     height: mainWindow.frame.height - (chromeHeight ?? 0)
                 )
             }
-            mainHost.rootView = view
+            // Shape the window first, then put the new page in it.
+            //
+            // The other order swapped the content while the frame still
+            // belonged to the page being left, so for a frame or two the new
+            // pane was drawn into the old window's bounds: Settings appearing
+            // inside the Jobs window's outline before it snapped. Resizing an
+            // empty window costs nothing; resizing one mid-layout costs a pass.
             retarget(mainWindow, to: page)
+            mainHost.rootView = view
         }
         front(mainWindow)
     }
@@ -368,7 +375,12 @@ enum MainPage {
     var sizesItsOwnHeight: Bool {
         switch self {
         case .jobs: false
-        case .settings: true
+        // Settings measured itself while it was one column of every setting
+        // goguma has, where the height genuinely depended on whether Advanced
+        // was open. It is tabbed now and has a fixed height, so the second
+        // layout pass this describes is gone, and with it the pause before the
+        // pane appeared and the jump once it had.
+        case .settings: false
         }
     }
 }
