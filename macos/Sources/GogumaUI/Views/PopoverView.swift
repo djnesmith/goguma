@@ -360,7 +360,7 @@ struct PopoverView: View {
             // the process table, and its deadline is a renewing lease rather
             // than a ceiling worth counting down.
             if hold.isWrappedCommand {
-                return "Held until the command exits. Safety cutouts still apply."
+                return "Until the command exits. Cutouts apply."
             }
             var parts: [String] = []
             // Wake-only jobs are never observed, so "waiting for the job to
