@@ -197,6 +197,19 @@ struct PopoverView: View {
                                 .font(Theme.Typography.caption)
                                 .foregroundStyle(Theme.Colors.textSecondary)
                                 .themeProse()
+                                // The caveat lives here rather than on the line.
+                                //
+                                // "it sleeps anyway if the Mac gets hot or the
+                                // battery runs low" is worth saying and does not
+                                // fit: the column takes about 42 characters and
+                                // the sentence is 77, so it set as two lines
+                                // under a one-line headline and made the top of
+                                // the popover look like a paragraph. The line
+                                // says when the hold ends, which is the thing
+                                // being asked; the rest is here, and on the
+                                // Safety tab, which is where somebody goes when
+                                // they want to change it.
+                                .help(subheadlineHelp ?? detail)
                         }
                     }
                     Spacer(minLength: Theme.Space.sm)
@@ -326,6 +339,17 @@ struct PopoverView: View {
         return "· \(Format.count(watching, "job"))"
     }
 
+    /// The longer version of `subheadline`, shown on hover.
+    ///
+    /// Only where there is something to add. Everything else falls back to the
+    /// line itself, which is what a tooltip should say when the text it is
+    /// attached to has been truncated.
+    private var subheadlineHelp: String? {
+        guard store.state == .holding else { return nil }
+        return "goguma lets the Mac sleep anyway if it gets too hot or the battery "
+            + "runs low. Those limits are on the Safety tab in Settings."
+    }
+
     private var subheadline: String? {
         switch store.state {
         case .disconnected:
@@ -351,16 +375,16 @@ struct PopoverView: View {
             // that does not exist and will never arrive.
             if hold.isManual {
                 guard let until = store.status?.keepAwakeUntil.meaningful else {
-                    return "You asked for this. It still sleeps if the Mac gets hot or the battery runs low."
+                    return "You asked for this."
                 }
-                return "Until \(Format.clock(until)). It still sleeps if the Mac gets hot or the battery runs low."
+                return "Until \(Format.clock(until))."
             }
             // A wrapped command is running by definition: goguma started it.
             // It is not waiting to appear, it was never going to be found in
             // the process table, and its deadline is a renewing lease rather
             // than a ceiling worth counting down.
             if hold.isWrappedCommand {
-                return "Until it finishes. Sleeps anyway if the Mac gets hot or the battery runs low."
+                return "Until it finishes."
             }
             var parts: [String] = []
             // Wake-only jobs are never observed, so "waiting for the job to
