@@ -9,7 +9,7 @@
 ![Go](https://img.shields.io/badge/go-1.26+-00ADD8)
 
 [getgoguma.com](https://getgoguma.com) ·
-[Download](https://github.com/junnam586/goguma/releases/latest) ·
+[Download](https://github.com/junnam586/goguma/releases/latest/download/goguma.dmg) ·
 [Security](SECURITY.md) ·
 [Coding agents](Docs/CODING-AGENTS.md) ·
 [Architecture](Docs/ARCHITECTURE.md) ·
@@ -50,7 +50,7 @@ for, when the next wake is and which job it is for, and how long each job has
 been taking. Keep the Mac awake, skip the next wake, or pause everything
 without ever opening a terminal window (Or use the CLI)!
 
-[**Download goguma for macOS**](https://github.com/junnam586/goguma/releases/latest)
+[**Download goguma for macOS**](https://github.com/junnam586/goguma/releases/latest/download/goguma.dmg)
 
 <div align="center">
 
@@ -85,7 +85,7 @@ Requires macOS 14 or newer, or Linux with systemd.
 
 ### Download the app (recommended)
 
-[**Download goguma for macOS**](https://github.com/junnam586/goguma/releases/latest),
+[**Download goguma for macOS**](https://github.com/junnam586/goguma/releases/latest/download/goguma.dmg),
 drag it to Applications, and open it. It will offer to set itself up, and the
 command line tools are inside the app, so this is the whole install.
 

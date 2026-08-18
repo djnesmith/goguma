@@ -207,4 +207,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ github.ref_name }}
-        run: gh release upload "$VERSION" "goguma_${VERSION}.dmg" --clobber
+        # Twice, under two names.
+        #
+        # The versioned one is what lands in somebody's Downloads folder and
+        # should say which version it is. The stable one is what a download
+        # button can point at: `releases/latest/download/<name>` only resolves
+        # for a filename that does not change between releases, and without
+        # one "Download for Mac" has to send people to a release page to pick
+        # the file out themselves, which is where most of them stop.
+        run: |
+          gh release upload "$VERSION" "goguma_${VERSION}.dmg" --clobber
+          cp "goguma_${VERSION}.dmg" goguma.dmg
+          gh release upload "$VERSION" goguma.dmg --clobber
