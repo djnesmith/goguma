@@ -115,7 +115,16 @@ enum Theme {
         /// wake" row drew the eye before the thing it was reporting did. This
         /// sits a step above the surface in the same hue, which is what makes
         /// it read as the same page.
-        static let cardFill = adaptive(light: 0xEDE6F4, dark: 0x1D242A)
+        ///
+        /// Through the palette switch, like every other surface token. This was
+        /// the one that bypassed it, so the dark card kept the arctic blue-grey
+        /// while the surface around it went purple, and on a dark popover the
+        /// card was visibly a different colour family from the page under it.
+        /// The arctic values are still the `false` branch, so flipping the
+        /// switch back restores that world exactly, which is what it promises.
+        static let cardFill = sweetPotato
+            ? adaptive(light: 0xEDE6F4, dark: 0x221C28)
+            : adaptive(light: 0xFFFFFF, dark: 0x1D242A)
 
         // MARK: State roles
         //
