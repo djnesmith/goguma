@@ -106,6 +106,26 @@ func runInstall(ctx *Context, args []string) error {
 		r.Printf("%s\n", r.Muted(
 			"macOS and nowhere else, and sudo needs a terminal, which is why this is one."))
 
+		// What the root part can and cannot do, at the moment it is being agreed
+		// to rather than in a document nobody opens first.
+		//
+		// "Runs as root" is the scariest sentence in this output and the only
+		// one that cannot be avoided, so the bounds on it belong on the same
+		// screen. Every claim here is the same one SECURITY.md makes and is
+		// checkable against the source, which is the only reason to believe any
+		// of it: six messages, none of which runs a command, reads a file, or
+		// takes a path.
+		r.Blank()
+		r.Printf("%s\n", r.Muted(
+			"The helper answers six messages: hold sleep, set or clear a wake, and report."))
+		r.Printf("%s\n", r.Muted(
+			"None of them runs a command, reads a file, or takes a path, and its socket"))
+		r.Printf("%s\n", r.Muted(
+			"accepts only you. Nothing about you leaves this Mac. Every line is open"))
+		r.Printf("%s\n", r.Muted(
+			"source, and `goguma uninstall` takes all of it back off:"))
+		r.Printf("%s\n", r.Accent("https://github.com/junnam586/goguma/blob/main/SECURITY.md"))
+
 		// What is about to be installed as root, checked rather than asserted.
 		//
 		// Everything else printed here is the tool describing itself. This is
