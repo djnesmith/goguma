@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         installMenuBarItem()
         store.startPolling()
+        observeWake()
 
         // Build the main window now, so the first click on Jobs or Settings
         // does not pay for it. See WindowCoordinator.prewarm.
@@ -60,6 +61,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.store.connection.blocksContent else { return }
             Onboarding.hasPresentedFirstRun = true
             self.menuBar?.showWindow()
+        }
+    }
+
+    /// Polls the moment the machine wakes, rather than whenever the timer next
+    /// comes round.
+    ///
+    /// Idle polling is thirty seconds apart, so opening the lid showed whatever
+    /// was true before it closed, for up to half a minute. Combined with the
+    /// first socket attempt after a wake tending to fail, that is how a service
+    /// which had been running throughout came to be reported as not running at
+    /// all. The wake notification is the moment the answer changes, so it is
+    /// the moment to ask.
+    private func observeWake() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                // A moment first: the socket, the daemon's own poll and the
+                // network all come back over the second or so after a wake, and
+                // asking into the middle of that is what produced the failure
+                // being recovered from.
+                try? await Task.sleep(for: .milliseconds(800))
+                await self.store.refresh()
+            }
         }
     }
 

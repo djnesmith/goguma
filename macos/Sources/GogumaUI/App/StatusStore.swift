@@ -349,6 +349,7 @@ final class StatusStore {
             status = fresh
             lastUpdated = .now
             connection = .connected
+            transientFailures = 0
             // A failure that said the service was not answering is disproved by
             // this reply. Clearing it here rather than only on a timer means the
             // window is right the moment it can be, which for the minute after
@@ -356,9 +357,9 @@ final class StatusStore {
             // broken".
             if actionMessage?.isError == true { actionMessage = nil }
         } catch let error as DaemonError {
-            apply(error)
+            await applyTolerantly(error)
         } catch {
-            apply(DaemonError.io(String(describing: error)))
+            await applyTolerantly(DaemonError.io(String(describing: error)))
         }
 
         guard case .connected = connection else { return }
@@ -403,6 +404,38 @@ final class StatusStore {
         if Date.now.timeIntervalSince(m.at) > Self.actionMessageLifetime {
             actionMessage = nil
         }
+    }
+
+    /// How many polls in a row have failed while we believed we were connected.
+    private var transientFailures = 0
+
+    /// Reports a failed poll, but not on the strength of one attempt.
+    ///
+    /// Opening the lid produced "goguma isn't running" for a service that had
+    /// been running throughout: the first socket attempt after a wake tends to
+    /// fail, and one failure flipped the whole app to disconnected until the
+    /// next poll, which when idle is thirty seconds away. The daemon had not
+    /// restarted; the log shows no start between the sleep and the wake.
+    ///
+    /// So a first failure retries at once instead of being believed. A service
+    /// that is genuinely gone fails twice a second apart and is reported a
+    /// second late; one that was merely waking is never reported at all.
+    private func applyTolerantly(_ error: DaemonError) async {
+        // A version mismatch is a fact about the binary, not a blip.
+        if case .protocolMismatch = error {
+            apply(error)
+            return
+        }
+        transientFailures += 1
+        if transientFailures == 1, case .connected = connection {
+            try? await Task.sleep(for: .seconds(1))
+            if (try? await client.status()) != nil {
+                // It answered on the retry: nothing was ever wrong to report.
+                await refresh()
+                return
+            }
+        }
+        apply(error)
     }
 
     private func apply(_ error: DaemonError) {
