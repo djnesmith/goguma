@@ -64,10 +64,24 @@ struct JobsWindowView: View {
                     Task { await store.refresh() }
                 }
             } else if store.jobs.isEmpty {
+                // "No jobs registered" is a statement about a finished search,
+                // and for the first minute after setup the search has not
+                // started. Telling somebody to add a job by hand, seconds
+                // before goguma finds seven of their own, is advice that makes
+                // the tool look like it does less than it does.
+                //
+                // Adoption is on unless it was turned off, and config is not
+                // loaded on this surface, so an unknown value reads as on: the
+                // default is what almost every window is looking at.
+                let searching = store.config?.autoAdopt.map { !$0.isEmpty } ?? true
                 EmptyStateView(
                     icon: Theme.Icon.jobs,
-                    title: "No jobs registered",
-                    detail: "Add a job, or import the ones you already have with `goguma import`."
+                    title: searching ? "Looking for scheduled jobs" : "No jobs registered",
+                    detail: searching
+                        ? "goguma reads the schedulers on this Mac every couple of minutes. "
+                            + "Anything it finds appears here, and \"Check for New Jobs\" looks now."
+                        : "Add a job, or import the ones you already have with `goguma import`.",
+                    working: searching
                 )
             } else {
                 searchField

@@ -432,7 +432,7 @@ struct PopoverView: View {
             if !store.wakeSuppressed.isEmpty {
                 return nil
             }
-            return store.jobs.isEmpty ? "No jobs registered yet." : nil
+            return store.jobs.isEmpty ? "Looking for scheduled jobs…" : nil
         }
     }
 
@@ -611,7 +611,9 @@ struct PopoverView: View {
     private var jobsList: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             if store.jobs.isEmpty {
-                Text("No jobs registered. Add one from the Jobs window, or import your crontab with `goguma import`.")
+                Text(store.jobs.isEmpty && !store.connection.blocksContent
+                    ? "Looking for scheduled jobs on this Mac. Anything found appears here within a couple of minutes."
+                    : "No jobs registered. Add one from the Jobs window, or import your crontab with `goguma import`.")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

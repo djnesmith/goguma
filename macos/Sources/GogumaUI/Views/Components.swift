@@ -248,6 +248,9 @@ struct EmptyStateView: View {
     /// Whether there is room for the scene. False in narrow or short panes,
     /// where a squashed illustration would look like a rendering fault.
     var showsScene: Bool = true
+    /// Shows that something is still happening, for an emptiness that is
+    /// temporary rather than a state of affairs.
+    var working: Bool = false
 
     var body: some View {
         VStack(spacing: Theme.Space.sm) {
@@ -260,9 +263,16 @@ struct EmptyStateView: View {
                     .font(Theme.Typography.iconHero)
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
-            Text(title)
-                .font(Theme.Typography.headline)
-                .foregroundStyle(Theme.Colors.textSecondary)
+            HStack(spacing: Theme.Space.xs) {
+                if working {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                }
+                Text(title)
+                    .font(Theme.Typography.headline)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+            }
             if let detail {
                 Text(Format.noWidow(detail))
                     .font(Theme.Typography.caption)
@@ -597,19 +607,44 @@ struct SeverityBadge: View {
 }
 
 /// A brief inline confirmation or error from a user action.
+///
+/// A contained notice rather than loose text. This was an icon and a coloured
+/// string with no background, sharing a toolbar row with a button: a long
+/// message wrapped to two lines inside its 260pt slot and read as red text
+/// spilled across the window rather than as anything the window was telling
+/// you. Errors are exactly when a surface should look most deliberate.
+///
+/// One line, truncated, with the whole message on hover. A result from an
+/// action is a headline; anyone who wants the sentence can have it, and a
+/// toolbar is not the place to set a paragraph.
 struct ActionMessageView: View {
     let message: StatusStore.ActionMessage
 
     var body: some View {
-        HStack(spacing: Theme.Space.xs) {
+        let ink: Color = message.isError ? Theme.Colors.danger : Theme.Colors.ok
+
+        return HStack(spacing: Theme.Space.xs) {
             Image(systemName: message.isError ? Theme.Icon.error : Theme.Icon.ok)
                 .font(Theme.Typography.iconInline)
-            Text(Format.noWidow(message.text))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+                .foregroundStyle(ink)
+            Text(message.text)
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
-        .font(Theme.Typography.caption)
-        .foregroundStyle(message.isError ? Theme.Colors.danger : Theme.Colors.textSecondary)
+        .padding(.horizontal, Theme.Space.sm)
+        .padding(.vertical, Theme.Space.xs)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                .fill(ink.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                .strokeBorder(ink.opacity(0.28), lineWidth: 1)
+        )
+        .help(message.text)
+        .accessibilityLabel(message.text)
     }
 }
 
