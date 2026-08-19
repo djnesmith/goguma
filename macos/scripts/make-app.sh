@@ -32,6 +32,11 @@ REPO="$(cd "$ROOT/.." && pwd)"
 APP_NAME="goguma"
 BUNDLE_ID="glass.goguma.ui"
 VERSION="${VERSION:-0.1.0}"
+# Apple wants a period-separated list of integers here, and the release workflow
+# passes the tag, which is "v0.1.5". A leading letter is not a version number to
+# anything that parses one, so it comes off before the plist is written. The tag
+# keeps its v everywhere a human reads it; only the bundle is strict.
+SHORT_VERSION="${VERSION#v}"
 SIGN_ID="${SIGN_ID:--}"
 
 cd "$ROOT"
@@ -117,8 +122,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key>              <string>goguma</string>
     <key>CFBundleIdentifier</key>            <string>$BUNDLE_ID</string>
     <key>CFBundlePackageType</key>           <string>APPL</string>
-    <key>CFBundleShortVersionString</key>    <string>$VERSION</string>
-    <key>CFBundleVersion</key>               <string>$VERSION</string>
+    <key>CFBundleShortVersionString</key>    <string>$SHORT_VERSION</string>
+    <key>CFBundleVersion</key>               <string>$SHORT_VERSION</string>
     <!-- Must match Package.swift's platforms setting. A bundle claiming a
          higher minimum than the code needs is refused by Finder on Macs that
          would have run it perfectly well. -->

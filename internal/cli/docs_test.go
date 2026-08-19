@@ -627,3 +627,24 @@ func TestTheScreenshotFixtureSanitisesStatus(t *testing.T) {
 			"so the real one is what gets served")
 	}
 }
+
+// The app bundle's version is a version number.
+//
+// CFBundleShortVersionString is specified as a period-separated list of
+// integers, and the release workflow passes the git tag, which is "v0.1.5".
+// Every shipped bundle therefore claimed a version with a letter in it: not
+// something anything comparing versions can parse, and the sort of detail that
+// is invisible until whatever consumes it does something strange.
+func TestTheBundleVersionHasNoTagPrefix(t *testing.T) {
+	root := repoRoot(t)
+	script := readDoc(t, root, "macos/scripts/make-app.sh")
+
+	if !strings.Contains(script, `SHORT_VERSION="${VERSION#v}"`) {
+		t.Error("make-app.sh does not strip a leading v from VERSION; " +
+			"a tag-shaped value reaches CFBundleShortVersionString verbatim")
+	}
+	if strings.Contains(script, "<string>$VERSION</string>") {
+		t.Error("the plist still interpolates $VERSION directly, so the tag's " +
+			"v survives into the bundle")
+	}
+}
