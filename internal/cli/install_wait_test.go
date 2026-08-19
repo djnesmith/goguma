@@ -48,3 +48,25 @@ func TestSetupDoesNotPromiseJobsItAlreadyWaitedFor(t *testing.T) {
 		}
 	}
 }
+
+// The completion notice comes after the scan it describes.
+//
+// It used to be the tail of verifyInstall, which runs before adoption is waited
+// for, so the terminal said "Setup is done. You can close this window." and then
+// worked for another fifteen seconds. Anyone who believed it closed the window
+// mid-scan; anyone who did not watched a finished tool keep going and
+// reasonably concluded it had hung.
+func TestSetupSaysItIsDoneOnlyWhenItIs(t *testing.T) {
+	root := repoRoot(t)
+	src := readDoc(t, root, "internal/cli/install.go")
+
+	adopt := strings.Index(src, "reportAdopted(ctx)")
+	done := strings.Index(src, "printSetupDone(r)")
+	if adopt < 0 || done < 0 {
+		t.Fatal("install no longer calls reportAdopted and printSetupDone")
+	}
+	if done < adopt {
+		t.Error("printSetupDone is called before reportAdopted, so setup announces " +
+			"it has finished and then carries on scanning")
+	}
+}

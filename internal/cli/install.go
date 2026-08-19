@@ -58,16 +58,34 @@ func runInstall(ctx *Context, args []string) error {
 		return err
 	}
 
-	r.Line(r.Bold("goguma will:"))
-	r.Blank()
+	// Summarised, not enumerated.
+	//
+	// This listed all nine steps and then echoed all nine again as they ran:
+	// eighteen lines to say nine things, on the screen somebody is reading to
+	// decide whether to type their password. The list is here to be understood
+	// before it is agreed to, and four binaries landing in one directory is one
+	// fact, not four.
+	//
+	// The progress below still names each step as it happens. That is where the
+	// detail belongs: while it is happening, next to the password prompt, in the
+	// place a failure would appear.
 	privileged := 0
-	for i, s := range plan.Steps {
-		tag := ""
+	for _, s := range plan.Steps {
 		if s.Privileged {
-			tag = r.Warn("  (asks for your Mac password)")
 			privileged++
 		}
-		r.Printf("  %d. %s%s\n", i+1, s.Description, tag)
+	}
+	r.Line(r.Bold("goguma will:"))
+	r.Blank()
+	r.Printf("  %s %s\n", r.Muted("·"),
+		fmt.Sprintf("install the goguma commands to %s", l.BinDir))
+	r.Printf("  %s %s\n", r.Muted("·"),
+		"start a background service, and start it again at login")
+	if privileged > 0 {
+		r.Printf("  %s %s%s\n", r.Muted("·"),
+			"install a small helper that runs as root, which is the only way to "+
+				"wake a sleeping Mac",
+			r.Warn("  (asks for your Mac password)"))
 	}
 	r.Blank()
 
@@ -133,10 +151,9 @@ func runInstall(ctx *Context, args []string) error {
 
 	reportAdopted(ctx)
 
-	r.Blank()
-	r.Line(r.Bold("Next:"))
-	r.Printf("  %s   look for anything else worth waking for\n", r.Accent("goguma import"))
-	r.Printf("  %s   see what it is doing\n", r.Accent("goguma status"))
+	// Last, after the scan it describes. Also after the PATH warning, so a
+	// machine that needs one is told before being told it is finished.
+	printSetupDone(r)
 	return nil
 }
 
@@ -319,16 +336,22 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 
 	// Where this ends, and where everything after it happens.
 	//
-	// Setup runs in Terminal because installing a root helper needs a real sudo
-	// prompt, and nothing else does. Left without this, a window full of command
-	// output is the last thing a new user sees, and the tool reads as one you
-	// drive by typing: the menu bar app they downloaded never gets mentioned by
-	// the thing they were told to run.
-	//
-	// It also answers the question the window itself raises: whether closing it
-	// stops anything. It does not, and by this point there is nothing left to
-	// stop, because the scan above is waited for rather than left running past
-	// the prompt.
+}
+
+// printSetupDone is the last thing setup says, and has to be said last.
+//
+// It lived at the end of verifyInstall, which runs before the job scan is
+// waited for, so the terminal announced "Setup is done. You can close this
+// window." and then sat there for another fifteen seconds finding jobs. Anyone
+// who took it at its word closed the window mid-scan; anyone who did not watched
+// a finished tool keep working and reasonably concluded something was stuck.
+//
+// Setup runs in Terminal because installing a root helper needs a real password
+// prompt, and nothing else about goguma does. Without this, a window full of
+// command output is the last thing a new user sees, and the tool reads as one
+// you drive by typing: the menu bar app they just downloaded goes unmentioned by
+// the thing they were told to run.
+func printSetupDone(r *render.Renderer) {
 	r.Blank()
 	r.Printf("%s %s\n", r.Good(r.Sym().OK), r.Bold("Setup is done. You can close this window."))
 	r.Printf("  %s\n", r.Muted("Everything else is in the menu bar: what is being held awake, "))
