@@ -927,6 +927,11 @@ struct PopoverView: View {
                 Image(systemName: "star")
                     .font(.system(size: Theme.Typography.Size.caption - 1))
                 Text("Star")
+                // The same mark the byline carries, at this row's own size.
+                // Two links side by side, one saying it leaves the app and the
+                // other not, reads as one link and one label.
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: Theme.Typography.Size.caption - 1))
             }
             // A step under the byline it sits beside, and ruled like it.
             //
