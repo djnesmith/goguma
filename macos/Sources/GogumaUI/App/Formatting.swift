@@ -19,6 +19,17 @@ enum Format {
         date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
     }
 
+    /// A wake time, with the date only when the date is not today.
+    ///
+    /// "19 Aug at 10:15 AM · in 4m" spends a third of a narrow row telling
+    /// somebody what day it is, four minutes before the thing happens. The day
+    /// earns its place tonight and not this afternoon.
+    static func wakeTime(_ date: Date, from now: Date = .now) -> String {
+        Calendar.current.isDate(date, inSameDayAs: now)
+            ? date.formatted(.dateTime.hour().minute())
+            : date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+    }
+
     /// Full timestamp for a history row.
     static func timestamp(_ date: Date) -> String {
         date.formatted(.dateTime.year().month(.abbreviated).day().hour().minute().second())

@@ -252,15 +252,19 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 	// Twenty seconds, for the same reason the helper gets twenty: the first
 	// launch of a newly downloaded binary is the slow one, and it is also the
 	// only launch a new user ever watches.
-	for range 40 {
+	// A bar, because twenty seconds of a still cursor after a password prompt
+	// reads as a hang. It shows the share of the allowance used rather than
+	// progress towards success, so a full bar means "about to give up".
+	ok := r.WaitFor("  starting the background service", 40, 500*time.Millisecond, func() bool {
 		if err := ipc.Do(ctx.Socket, ipc.OpPing, nil, &st); err == nil {
 			lastErr = nil
-			break
+			return true
 		} else {
 			lastErr = err
+			return false
 		}
-		time.Sleep(500 * time.Millisecond)
-	}
+	})
+	_ = ok
 
 	if lastErr != nil {
 		r.Problem("the background service hasn't answered yet · it may still be starting",
@@ -301,13 +305,11 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 	// "the privileged helper didn't start" for a helper that was running as
 	// root and answering a few seconds later, on the one screen that decides
 	// whether they think the tool works.
-	for range 40 {
-		if lastHelperErr = ipc.DoTimeout(paths.HelperSocket, 2*time.Second,
-			ipc.OpHelperStatus, nil, &hs); lastHelperErr == nil {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
+	r.WaitFor("  starting the privileged helper", 40, 500*time.Millisecond, func() bool {
+		lastHelperErr = ipc.DoTimeout(paths.HelperSocket, 2*time.Second,
+			ipc.OpHelperStatus, nil, &hs)
+		return lastHelperErr == nil
+	})
 	if lastHelperErr != nil {
 		r.Problem("the privileged helper hasn't answered yet · it may still be starting",
 			"goguma doctor")

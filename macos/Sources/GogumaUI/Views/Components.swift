@@ -191,10 +191,17 @@ struct SetupDisclosure: View {
                 .minimumScaleFactor(0.88)
                 .frame(maxWidth: .infinity, alignment: .center)
 
-            row("calendar", "Reads your scheduled jobs to know when to wake")
-            row("laptopcomputer", "Your jobs stay on this Mac. No account, no tracking")
-            // Last, because it is the consequence of the line above the list.
-            row("key", "Installs a small helper for it, hence the password")
+            // Two, not three.
+            //
+            // There were three, and the third ("installs a small helper, hence
+            // the password") said again what the line above the list already
+            // says: that this needs root. Three single-line claims stacked under
+            // a heading read as a form to get through rather than as two things
+            // worth knowing, on the one panel where somebody is deciding whether
+            // to trust the thing at all. What it reads and where that stays are
+            // one thought, so they are one line.
+            row("key", "Installs a small helper, which is what the password is for")
+            row("laptopcomputer", "Reads your scheduled jobs to know when to wake. Nothing leaves this Mac")
 
             // The three lines above are the summary; this is the whole account,
             // written to be checked rather than believed.

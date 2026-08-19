@@ -344,6 +344,12 @@ struct PopoverView: View {
     /// Only where there is something to add. Everything else falls back to the
     /// line itself, which is what a tooltip should say when the text it is
     /// attached to has been truncated.
+    /// What to call the next wake: the job it is for, when that is known.
+    private var nextWakeLabel: String {
+        let job = store.status?.nextJob ?? ""
+        return job.isEmpty ? "Next wake" : job
+    }
+
     private var subheadlineHelp: String? {
         guard store.state == .holding else { return nil }
         return "goguma lets the Mac sleep anyway if it gets too hot or the battery "
@@ -454,9 +460,18 @@ struct PopoverView: View {
             // do something", and the job list two sections below already says
             // which job that is. Naming it here made the card three lines to
             // deliver one fact.
+            // The job's name is the label, not a line of its own.
+            //
+            // A previous attempt put it underneath and made the card three
+            // lines to deliver one fact, which is why the note above says the
+            // job list answers this. It does, two sections down and behind a
+            // disclosure, and "Next wake" on its own leaves the popover
+            // answering "when" while refusing to say "what". The alarm glyph
+            // already carries the word this label was spending, so the name
+            // costs nothing: same row, same height, one more fact.
             KeyValueRow(
-                label: "Next wake",
-                value: "\(Format.dayAndTime(wake)) · \(Format.until(wake, from: store.now))",
+                label: nextWakeLabel,
+                value: "\(Format.wakeTime(wake, from: store.now)) · \(Format.until(wake, from: store.now))",
                 icon: Theme.Icon.nextWake,
                 // One accent per surface, and while holding it is the counter.
                 //
@@ -891,6 +906,37 @@ struct PopoverView: View {
     /// otherwise blank line. Beside the name it costs no vertical space and
     /// reads as a byline, which is what it is.
     private var authorLink: some View {
+        HStack(spacing: Theme.Space.sm) {
+            starLink
+            authorCredit
+        }
+    }
+
+    /// One ask, in the quietest place that is still seen.
+    ///
+    /// A star costs the person nothing and is worth a great deal to a project
+    /// nobody has heard of, so asking once is fair. Asking more than once is
+    /// not, and this is the only place it is asked: a menu bar popover is
+    /// opened to find out what the machine is doing, and a tool whose whole
+    /// argument is that it stays out of the way cannot spend that moment on
+    /// itself. It sits beside the byline, at byline weight, and never moves,
+    /// grows, or comes back.
+    private var starLink: some View {
+        Link(destination: URL(string: Self.repoURL)!) {
+            HStack(spacing: 2) {
+                Image(systemName: "star")
+                    .font(Theme.Typography.iconInline)
+                Text("Star")
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(FooterButtonStyle(underlined: false))
+        .pointingHand()
+        .help("Star goguma on GitHub. It is free and it helps people find it.")
+        .accessibilityLabel("Star goguma on GitHub")
+    }
+
+    private var authorCredit: some View {
         Group {
             Link(destination: URL(string: Self.authorURL)!) {
                 HStack(spacing: 2) {
@@ -929,6 +975,7 @@ struct PopoverView: View {
     /// repository would spend the widest row on the surface saying the same
     /// word twice. Someone who wants the source has the title, the README and
     /// the release they installed from; this row is for the person behind it.
+    private static let repoURL = "https://github.com/junnam586/goguma"
     private static let authorURL = "https://www.linkedin.com/in/jun-nam-4ba16b326/"
     private static let authorLabel = "made by Jun Nam"
 
