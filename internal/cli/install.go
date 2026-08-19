@@ -132,11 +132,45 @@ func runInstall(ctx *Context, args []string) error {
 		return nil
 	}
 
-	for _, s := range plan.Steps {
-		r.Printf("  %s %s… ", r.Muted("→"), shortStep(s.Description, l))
-		if err := s.Run(); err != nil {
-			r.Printf("%s\n", r.Danger("failed"))
-			return err
+	// Two lines, not nine.
+	//
+	// Nine steps were listed as they ran, on the grounds that a failure would
+	// say which one broke. It would, and it would not help: somebody who cannot
+	// install a tool is not going to debug its LaunchAgent, they are going to
+	// stop. The list was really for a bug report, from a person who by then has
+	// no reason to file one.
+	//
+	// So the successful path says the two things that are actually different
+	// from each other — the ordinary install, and the part that asks for a
+	// password — and the failing path says everything: which step, what it was
+	// doing, and the error under it. Quiet when it works, specific when it does
+	// not, rather than uniformly verbose in the hope that verbosity is useful
+	// later.
+	// Grouped by consecutive runs of the same privilege, never reordered.
+	//
+	// Collecting all the unprivileged steps and then all the privileged ones
+	// would produce the same two lines today, because the plan already happens
+	// to be ordered that way, and would silently reorder an installation the
+	// first time it was not. Steps run in the order the plan gives them; only
+	// the reporting is grouped.
+	label := func(privileged bool) string {
+		if privileged {
+			return "installing the helper"
+		}
+		return "installing goguma"
+	}
+
+	for i := 0; i < len(plan.Steps); {
+		group := plan.Steps[i].Privileged
+		r.Printf("  %s %s… ", r.Muted("→"), label(group))
+		for i < len(plan.Steps) && plan.Steps[i].Privileged == group {
+			if err := plan.Steps[i].Run(); err != nil {
+				r.Printf("%s\n", r.Danger("failed"))
+				r.Blank()
+				r.Problem(fmt.Sprintf("couldn't %s", shortStep(plan.Steps[i].Description, l)), "")
+				return err
+			}
+			i++
 		}
 		r.Printf("%s\n", r.Good("done"))
 	}
