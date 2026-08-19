@@ -933,6 +933,10 @@ struct PopoverView: View {
                 Image(systemName: "arrow.up.right")
                     .font(Theme.Typography.iconInline)
             }
+            // Stated, not inherited. The byline beside this sets `caption`
+            // explicitly, and leaving this one to the ambient font made it the
+            // larger of two things that are meant to match.
+            .font(Theme.Typography.caption)
             .contentShape(Rectangle())
         }
         .buttonStyle(FooterButtonStyle(underlined: true))
