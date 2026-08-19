@@ -172,6 +172,12 @@ func reportAdopted(ctx *Context) {
 		}
 	}
 	if len(managed) == 0 {
+		// Not silence. The scan runs on the service's own schedule, so a fresh
+		// install genuinely has nothing yet, and printing nothing at all reads
+		// as a tool that looked and found none of your work worth waking for.
+		r.Blank()
+		r.Printf("%s %s\n", r.Muted(r.Sym().Idle),
+			r.Muted("looking for scheduled jobs · they appear within a minute, or run 'goguma sync' now"))
 		return
 	}
 
@@ -243,18 +249,21 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 		Version string `json:"version"`
 	}
 	var lastErr error
-	for range 20 {
+	// Twenty seconds, for the same reason the helper gets twenty: the first
+	// launch of a newly downloaded binary is the slow one, and it is also the
+	// only launch a new user ever watches.
+	for range 40 {
 		if err := ipc.Do(ctx.Socket, ipc.OpPing, nil, &st); err == nil {
 			lastErr = nil
 			break
 		} else {
 			lastErr = err
 		}
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	if lastErr != nil {
-		r.Problem("the background service didn't start · check the log for why",
+		r.Problem("the background service hasn't answered yet · it may still be starting",
 			"tail -n 40 "+filepath.Join(ctx.Layout.LogDir, "daemon.err.log"))
 		return
 	}
@@ -282,15 +291,25 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 	// being made here, checked against the actual process.
 	var hs ipc.HelperStatusResp
 	var lastHelperErr error
-	for range 12 {
+	// Forty attempts at half a second: twenty seconds, against the three this
+	// used to allow.
+	//
+	// The old window was measured against a helper that had been run before.
+	// The first launch of a freshly downloaded, freshly notarized binary also
+	// pays for Gatekeeper to validate it, and that can take longer than three
+	// seconds on its own. Anyone installing from the website therefore got
+	// "the privileged helper didn't start" for a helper that was running as
+	// root and answering a few seconds later, on the one screen that decides
+	// whether they think the tool works.
+	for range 40 {
 		if lastHelperErr = ipc.DoTimeout(paths.HelperSocket, 2*time.Second,
 			ipc.OpHelperStatus, nil, &hs); lastHelperErr == nil {
 			break
 		}
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 	if lastHelperErr != nil {
-		r.Problem("the privileged helper didn't start, lid-closed holds and OS wakes won't work",
+		r.Problem("the privileged helper hasn't answered yet · it may still be starting",
 			"goguma doctor")
 		return
 	}

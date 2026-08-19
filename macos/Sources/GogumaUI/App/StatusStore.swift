@@ -142,7 +142,19 @@ final class StatusStore {
     struct ActionMessage: Sendable, Equatable {
         var text: String
         var isError: Bool
+        /// When it was raised, so it can stop being true.
+        var at: Date = .now
     }
+
+    /// How long a result stays on screen before it stops being news.
+    ///
+    /// It used to stay until the *next* action, which meant a failure could be
+    /// pinned to every window indefinitely. Clicking anything during the minute
+    /// after setup, while the service was still starting, left "goguma's
+    /// background service didn't respond." on the popover, the jobs window and
+    /// the settings pane at once, long after it was answering perfectly well.
+    /// A message about a moment has to expire with the moment.
+    private static let actionMessageLifetime: TimeInterval = 8
 
     // MARK: - Derived state
 
@@ -331,11 +343,18 @@ final class StatusStore {
     /// One poll cycle: status, plus jobs when a surface that needs them is up.
     func refresh() async {
         now = .now
+        expireActionMessage()
         do {
             let fresh = try await client.status()
             status = fresh
             lastUpdated = .now
             connection = .connected
+            // A failure that said the service was not answering is disproved by
+            // this reply. Clearing it here rather than only on a timer means the
+            // window is right the moment it can be, which for the minute after
+            // setup is the difference between "it is starting" and "it is
+            // broken".
+            if actionMessage?.isError == true { actionMessage = nil }
         } catch let error as DaemonError {
             apply(error)
         } catch {
@@ -375,6 +394,14 @@ final class StatusStore {
             apply(error)
         } catch {
             apply(DaemonError.io(String(describing: error)))
+        }
+    }
+
+    /// Drops a result that has been on screen long enough.
+    private func expireActionMessage() {
+        guard let m = actionMessage else { return }
+        if Date.now.timeIntervalSince(m.at) > Self.actionMessageLifetime {
+            actionMessage = nil
         }
     }
 
