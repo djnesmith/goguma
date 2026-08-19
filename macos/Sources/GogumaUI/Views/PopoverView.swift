@@ -923,21 +923,21 @@ struct PopoverView: View {
     /// grows, or comes back.
     private var starLink: some View {
         Link(destination: URL(string: Self.repoURL)!) {
-            HStack(spacing: 2) {
-                Image(systemName: "star")
-                    .font(Theme.Typography.iconInline)
-                Text("Star")
-                // The same mark the byline carries. Two links side by side, one
-                // saying it leaves the app and the other not, reads as one link
-                // and one label.
-                Image(systemName: "arrow.up.right")
-                    .font(Theme.Typography.iconInline)
-            }
-            // Stated, not inherited. The byline beside this sets `caption`
-            // explicitly, and leaving this one to the ambient font made it the
-            // larger of two things that are meant to match.
-            .font(Theme.Typography.caption)
-            .contentShape(Rectangle())
+            // One Text with the glyphs interpolated into it, not an HStack of
+            // three views.
+            //
+            // `.underline()` is a text modifier: applied to a stack it rules
+            // the words and leaves the images alone, so the line started after
+            // the star and the mark sat above nothing. Interpolated, the glyphs
+            // are part of the run being ruled, and the underline is continuous
+            // across the whole link.
+            //
+            // Size stated rather than inherited. The byline beside this sets
+            // `caption` explicitly, and leaving this to the ambient font made
+            // the ask larger than the credit.
+            Text("\(Image(systemName: "star")) Star \(Image(systemName: "arrow.up.right"))")
+                .font(Theme.Typography.caption)
+                .contentShape(Rectangle())
         }
         .buttonStyle(FooterButtonStyle(underlined: true))
         .pointingHand()
