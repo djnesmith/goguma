@@ -65,6 +65,7 @@ and any problems that need attention.
 			return enc.Encode(st)
 		}
 		printStatus(ctx.Out, st)
+		printStarAsk(ctx.Out)
 		return nil
 	},
 }

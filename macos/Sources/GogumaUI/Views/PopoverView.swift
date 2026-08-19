@@ -925,12 +925,19 @@ struct PopoverView: View {
         Link(destination: URL(string: Self.repoURL)!) {
             HStack(spacing: 2) {
                 Image(systemName: "star")
-                    .font(Theme.Typography.iconInline)
+                    .font(.system(size: Theme.Typography.Size.caption - 1))
                 Text("Star")
             }
+            // A step under the byline it sits beside, and ruled like it.
+            //
+            // At the same size the ask read as level with the credit, which is
+            // a claim about how much it matters. Underlined because the two
+            // things on this row are both links, and one of them looking like a
+            // label is worse than both looking like links.
+            .font(.system(size: Theme.Typography.Size.caption - 1))
             .contentShape(Rectangle())
         }
-        .buttonStyle(FooterButtonStyle(underlined: false))
+        .buttonStyle(FooterButtonStyle(underlined: true))
         .pointingHand()
         .help("Star goguma on GitHub. It is free and it helps people find it.")
         .accessibilityLabel("Star goguma on GitHub")

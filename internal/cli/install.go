@@ -340,6 +340,7 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 	r.Blank()
 	r.Printf("  %s\n", r.Muted("to hear when something breaks or gets fixed:"))
 	r.Printf("  %s\n", r.Accent(signupURL))
+	printStarAsk(r)
 }
 
 // signupURL is where people can leave an email address if they want to.
