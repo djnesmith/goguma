@@ -156,28 +156,14 @@ func reportAdopted(ctx *Context) {
 	// empty machine and install said nothing, while the jobs were adopted
 	// moments later in silence. That contradicts the whole disclosure: the
 	// unprompted adoption below is only acceptable because install states it.
-	var syncResp struct {
-		Added int `json:"added"`
-	}
-	_ = callDaemon(ctx, ipc.OpSync, nil, &syncResp)
-
-	var resp ipc.JobsListResp
-	if err := callDaemon(ctx, ipc.OpJobsList, nil, &resp); err != nil {
-		return
-	}
-	var managed []ipc.JobView
-	for _, v := range resp.Jobs {
-		if v.Job.Managed {
-			managed = append(managed, v)
-		}
-	}
+	managed := waitForAdoption(ctx, r)
 	if len(managed) == 0 {
-		// Not silence. The scan runs on the service's own schedule, so a fresh
-		// install genuinely has nothing yet, and printing nothing at all reads
-		// as a tool that looked and found none of your work worth waking for.
+		// A finished search that found nothing, which is now what this means:
+		// the wait above gave the scanner its time rather than reporting
+		// whatever had turned up by the second the prompt returned.
 		r.Blank()
 		r.Printf("%s %s\n", r.Muted(r.Sym().Idle),
-			r.Muted("still looking for scheduled jobs · they appear in the menu bar as they are found"))
+			r.Muted("no scheduled jobs on this machine yet · anything you add later shows up on its own"))
 		return
 	}
 
@@ -339,14 +325,14 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 	// drive by typing: the menu bar app they downloaded never gets mentioned by
 	// the thing they were told to run.
 	//
-	// It also answers the question the window itself raises. Scanning continues
-	// after this exits, so somebody watching an apparently finished terminal has
-	// no way to know whether closing it stops anything. It does not.
+	// It also answers the question the window itself raises: whether closing it
+	// stops anything. It does not, and by this point there is nothing left to
+	// stop, because the scan above is waited for rather than left running past
+	// the prompt.
 	r.Blank()
 	r.Printf("%s %s\n", r.Good(r.Sym().OK), r.Bold("Setup is done. You can close this window."))
 	r.Printf("  %s\n", r.Muted("Everything else is in the menu bar: what is being held awake, "))
 	r.Printf("  %s\n", r.Muted("what is coming next, the job list, and every setting."))
-	r.Printf("  %s\n", r.Muted("Jobs keep arriving there for a minute or so while it reads your schedulers."))
 
 	// A link, printed once, at the end.
 	//
@@ -534,4 +520,66 @@ func removeAgentHooks(ctx *Context) {
 		r.Printf("%s %s\n", r.Good(r.Sym().OK),
 			r.Muted("removed goguma's line from "+h.Name))
 	}
+}
+
+// waitForAdoption syncs, then waits until the job count stops changing.
+//
+// One sync and one list was not enough. `SyncNow` is synchronous, so the call
+// does finish what it starts, but a daemon that came up two seconds ago has not
+// finished working out what is on the machine, and the first pass found a
+// fraction of it. Setup then printed that fraction, or printed nothing, and the
+// rest arrived in the menu bar ten seconds after the terminal said it was done
+// — so the number a new user was given was wrong at the moment they read it.
+//
+// Waiting for the count to settle rather than sleeping a fixed amount: a
+// machine with two cron lines is done almost at once and should not be held for
+// somebody else's worst case, and a machine with fifty is not finished just
+// because a timer expired. Three identical counts in a row, half a second
+// apart, with a hard stop so a scanner that never settles cannot hang setup.
+func waitForAdoption(ctx *Context, r *render.Renderer) []ipc.JobView {
+	var syncResp struct {
+		Added int `json:"added"`
+	}
+	_ = callDaemon(ctx, ipc.OpSync, nil, &syncResp)
+
+	list := func() []ipc.JobView {
+		var resp ipc.JobsListResp
+		if err := callDaemon(ctx, ipc.OpJobsList, nil, &resp); err != nil {
+			return nil
+		}
+		var managed []ipc.JobView
+		for _, v := range resp.Jobs {
+			if v.Job.Managed {
+				managed = append(managed, v)
+			}
+		}
+		return managed
+	}
+
+	// Two thresholds, because zero means two different things.
+	//
+	// A count that has stopped moving is finished, and three readings half a
+	// second apart is enough to say so once something has been found. A count
+	// of zero is not the same claim: early on it means the scan has not begun,
+	// and settling on it would report "no scheduled jobs" to somebody with a
+	// crontab full of them. So zero has to hold for longer before it is
+	// believed — long enough to be an answer, short enough that a machine which
+	// genuinely has none is not held for the full allowance.
+	const settledAfter, settledAtZero = 3, 8
+	last, stable := -1, 0
+	var jobs []ipc.JobView
+
+	r.WaitFor("  reading this machine's schedulers", 40, 500*time.Millisecond, func() bool {
+		jobs = list()
+		if len(jobs) == last {
+			stable++
+		} else {
+			last, stable = len(jobs), 0
+		}
+		if last == 0 {
+			return stable >= settledAtZero
+		}
+		return stable >= settledAfter
+	})
+	return jobs
 }
