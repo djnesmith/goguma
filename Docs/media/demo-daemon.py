@@ -66,6 +66,25 @@ def call(op):
 
 def build():
     caps = {op: call(op) for op in ("ping", "status", "jobs.list", "config.get")}
+
+    # The status payload is the author's machine, and it was going out verbatim.
+    #
+    # Only jobs.list was being rewritten, so every picture taken through this
+    # fixture carried the real holds and the real next wake: a menubar.png went
+    # as far as a private project name in an agent hold and a real job name in
+    # the wake row. The whole reason this file exists is that `--render` reads
+    # the live daemon; sanitising half of what it reads is not sanitising it.
+    st = caps["status"]["payload"]
+    if isinstance(st, str):
+        st = json.loads(st)
+    st["holds"] = []
+    st["holding"] = False
+    st["cutout"] = None
+    st["wake_suppressed"] = ""
+    st["no_wake_reason"] = ""
+    # A wake worth photographing, named after a job this fixture actually has.
+    st["next_job"] = DEMO[0][0]
+    caps["status"]["payload"] = st
     jl = caps["jobs.list"]["payload"]
     if isinstance(jl, str):
         jl = json.loads(jl)

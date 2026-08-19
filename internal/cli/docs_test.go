@@ -598,3 +598,32 @@ func TestUninstallClearsTheAppsPreferences(t *testing.T) {
 			"Preferences it misses outlive the app and suppress the first-run popover.", want)
 	}
 }
+
+// The screenshot fixture sanitises the status payload, not only the job list.
+//
+// `--render` reads the live daemon, which is the right default and the reason
+// this fixture exists. It rewrote jobs.list and passed status through untouched,
+// so every picture taken with it carried the real machine's holds and its real
+// next wake. A regenerated menubar.png went as far as a private project name in
+// an agent hold and a real job name in the wake row, on the image the README
+// leads with.
+//
+// Checking the script rather than the pixels, for the same reason
+// TestRecordingsAreMadeAgainstSandboxData checks the tape: what is checkable is
+// the setup that produced the image.
+func TestTheScreenshotFixtureSanitisesStatus(t *testing.T) {
+	root := repoRoot(t)
+	fixture := readDoc(t, root, "Docs/media/demo-daemon.py")
+
+	// The fields that carry a real machine's names into a picture.
+	for _, field := range []string{`st["holds"]`, `st["next_job"]`} {
+		if !strings.Contains(fixture, field) {
+			t.Errorf("demo-daemon.py never rewrites %s, so a render through it "+
+				"publishes whatever the real daemon was doing", field)
+		}
+	}
+	if !strings.Contains(fixture, `caps["status"]["payload"] = st`) {
+		t.Error("demo-daemon.py does not write its sanitised status back, " +
+			"so the real one is what gets served")
+	}
+}
