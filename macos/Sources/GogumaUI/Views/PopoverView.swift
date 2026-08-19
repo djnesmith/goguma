@@ -925,21 +925,14 @@ struct PopoverView: View {
         Link(destination: URL(string: Self.repoURL)!) {
             HStack(spacing: 2) {
                 Image(systemName: "star")
-                    .font(.system(size: Theme.Typography.Size.caption - 1))
+                    .font(Theme.Typography.iconInline)
                 Text("Star")
-                // The same mark the byline carries, at this row's own size.
-                // Two links side by side, one saying it leaves the app and the
-                // other not, reads as one link and one label.
+                // The same mark the byline carries. Two links side by side, one
+                // saying it leaves the app and the other not, reads as one link
+                // and one label.
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: Theme.Typography.Size.caption - 1))
+                    .font(Theme.Typography.iconInline)
             }
-            // A step under the byline it sits beside, and ruled like it.
-            //
-            // At the same size the ask read as level with the credit, which is
-            // a claim about how much it matters. Underlined because the two
-            // things on this row are both links, and one of them looking like a
-            // label is worse than both looking like links.
-            .font(.system(size: Theme.Typography.Size.caption - 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(FooterButtonStyle(underlined: true))
