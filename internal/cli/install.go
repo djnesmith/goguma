@@ -97,33 +97,23 @@ func runInstall(ctx *Context, args []string) error {
 		// this it reads as an unexplained password box from a tool that was
 		// working a second ago. It also fails outright when this is run
 		// anywhere without a terminal, which is worth knowing up front.
-		r.Blank()
-		r.Line(r.Bold("macOS will ask for your login password."))
-		r.Printf("%s\n", r.Muted(
-			"Waking a sleeping Mac needs root access, so the helper that does it is"))
-		r.Printf("%s\n", r.Muted(
-			"installed as root. That prompt is macOS's own sudo. Your password goes to"))
-		r.Printf("%s\n", r.Muted(
-			"macOS and nowhere else, and sudo needs a terminal, which is why this is one."))
-
-		// What the root part can and cannot do, at the moment it is being agreed
-		// to rather than in a document nobody opens first.
+		// One statement about root, not two.
 		//
-		// "Runs as root" is the scariest sentence in this output and the only
-		// one that cannot be avoided, so the bounds on it belong on the same
-		// screen. Every claim here is the same one SECURITY.md makes and is
-		// checkable against the source, which is the only reason to believe any
-		// of it: six messages, none of which runs a command, reads a file, or
-		// takes a path.
+		// This said its piece here and again below the signature line, in
+		// different words, either side of the one line on the screen that is not
+		// goguma describing itself. Saying a reassurance twice is how it stops
+		// being read as one.
 		r.Blank()
+		r.Line(r.Bold("macOS will ask for your login password, once."))
 		r.Printf("%s\n", r.Muted(
-			"The helper answers six messages: hold sleep, set or clear a wake, and report."))
+			"That prompt is macOS's own sudo, and your password goes to macOS and nowhere else."))
 		r.Printf("%s\n", r.Muted(
-			"None of them runs a command, reads a file, or takes a path, and its socket"))
+			"The helper is the only part that runs as root. It answers six messages — hold"))
 		r.Printf("%s\n", r.Muted(
-			"accepts only you. Nothing about you leaves this Mac. Every line is open"))
+			"sleep, set or clear a wake, report — and none of them runs a command, reads a"))
 		r.Printf("%s\n", r.Muted(
-			"source, and `goguma uninstall` takes all of it back off:"))
+			"file, or takes a path. Nothing about you leaves this Mac, and `goguma uninstall`"))
+		r.Printf("%s\n", r.Muted("removes all of it."))
 		r.Printf("%s\n", r.Accent("https://github.com/junnam586/goguma/blob/main/SECURITY.md"))
 
 		// What is about to be installed as root, checked rather than asserted.
@@ -141,17 +131,9 @@ func runInstall(ctx *Context, args []string) error {
 		r.Line(r.Muted("Dry run, nothing was changed."))
 		return nil
 	}
-	if privileged > 0 {
-		r.Printf("%s\n", r.Muted(fmt.Sprintf(
-			"%s run as root. The helper only blocks sleep and schedules wakes; it holds",
-			pluralSteps(privileged))))
-		r.Printf("%s\n", r.Muted(
-			"no schedules or policy of its own, and `goguma uninstall` removes it."))
-		r.Blank()
-	}
 
 	for _, s := range plan.Steps {
-		r.Printf("  %s %s… ", r.Muted("→"), s.Description)
+		r.Printf("  %s %s… ", r.Muted("→"), shortStep(s.Description, l))
 		if err := s.Run(); err != nil {
 			r.Printf("%s\n", r.Danger("failed"))
 			return err
@@ -625,4 +607,18 @@ func waitForAdoption(ctx *Context, r *render.Renderer) []ipc.JobView {
 		return stable >= settledAfter
 	})
 	return jobs
+}
+
+// shortStep trims what the plan above already said.
+//
+// The step descriptions name their destination, which is right for a plan and
+// repetitive in a progress list: the same thirty-character path appeared on
+// four consecutive lines, under a heading that had just given it once. What is
+// worth reading here is which step is running, and, if one fails, which one it
+// was.
+func shortStep(desc string, l paths.Layout) string {
+	desc = strings.ReplaceAll(desc, " to "+l.BinDir, "")
+	desc = strings.ReplaceAll(desc, " to "+l.HelperBinary, "")
+	desc = strings.ReplaceAll(desc, "the privileged helper", "the helper")
+	return desc
 }
