@@ -213,7 +213,7 @@ goguma hooks      # what is set up, and what isn't
 Claude Code, Codex and Cursor are covered. Each session holds separately, so two
 editors at once don't release each other, and the hold ends when the agent does
 rather than on a timer. Your existing hooks are kept and a backup is written;
-`goguma hooks remove` undoes it. [Docs/CODING-AGENTS.md](Docs/CODING-AGENTS.md)
+`goguma hooks remove` undoes it. [the notes on coding agents](Docs/CODING-AGENTS.md)
 has the detail.
 
 The hold is leased, so a wrapper that is killed outright cannot strand it: it
@@ -257,7 +257,7 @@ the keyboard for two minutes. Turn it off with
 `goguma config set sleep_after_wake off`.
 
 goguma installs one small program that runs as root, because blocking sleep and
-setting a wake alarm both need it. [SECURITY.md](SECURITY.md) says what that
+setting a wake alarm both need it. [security](SECURITY.md) says what that
 program is allowed to do, who can reach it, and what the rest of it reads.
 
 ## FAQ
@@ -312,7 +312,7 @@ battery hits 10%, and when the machine hits 80°C.
 
 **Does anything leave my machine?**
 Nothing about you. There is no account, no telemetry and no analytics.
-[SECURITY.md](SECURITY.md#nothing-about-you-leaves-your-machine) lists the only
+[security](SECURITY.md#nothing-about-you-leaves-your-machine) lists the only
 two pieces of code that can open a socket at all.
 
 **Does it work on Linux?**
@@ -328,8 +328,9 @@ or build it yourself from [`macos/`](macos/README.md) by running
 [getgoguma.com/updates](https://getgoguma.com/updates).
 
 **Where can I read more?**
-Architecture notes are in [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md), and the
-Mac app has its own notes in [macos/README.md](macos/README.md).
+How it works, and why it works that way, is in
+[architecture](Docs/ARCHITECTURE.md). The Mac app has
+[its own notes](macos/README.md).
 
 ## Who made this
 
@@ -340,7 +341,7 @@ You can find me on
 [LinkedIn](https://www.linkedin.com/in/jun-nam-4ba16b326/), and I'm happy to
 answer any questions about goguma at
 [junnam586@gmail.com](mailto:junnam586@gmail.com). If it's a security issue
-rather than a question, [SECURITY.md](SECURITY.md#reporting-something) says how
+rather than a question, [security](SECURITY.md#reporting-something) says how
 to report it.
 
 ## License
