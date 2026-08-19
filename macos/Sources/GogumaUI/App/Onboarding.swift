@@ -82,10 +82,9 @@ enum Onboarding {
             \(quoted) install
             status=$?
             echo
-            if [ $status -eq 0 ]; then
-              echo "Setup finished. You can close this window."
-            else
-              echo "Setup did not finish. The output above says why."
+            if [ $status -ne 0 ]; then
+              echo "Setup did not finish. The output above says why,"
+              echo "and nothing has been left running."
             fi
             """
 

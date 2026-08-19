@@ -21,5 +21,9 @@ func printStarAsk(r *render.Renderer) {
 		return
 	}
 	r.Blank()
-	r.Printf("  %s\n", r.Muted("★ like goguma? a star helps people find it · "+repoURL))
+	// The lead-in muted, the address accented, which is how the updates link
+	// two lines above is set. One URL coloured and the other not read as one
+	// being a link and the other being punctuation.
+	r.Printf("  %s\n", r.Muted("★ like goguma? a star helps people find it:"))
+	r.Printf("  %s\n", r.Accent(repoURL))
 }

@@ -177,7 +177,7 @@ func reportAdopted(ctx *Context) {
 		// as a tool that looked and found none of your work worth waking for.
 		r.Blank()
 		r.Printf("%s %s\n", r.Muted(r.Sym().Idle),
-			r.Muted("looking for scheduled jobs · they appear within a minute, or run 'goguma sync' now"))
+			r.Muted("still looking for scheduled jobs · they appear in the menu bar as they are found"))
 		return
 	}
 
@@ -330,6 +330,23 @@ func verifyInstall(ctx *Context, expectHelper bool) {
 	// agent installed next month is set up without anyone remembering to, and
 	// the toggle in the app takes effect where it is flipped. Doing it here as
 	// well would only mean doing it twice.
+
+	// Where this ends, and where everything after it happens.
+	//
+	// Setup runs in Terminal because installing a root helper needs a real sudo
+	// prompt, and nothing else does. Left without this, a window full of command
+	// output is the last thing a new user sees, and the tool reads as one you
+	// drive by typing: the menu bar app they downloaded never gets mentioned by
+	// the thing they were told to run.
+	//
+	// It also answers the question the window itself raises. Scanning continues
+	// after this exits, so somebody watching an apparently finished terminal has
+	// no way to know whether closing it stops anything. It does not.
+	r.Blank()
+	r.Printf("%s %s\n", r.Good(r.Sym().OK), r.Bold("Setup is done. You can close this window."))
+	r.Printf("  %s\n", r.Muted("Everything else is in the menu bar: what is being held awake, "))
+	r.Printf("  %s\n", r.Muted("what is coming next, the job list, and every setting."))
+	r.Printf("  %s\n", r.Muted("Jobs keep arriving there for a minute or so while it reads your schedulers."))
 
 	// A link, printed once, at the end.
 	//
