@@ -17,6 +17,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="caffeinate vs pmset vs Amphetamine — what each one actually does">
 <meta name="twitter:image" content="https://getgoguma.com/assets/og.png">
+<link rel="alternate" type="application/atom+xml" title="goguma · writing" href="../../feed.xml">
 <link rel="canonical" href="https://getgoguma.com/blog/caffeinate-vs-pmset-vs-amphetamine/">
 <script type="application/ld+json">
 {
@@ -46,6 +47,32 @@
   "operatingSystem": "macOS 14.0 or later",
   "applicationCategory": "UtilitiesApplication"
  }
+}
+</script>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "BreadcrumbList",
+ "itemListElement": [
+  {
+   "@type": "ListItem",
+   "position": 1,
+   "name": "goguma",
+   "item": "https://getgoguma.com/"
+  },
+  {
+   "@type": "ListItem",
+   "position": 2,
+   "name": "Writing",
+   "item": "https://getgoguma.com/blog/"
+  },
+  {
+   "@type": "ListItem",
+   "position": 3,
+   "name": "caffeinate vs pmset vs Amphetamine \u2014 what each one actually does",
+   "item": "https://getgoguma.com/blog/caffeinate-vs-pmset-vs-amphetamine/"
+  }
+ ]
 }
 </script>
 <script type="application/ld+json">
@@ -144,6 +171,10 @@ blockquote p + p{margin-top:10px}
 .home img{width:23px;height:23px}
 .home:hover{opacity:.7}
 .head{padding-top:clamp(30px,6vh,64px)}
+.crumbs{margin:0 0 14px;font-size:13.5px;color:rgba(36,26,44,.5)}
+.crumbs a{color:rgba(36,26,44,.62);text-decoration:none}
+.crumbs a:hover{color:var(--accent);text-decoration:underline}
+.crumbs span{margin:0 6px}
 .stamp{margin:16px 0 0;font-family:var(--mono);font-size:12.5px;
   color:rgba(36,26,44,.46);letter-spacing:.01em}
 /* The answer, before the article. Someone who came from a search result wants
@@ -185,7 +216,11 @@ footer a{color:rgba(36,26,44,.64)}
   </div>
   <div class="wrap head">
     <h1>caffeinate vs pmset vs Amphetamine — what each one actually does</h1>
-    <p class="stamp">2026-08-20 · <a href="../">more writing</a></p>
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="../../">goguma</a> <span aria-hidden="true">›</span>
+      <a href="../">Writing</a>
+    </nav>
+    <p class="stamp">2026-08-20</p>
     <div class="answer"><p><code>caffeinate</code> asserts against idle sleep for the life of a command and releases automatically — but a closed lid defeats it. <code>pmset -a disablesleep 1</code> does hold a closed lid awake, but it is a global setting that <strong>persists after the process that set it dies</strong>. Amphetamine is a GUI wrapper with triggers and timers that has to be turned off manually. None of the three can wake a Mac that is already asleep.</p></div>
   </div>
   <div class="wrap body">

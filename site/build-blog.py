@@ -80,6 +80,10 @@ blockquote p + p{margin-top:10px}
 .home img{width:23px;height:23px}
 .home:hover{opacity:.7}
 .head{padding-top:clamp(30px,6vh,64px)}
+.crumbs{margin:0 0 14px;font-size:13.5px;color:rgba(36,26,44,.5)}
+.crumbs a{color:rgba(36,26,44,.62);text-decoration:none}
+.crumbs a:hover{color:var(--accent);text-decoration:underline}
+.crumbs span{margin:0 6px}
 .stamp{margin:16px 0 0;font-family:var(--mono);font-size:12.5px;
   color:rgba(36,26,44,.46);letter-spacing:.01em}
 /* The answer, before the article. Someone who came from a search result wants
@@ -241,6 +245,18 @@ def page(meta, body_html, posts):
                   "operatingSystem": "macOS 14.0 or later",
                   "applicationCategory": "UtilitiesApplication"},
     }]
+    # Breadcrumbs, unlike FAQ, still produce a rich result: Google replaces the
+    # raw URL under the title with the trail. FAQ rich results were withdrawn
+    # entirely in May 2026, so FAQPage below is carried for Bing and the RAG
+    # crawlers rather than for anything Google will draw.
+    ld.append({
+        "@context": "https://schema.org", "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "goguma", "item": SITE + "/"},
+            {"@type": "ListItem", "position": 2, "name": "Writing", "item": SITE + "/blog/"},
+            {"@type": "ListItem", "position": 3, "name": title, "item": url},
+        ],
+    })
     if meta["faq"]:
         ld.append({
             "@context": "https://schema.org", "@type": "FAQPage",
@@ -283,6 +299,7 @@ def page(meta, body_html, posts):
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{html.escape(title)}">
 <meta name="twitter:image" content="{SITE}/assets/og.png">
+<link rel="alternate" type="application/atom+xml" title="goguma · writing" href="../../feed.xml">
 <link rel="canonical" href="{url}">
 {scripts}
 <style>{CSS}</style>
@@ -294,7 +311,11 @@ def page(meta, body_html, posts):
   </div>
   <div class="wrap head">
     <h1>{html.escape(title)}</h1>
-    <p class="stamp">{meta['date']} · <a href="../">more writing</a></p>
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="../../">goguma</a> <span aria-hidden="true">›</span>
+      <a href="../">Writing</a>
+    </nav>
+    <p class="stamp">{meta['date']}</p>
     <div class="answer"><p>{inline(meta['answer'])}</p></div>
   </div>
   <div class="wrap body">
@@ -404,7 +425,33 @@ def main():
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         + "\n".join(urls) + "\n</urlset>\n")
 
-    print(f"built {len(srcs)} posts + index + sitemap ({len(urls)} urls)")
+    # An Atom feed. Not for readers — for the aggregators and crawlers that
+    # still discover new pages this way, and because a feed is the cheapest
+    # freshness signal a static site can emit.
+    def esc(t):
+        return (t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    entries = "".join(f"""  <entry>
+    <title>{esc(m['title'])}</title>
+    <link href="{SITE}/blog/{m['slug']}/"/>
+    <id>{SITE}/blog/{m['slug']}/</id>
+    <updated>{m['date']}T00:00:00Z</updated>
+    <summary>{esc(m['description'])}</summary>
+  </entry>
+""" for m in metas)
+    open(os.path.join(ROOT, "feed.xml"), "w").write(
+        f"""<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>goguma · writing</title>
+  <subtitle>How macOS sleep, cron, launchd and coding agents actually interact.</subtitle>
+  <link href="{SITE}/feed.xml" rel="self"/>
+  <link href="{SITE}/blog/"/>
+  <id>{SITE}/blog/</id>
+  <updated>{DATE}T00:00:00Z</updated>
+  <author><name>Jun Nam</name></author>
+{entries}</feed>
+""")
+
+    print(f"built {len(srcs)} posts + index + sitemap ({len(urls)} urls) + feed")
     for m in metas:
         print(f"  /blog/{m['slug']}/")
 
