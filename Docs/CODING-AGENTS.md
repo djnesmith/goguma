@@ -102,7 +102,22 @@ Anything you launch from a terminal can be wrapped whether or not it has hooks:
 
 ```sh
 goguma run -- codex exec "refactor the auth module"
+goguma run -- aider --model sonnet
+goguma run -- opencode
 ```
+
+This is the answer for every agent not in the table above, and it is not a
+lesser one. The hold opens when the command starts and closes when it exits, so
+it needs no hook, no plugin, and no cooperation from the tool — which means it
+works for agents that have no hook system at all (Aider, Cline), for ones whose
+integration would mean shipping a plugin into their runtime (OpenCode, Pi), and
+for whatever comes out next month.
+
+The reason goguma does not instead write an alias into your `~/.zshrc` to do
+this behind your back, as some tools do: an alias is a permanent edit to a file
+you own, it only catches the shells that read that file, and it misses the
+editor-launched sessions entirely. Wrapping the one command you meant to wrap
+is smaller, visible, and needs no uninstall.
 
 An agent running in a browser tab, or one of the cloud agents, needs nothing at
 all. The work is happening on somebody else's server, so your Mac sleeping does
