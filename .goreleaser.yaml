@@ -194,8 +194,9 @@ release:
     - Menu bar app showing what is being held awake and what is coming next
     - Holds sleep off for work that has no schedule at all, with
       `goguma run -- <command>`, for as long as that command takes
-    - Keeps a coding agent working with the lid shut: Claude Code, Codex and
-      Cursor are set up to report when they are running
+    - Keeps a coding agent working with the lid shut: Claude Code, Codex,
+      Cursor and Gemini CLI are set up to report when they are running, and
+      anything else can be wrapped with `goguma run -- <agent>`
 
     Requires macOS 14 (Sonoma) or newer, or Linux with systemd. Linux ships for
     amd64 and arm64.
