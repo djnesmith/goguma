@@ -83,7 +83,8 @@ refs=$(
 # URLs because they are somebody else's server. So the one image whose entire
 # job is to be fetched by Reddit, Slack and iMessage was the one image that
 # would not have shipped.
-EXTRA=(advisories.json robots.txt sitemap.xml llms.txt feed.xml 404.html assets/og.png)
+EXTRA=(advisories.json robots.txt sitemap.xml llms.txt feed.xml 404.html assets/og.png
+       _headers vercel.json)
 
 MISSING=0
 FILES=("${PAGES[@]}")
