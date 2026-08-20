@@ -66,6 +66,7 @@ thing to one agent at a time, if you want only some of them.
 | Claude Code | `~/.claude/settings.json` | `UserPromptSubmit`, `PostToolUse`, `Stop` |
 | Codex CLI | `~/.codex/hooks.json` | `UserPromptSubmit`, `PostToolUse`, `Stop` |
 | Cursor | `~/.cursor/hooks.json` | `beforeSubmitPrompt`, `afterFileEdit`, `stop` |
+| Gemini CLI | `~/.gemini/settings.json` | `BeforeAgent`, `AfterTool`, `AfterAgent`, `SessionEnd` |
 
 Restart the agent afterwards; hooks are read when it starts.
 

@@ -41,7 +41,8 @@ goguma run -- claude -p "refactor the auth module"
 
 Sleep is held off for exactly as long as that command runs, lid closed included,
 then released. For an agent inside an editor, where there is no command to wrap,
-goguma sets that up and keeps it that way: Claude Code, Codex and Cursor report
+goguma sets that up and keeps it that way: Claude Code, Codex, Cursor and
+Gemini CLI report
 when they are working, and the machine stays awake until they stop. It is a
 setting, so one switch turns it off again.
 
@@ -210,7 +211,8 @@ agent on the machine, including ones installed later. There is nothing to set up
 goguma hooks      # what is set up, and what isn't
 ```
 
-Claude Code, Codex and Cursor are covered. Each session holds separately, so two
+Claude Code, Codex, Cursor and Gemini CLI are covered. Each session holds
+separately, so two
 editors at once don't release each other, and the hold ends when the agent does
 rather than on a timer. Your existing hooks are kept and a backup is written;
 `goguma hooks remove` undoes it. [the notes on coding agents](Docs/CODING-AGENTS.md)
@@ -285,7 +287,8 @@ goguma can watch the process table for it instead (`--detection pattern
 (`--detection none`).
 
 **Can I use this to keep an agent running with the lid closed?**
-Yes, and it is set up for you. Claude Code, Codex and Cursor are configured to
+Yes, and it is set up for you. Claude Code, Codex, Cursor and Gemini CLI are
+configured to
 report when they are working, so the machine stays awake until they finish and
 sleeps once they do. It is a setting: `goguma config set agent_hooks off`, or
 the switch in the app, takes it back out. `goguma hooks` shows what is in place and

@@ -64,6 +64,29 @@ var Harnesses = []Harness{
 		renewOn: []string{"beforeSubmitPrompt", "afterFileEdit"},
 		stopOn:  []string{"stop"},
 	},
+	{
+		// Gemini CLI takes Claude Code's nesting exactly —
+		// hooks.<Event> = [ {hooks: [{type, command}]} ] — so it needs no new
+		// writer, only the right event names.
+		//
+		// The events are not the same words for the same moments, and picking
+		// them by name similarity would have been wrong. `BeforeAgent` and
+		// `AfterAgent` fire once per turn, which is where Claude Code's
+		// `UserPromptSubmit` and `Stop` sit; `AfterTool` fires per tool call,
+		// like `PostToolUse`. `SessionStart` and `SessionEnd` are the *process*
+		// boundaries, not the work boundaries, so opening a hold on
+		// `SessionStart` would hold sleep off for a session left sitting at an
+		// idle prompt.
+		//
+		// `SessionEnd` is still a stop, as a backstop for a CLI that quits
+		// mid-turn. It is known not to fire on some versions
+		// (google-gemini/gemini-cli#16697), which costs nothing here: it is the
+		// second of two stops, and the lease expires on its own regardless.
+		ID: "gemini-cli", Name: "Gemini CLI",
+		dir: "~/.gemini", file: "settings.json", nested: true,
+		renewOn: []string{"BeforeAgent", "AfterTool"},
+		stopOn:  []string{"AfterAgent", "SessionEnd"},
+	},
 }
 
 func (h Harness) Path() string { return filepath.Join(ExpandHome(h.dir), h.file) }
