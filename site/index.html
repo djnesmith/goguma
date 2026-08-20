@@ -21,7 +21,130 @@ if (!location.hash) {
 <link rel="icon" href="assets/potato.png">
 <meta property="og:title" content="goguma · wake your Mac for scheduled jobs">
 <meta property="og:description" content="Close the lid. The jobs still run.">
-<meta property="og:image" content="assets/scene-close.webp">
+<meta property="og:image" content="https://getgoguma.com/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="https://getgoguma.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="goguma">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="goguma · wake your Mac for scheduled jobs">
+<meta name="twitter:image" content="https://getgoguma.com/assets/og.png">
+<link rel="canonical" href="https://getgoguma.com/">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "SoftwareApplication",
+ "name": "goguma",
+ "applicationCategory": "UtilitiesApplication",
+ "applicationSubCategory": "Task scheduling",
+ "operatingSystem": "macOS 14.0 or later, Linux with systemd",
+ "url": "https://getgoguma.com/",
+ "downloadUrl": "https://github.com/junnam586/goguma/releases/latest/download/goguma.dmg",
+ "softwareVersion": "0.1.10",
+ "license": "https://github.com/junnam586/goguma/blob/main/LICENSE",
+ "isAccessibleForFree": true,
+ "offers": {
+  "@type": "Offer",
+  "price": "0",
+  "priceCurrency": "USD"
+ },
+ "author": {
+  "@type": "Person",
+  "name": "Jun Nam"
+ },
+ "description": "goguma wakes a sleeping Mac shortly before each scheduled job is due, holds sleep off while the job runs, and lets the machine sleep again once it finishes. It also keeps a coding agent running with the lid closed.",
+ "featureList": [
+  "Wakes a sleeping Mac for cron and launchd jobs",
+  "Finds scheduled jobs already on the machine and reports which have been missed",
+  "Holds sleep off with the lid closed while a job or coding agent is working",
+  "Releases the hold if the machine overheats or the battery runs low",
+  "Reports what each job costs in battery"
+ ],
+ "codeRepository": "https://github.com/junnam586/goguma"
+}
+</script>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "FAQPage",
+ "mainEntity": [
+  {
+   "@type": "Question",
+   "name": "What does it do?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Wakes the machine 90 seconds before a job is due, blocks sleep while it runs, lets go when it's done."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Does it run my jobs for me?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "No. Your existing scheduler still fires them. Running a second one would just mean everything executes twice."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Isn't this just caffeinate?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "No. caffeinate stops a Mac sleeping, so you have to leave it running all night for a 3am job. goguma lets it sleep and wakes it at 2:58. It also can't hold a closed lid awake. caffeinate blocks idle sleep, and shutting the lid isn't idle sleep, so it stops the moment you close the laptop. That is the case an agent or a long build needs most."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Can I keep a coding agent running with the lid shut?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Yes, and it is set up for you. Claude Code, Codex, Cursor and Gemini CLI are configured to say when they are working, so the Mac stays awake until they finish and sleeps once they do. It is a setting, so one switch takes it back out. goguma hooks shows what is in place; goguma hooks remove undoes it. It stops when the agent stops, not on a timer, and two editors open hold separately so the one that finishes first doesn't sleep the machine under the other. For anything you start yourself, wrap it: goguma run -- claude -p \"...\" . This is needed because an agent can't be recognised from outside: its process is there whether or not it's working, and processor use doesn't separate the two, because an agent waiting on a model is a process waiting on a socket."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Why not just sudo pmset -a disablesleep 1?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "That is the mechanism goguma uses, and for one run you are sitting next to, it is enough. It is a global setting that outlives the process that set it, and logout, and reboot. Forget to clear it and the Mac never sleeps again. goguma guarantees the other half: released when the command exits, when the background service dies, at 10% battery, and at 80\u00b0C."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Does it need root?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "A small helper does, and only because macOS lets nobody but root schedule a wake or keep a closed lid awake. It can do exactly two things: set the wake time, and hold sleep off. It can't read your jobs, your files, or anything else, because it is never told about them. Everything else runs as you. --no-helper installs without it, and lid-closed jobs stop working."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Does anything leave my machine?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Nothing about you. There's no account, no sign-in and no analytics. Your jobs, your commands and your schedules never leave the Mac. goguma does fetch one small file from this site once a day, to tell you if a bug has been found or a fix is out. It's a plain download with no identifier attached, not even which version you're running, and what comes back is signed, so it can show a message and nothing else. It can't change a setting or run anything. Turn it off with goguma config set advisory_checks off , or get an email instead ."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "Will it keep the machine awake?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "Only while a job is running. Holds expire on their own ceiling, five minutes by default, so a job that hangs can't pin the machine open all night."
+   }
+  },
+  {
+   "@type": "Question",
+   "name": "What about a laptop in a bag?",
+   "acceptedAnswer": {
+    "@type": "Answer",
+    "text": "It lets go. Above 80\u00b0C or below 10% battery, every hold is dropped and the Mac sleeps normally. It also won't wake for a job it can't afford, measured against what that job has actually been costing."
+   }
+  }
+ ]
+}
+</script>
+
 <style>
 /*
 THESIS: A sleeping laptop silently eats your scheduled jobs. This page proves
@@ -1736,7 +1859,7 @@ goguma install">Copy</button>
 <span class="c">  → holding sleep off while claude runs</span><br>
 <span class="c">  → released, 41m 12s</span></div>
   </div>
-  <p class="note rise" style="margin-top:22px">Inside an editor there is no command to wrap, so the editor says so instead &mdash; set up for you, for <a href="https://github.com/junnam586/goguma/blob/main/Docs/CODING-AGENTS.md">Claude Code, Codex and Cursor</a>.</p>
+  <p class="note rise" style="margin-top:22px">Inside an editor there is no command to wrap, so the editor says so instead &mdash; set up for you, for <a href="https://github.com/junnam586/goguma/blob/main/Docs/CODING-AGENTS.md">Claude Code, Codex, Cursor and Gemini CLI</a>.</p>
   </div>
 </div></section>
 
@@ -1758,7 +1881,7 @@ goguma install">Copy</button>
       <div class="ans"><p>No. <code>caffeinate</code> stops a Mac sleeping, so you have to leave it running all night for a 3am job. goguma lets it sleep and wakes it at 2:58.</p>
       <p>It also can't hold a closed lid awake. <code>caffeinate</code> blocks idle sleep, and shutting the lid isn't idle sleep, so it stops the moment you close the laptop. That is the case an agent or a long build needs most.</p></div></details>
         <details><summary>Can I keep a coding agent running with the lid shut?</summary>
-      <div class="ans"><p>Yes, and it is set up for you. Claude Code, Codex and Cursor are configured to say when they are working, so the Mac stays awake until they finish and sleeps once they do. It is a setting, so one switch takes it back out. <code>goguma hooks</code> shows what is in place; <code>goguma hooks remove</code> undoes it.</p>
+      <div class="ans"><p>Yes, and it is set up for you. Claude Code, Codex, Cursor and Gemini CLI are configured to say when they are working, so the Mac stays awake until they finish and sleeps once they do. It is a setting, so one switch takes it back out. <code>goguma hooks</code> shows what is in place; <code>goguma hooks remove</code> undoes it.</p>
       <p>It stops when the agent stops, not on a timer, and two editors open hold separately so the one that finishes first doesn't sleep the machine under the other. For anything you start yourself, wrap it: <code>goguma run -- claude -p "..."</code>.</p>
       <p>This is needed because an agent can't be recognised from outside: its process is there whether or not it's working, and processor use doesn't separate the two, because an agent waiting on a model is a process waiting on a socket.</p></div></details>
     <details><summary>Why not just <code>sudo pmset -a disablesleep 1</code>?</summary>

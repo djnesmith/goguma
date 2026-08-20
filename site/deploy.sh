@@ -53,7 +53,17 @@ refs=$(
 # has no referrer by design. It is fetched by the daemon at a URL compiled into
 # the binary, so it has to be named or it would never ship, and every install
 # would go on asking for a file that is not there.
-EXTRA=(advisories.json)
+#
+# robots.txt, sitemap.xml and llms.txt have the same problem for the same
+# reason: they exist to be fetched directly by a crawler at a fixed path, so no
+# page links to them, so nothing discovers them here either.
+#
+# assets/og.png is here for a subtler version of it. The Open Graph spec wants
+# an absolute URL, and the reference scan above deliberately skips absolute
+# URLs because they are somebody else's server. So the one image whose entire
+# job is to be fetched by Reddit, Slack and iMessage was the one image that
+# would not have shipped.
+EXTRA=(advisories.json robots.txt sitemap.xml llms.txt assets/og.png)
 
 MISSING=0
 FILES=("${PAGES[@]}")
