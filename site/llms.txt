@@ -73,6 +73,19 @@ are signed with a Developer ID and notarised by Apple, and setup names who
 signed the helper before asking for your password, refusing to install it if
 that signature cannot be verified.
 
+## Articles
+
+- [Why your Mac's cron jobs don't run while it's asleep](https://getgoguma.com/blog/cron-jobs-dont-run-mac-asleep/)
+- [How to wake a Mac for a scheduled job with pmset](https://getgoguma.com/blog/wake-mac-for-scheduled-job-pmset/)
+- [How to find which scheduled jobs your Mac has been missing](https://getgoguma.com/blog/find-missed-scheduled-jobs-mac/)
+- [launchd vs cron on macOS: which one survives sleep](https://getgoguma.com/blog/launchd-vs-cron-sleep/)
+- [caffeinate vs pmset vs Amphetamine](https://getgoguma.com/blog/caffeinate-vs-pmset-vs-amphetamine/)
+- [Why caffeinate doesn't work when you close the lid](https://getgoguma.com/blog/caffeinate-lid-closed/)
+- [Amphetamine alternatives for macOS, compared](https://getgoguma.com/blog/amphetamine-alternatives-mac/)
+- [You cannot tell whether an AI coding agent is working by watching it](https://getgoguma.com/blog/cannot-detect-ai-agent-working/)
+- [Is it safe to keep a MacBook awake with the lid closed in a bag?](https://getgoguma.com/blog/macbook-awake-in-bag-safe/)
+- [How to keep Claude Code or Codex running with the lid closed](https://getgoguma.com/blog/keep-coding-agent-running-lid-closed/)
+
 ## Docs
 
 - [Home](https://getgoguma.com/): what it does, with a FAQ
