@@ -1,8 +1,16 @@
 name: CI
 
+# Pushes to main, and pull requests. Not every branch.
+#
+# The macOS job below is billed at 10x, so `branches: ["**"]` charged ten
+# minutes of quota for every minute spent linting a work-in-progress push on a
+# side branch, and that is what exhausted a 3,000-minute month against ~145
+# minutes of real compute. Coverage is unchanged: a branch still gets the full
+# matrix the moment it opens a PR, which is the point at which the result is
+# worth paying for.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
