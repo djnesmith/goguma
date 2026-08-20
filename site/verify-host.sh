@@ -57,8 +57,11 @@ echo
 
 fail=0
 for p in "${PATHS[@]}"; do
-    ca=$(curl -sS -o /tmp/_c -w "%{http_code}" "$CAND$p" 2>/dev/null)
-    pa=$(curl -sS -o /tmp/_p -w "%{http_code}" "$PROD$p" 2>/dev/null)
+    # -L, because Cloudflare Pages strips .html from URLs: /404.html answers
+    # 308 to /404 and serves correctly from there. Without following, a
+    # correct host looked like it was missing the page.
+    ca=$(curl -sSL -o /tmp/_c -w "%{http_code}" "$CAND$p" 2>/dev/null)
+    pa=$(curl -sSL -o /tmp/_p -w "%{http_code}" "$PROD$p" 2>/dev/null)
     if [[ "$ca" != "200" ]]; then
         printf "  MISSING  %-46s candidate=%s\n" "$p" "$ca"; fail=1; continue
     fi

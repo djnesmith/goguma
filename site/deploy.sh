@@ -1,6 +1,7 @@
 #!/bin/bash
 #
-# Publishes site/ to the gh-pages branch, which is what getgoguma.com serves.
+# Publishes site/ to Cloudflare Pages, which is what getgoguma.com serves, and
+# to the gh-pages branch, which is kept current as the rollback target.
 #
 # Deploying by hand is how a stray `rm -rf` once took out a directory that only
 # differed by case, so this never deletes anything in the working tree and never
@@ -243,5 +244,33 @@ if ! (
 fi
 git worktree remove --force "$WORK" >/dev/null
 git branch -D "$STAGE_BRANCH" >/dev/null 2>&1 || true
+echo "  gh-pages updated (the rollback copy)."
+
+# ── Cloudflare Pages, which is what getgoguma.com actually serves ────────────
+#
+# gh-pages above is no longer the live site. It is kept in step deliberately:
+# rolling back is then four A records in Cloudflare's DNS pointing at GitHub
+# again, with no stale-content problem waiting at the other end. A fallback
+# that has quietly drifted for six months is not a fallback.
+#
+# The live deploy is here. Cloudflare reads _headers from the uploaded
+# directory, which is why the cache policy is part of the deploy rather than
+# a dashboard setting somebody has to remember.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$WORK" "$STAGE"' EXIT
+cd "$SITE"
+for f in "${FILES[@]}"; do
+    mkdir -p "$STAGE/$(dirname "$f")"
+    cp "$f" "$STAGE/$f"
+done
+
+if ! npx --yes wrangler@latest pages deploy "$STAGE" \
+        --project-name=goguma --branch=main --commit-dirty=true; then
+    echo "error: the Cloudflare deploy failed; gh-pages has the new content but" >&2
+    echo "       getgoguma.com is still serving the previous deployment." >&2
+    exit 1
+fi
+
 echo
-echo "Published. getgoguma.com updates within a minute or two."
+echo "Published to Cloudflare Pages. getgoguma.com updates within a minute."
+echo "Verify with: site/verify-host.sh https://getgoguma.com https://goguma-dv4.pages.dev"
