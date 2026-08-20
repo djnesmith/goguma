@@ -28,9 +28,11 @@ faq:
 | Records that it was missed | no | no | no |
 | Runs at the exact scheduled time | only if awake | only if awake | approximately |
 
-Apple states the first row directly:
+Both of those rows are stated outright in `launchd.plist(5)` — the man page on your own machine, which is worth reading before trusting any blog post about this, including this one:
 
-> Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up.
+> Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up. If multiple intervals transpire before the computer is woken, those events will be coalesced into one event upon wake from sleep.
+
+That second sentence is the source for "once, not once per occurrence" below.
 
 ## Why cron behaves this way
 

@@ -4,7 +4,7 @@ order: 2
 date: 2026-08-20
 title: How to wake a Mac for a scheduled job with pmset
 description: The complete method — computing the wake time, arming it, holding sleep off until the job finishes, and re-arming for next time — plus the four things that go wrong.
-answer: `sudo pmset schedule wake "MM/dd/yyyy HH:mm:ss"` wakes a sleeping Mac at a chosen time. It is the only mechanism macOS offers for this. The parts nobody mentions are that a scheduled wake is **consumed** when it fires, that the machine will go straight back to sleep unless something holds it, and that `pmset schedule` replaces entries rather than appending them.
+answer: `sudo pmset schedule wake "MM/dd/yyyy HH:mm:ss"` wakes a sleeping Mac at a chosen time. It is the only mechanism macOS offers for this. The parts nobody mentions are that a scheduled wake is **consumed** when it fires, that the machine will go straight back to sleep unless something holds it, and that the wake schedule is shared with macOS's own entries, so the only blunt way to clear a stale one takes theirs out too.
 faq:
   - q: What is the command to wake a Mac at a specific time?
     a: sudo pmset schedule wake "08/21/2026 02:58:30" — the date format is MM/dd/yyyy and the time is 24-hour with seconds. Use `pmset -g sched` to see what is currently armed.
@@ -62,11 +62,20 @@ With the lid open, on mains, that combination works. There are four ways it come
 
 A one-shot scheduled wake fires once and is gone. Tomorrow's 03:00 job has no wake armed for it unless something armed one. For a recurring job this means the job itself has to schedule its own next wake as its last act — and if a run fails before reaching that line, the chain is broken silently and permanently.
 
-`pmset repeat` exists for recurring wakes, but it holds exactly **one** repeating rule for the whole machine. Two jobs on different schedules cannot both use it.
+`pmset repeat` exists for recurring events, but `pmset(1)` is explicit about its limit: *"you may only have one pair of repeating events scheduled — a 'power on' event and a 'power off' event."* One pair, for the whole machine. Two jobs on different schedules cannot both use it, and neither can you and macOS.
 
-### 2. `schedule` replaces rather than appends
+### 2. The schedule is shared with the rest of the system
 
-Running `pmset schedule wake` twice with different times does not reliably give you two wakes. Entries are matched on type and time, and the scheduling database is shared with anything else on the system that arms wakes — Time Machine, Software Update, Power Nap. Arming and cancelling naively will eventually stamp on something you did not put there.
+Multiple wakes do coexist — they are tagged by owner, and a normal Mac has several at any moment. Here is a real `pmset -g sched`:
+
+```
+[0]  wake at 08/20/2026 13:39:40 by 'goguma'
+[1]  wake at 08/20/2026 16:58:29 by 'com.apple.alarm...travelEngine.periodicRefreshTimer'
+[2]  wake at 08/21/2026 00:00:00 by 'com.apple.alarm...ScheduleLifetimeMonitor.timer'
+[3]  wake at 08/21/2026 01:43:49 by 'com.apple.alarm...acmd.alarm'
+```
+
+The hazard is not collision, it is **cleanup**. Cancelling requires the exact type and timestamp you scheduled, so a stale entry whose time you no longer remember cannot be removed individually. The blunt instrument is `pmset schedule cancelall`, which takes out **everything** — including the three Apple entries above, which the system put there for its own reasons and will not necessarily replace.
 
 ### 3. caffeinate does not survive the lid closing
 

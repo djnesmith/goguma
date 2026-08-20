@@ -188,8 +188,8 @@ footer a{color:rgba(36,26,44,.64)}
 <ul><li>Nothing fails, so nothing appears in a log</li><li>Nothing retries, because nothing knows it was missed</li><li>No mail is sent, because cron only mails you the output of jobs that actually ran</li><li>Your job's own error handling never runs, because your job never started</li></ul>
 <p>This is why the failure mode is so hard to catch. A crashed job leaves a stack trace. A job that never started leaves nothing at all. The symptom is not an error — it is the gradual realisation, weeks later, that a digest has been arriving on some days and not others.</p>
 <h2>launchd is genuinely different, and this is the part people get wrong</h2>
-<p>macOS prefers launchd, and launchd handles this case. From Apple's own documentation:</p>
-<blockquote><p>Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up.</p></blockquote>
+<p>macOS prefers launchd, and launchd handles this case. From <code>launchd.plist(5)</code>, the man page on your own machine:</p>
+<blockquote><p>Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up. If multiple intervals transpire before the computer is woken, those events will be coalesced into one event upon wake from sleep.</p></blockquote>
 <p>So a <code>StartCalendarInterval</code> job whose fire time passed during sleep runs <strong>once</strong>, on wake. Two caveats that matter:</p>
 <ul><li><strong>Once, not once per occurrence.</strong> A job scheduled hourly that slept through nine fire times runs a single time on wake, not nine times.</li><li><strong>Only sleep, not shutdown.</strong> If the Mac was powered off, launchd has nothing to catch up from.</li></ul>
 <p>This distinction is the single most useful thing to know here, and it cuts both ways. If your job is a <code>StartCalendarInterval</code> LaunchAgent and running late is fine — an updater, a sync, an index rebuild — you already have the behaviour you want and should change nothing.</p>

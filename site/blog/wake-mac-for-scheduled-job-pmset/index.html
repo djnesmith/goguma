@@ -186,7 +186,7 @@ footer a{color:rgba(36,26,44,.64)}
   <div class="wrap head">
     <h1>How to wake a Mac for a scheduled job with pmset</h1>
     <p class="stamp">2026-08-20 · <a href="../">more writing</a></p>
-    <div class="answer"><p><code>sudo pmset schedule wake "MM/dd/yyyy HH:mm:ss"</code> wakes a sleeping Mac at a chosen time. It is the only mechanism macOS offers for this. The parts nobody mentions are that a scheduled wake is <strong>consumed</strong> when it fires, that the machine will go straight back to sleep unless something holds it, and that <code>pmset schedule</code> replaces entries rather than appending them.</p></div>
+    <div class="answer"><p><code>sudo pmset schedule wake "MM/dd/yyyy HH:mm:ss"</code> wakes a sleeping Mac at a chosen time. It is the only mechanism macOS offers for this. The parts nobody mentions are that a scheduled wake is <strong>consumed</strong> when it fires, that the machine will go straight back to sleep unless something holds it, and that the wake schedule is shared with macOS's own entries, so the only blunt way to clear a stale one takes theirs out too.</p></div>
   </div>
   <div class="wrap body">
 <h2>The command</h2>
@@ -209,9 +209,14 @@ caffeinate -s /usr/local/bin/nightly-backup</code></pre>
 <h2>The four things that go wrong</h2>
 <h3>1. The wake is consumed</h3>
 <p>A one-shot scheduled wake fires once and is gone. Tomorrow's 03:00 job has no wake armed for it unless something armed one. For a recurring job this means the job itself has to schedule its own next wake as its last act — and if a run fails before reaching that line, the chain is broken silently and permanently.</p>
-<p><code>pmset repeat</code> exists for recurring wakes, but it holds exactly <strong>one</strong> repeating rule for the whole machine. Two jobs on different schedules cannot both use it.</p>
-<h3>2. <code>schedule</code> replaces rather than appends</h3>
-<p>Running <code>pmset schedule wake</code> twice with different times does not reliably give you two wakes. Entries are matched on type and time, and the scheduling database is shared with anything else on the system that arms wakes — Time Machine, Software Update, Power Nap. Arming and cancelling naively will eventually stamp on something you did not put there.</p>
+<p><code>pmset repeat</code> exists for recurring events, but <code>pmset(1)</code> is explicit about its limit: *"you may only have one pair of repeating events scheduled — a 'power on' event and a 'power off' event."* One pair, for the whole machine. Two jobs on different schedules cannot both use it, and neither can you and macOS.</p>
+<h3>2. The schedule is shared with the rest of the system</h3>
+<p>Multiple wakes do coexist — they are tagged by owner, and a normal Mac has several at any moment. Here is a real <code>pmset -g sched</code>:</p>
+<pre><code>[0]  wake at 08/20/2026 13:39:40 by &#x27;goguma&#x27;
+[1]  wake at 08/20/2026 16:58:29 by &#x27;com.apple.alarm...travelEngine.periodicRefreshTimer&#x27;
+[2]  wake at 08/21/2026 00:00:00 by &#x27;com.apple.alarm...ScheduleLifetimeMonitor.timer&#x27;
+[3]  wake at 08/21/2026 01:43:49 by &#x27;com.apple.alarm...acmd.alarm&#x27;</code></pre>
+<p>The hazard is not collision, it is <strong>cleanup</strong>. Cancelling requires the exact type and timestamp you scheduled, so a stale entry whose time you no longer remember cannot be removed individually. The blunt instrument is <code>pmset schedule cancelall</code>, which takes out <strong>everything</strong> — including the three Apple entries above, which the system put there for its own reasons and will not necessarily replace.</p>
 <h3>3. caffeinate does not survive the lid closing</h3>
 <p>This is the big one for laptops. <code>caffeinate</code> asserts against *idle* sleep. Closing the lid triggers clamshell sleep, a lower-level path that the assertion does not touch. On a closed MacBook with no external display and no mains power, the machine sleeps and takes your job with it. Covered properly in <a href="../caffeinate-lid-closed/">why caffeinate doesn't work with the lid closed</a>.</p>
 <p>The mechanism that does hold a closed lid awake is <code>sudo pmset -a disablesleep 1</code> — and that one has <a href="../caffeinate-vs-pmset-vs-amphetamine/">its own serious problem</a>: it is a global setting that persists in the power management preferences and is <strong>not</strong> cleared when the process that set it dies. Anything that sets it and is then killed leaves a Mac that cannot sleep at all until someone notices.</p>

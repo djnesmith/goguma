@@ -191,8 +191,9 @@ footer a{color:rgba(36,26,44,.64)}
   <div class="wrap body">
 <h2>The difference in one table</h2>
 <div class="tw"><table><thead><tr><th></th><th>cron</th><th>launchd <code>StartCalendarInterval</code></th><th>launchd <code>StartInterval</code></th></tr></thead><tbody><tr><td>Missed while asleep</td><td><strong>skipped silently</strong></td><td><strong>runs once on wake</strong></td><td>interval restarts</td></tr><tr><td>Missed while powered off</td><td>skipped</td><td>skipped</td><td>interval restarts</td></tr><tr><td>Runs once per missed occurrence</td><td>—</td><td>no, once total</td><td>no</td></tr><tr><td>Records that it was missed</td><td>no</td><td>no</td><td>no</td></tr><tr><td>Runs at the exact scheduled time</td><td>only if awake</td><td>only if awake</td><td>approximately</td></tr></tbody></table></div>
-<p>Apple states the first row directly:</p>
-<blockquote><p>Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up.</p></blockquote>
+<p>Both of those rows are stated outright in <code>launchd.plist(5)</code> — the man page on your own machine, which is worth reading before trusting any blog post about this, including this one:</p>
+<blockquote><p>Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up. If multiple intervals transpire before the computer is woken, those events will be coalesced into one event upon wake from sleep.</p></blockquote>
+<p>That second sentence is the source for "once, not once per occurrence" below.</p>
 <h2>Why cron behaves this way</h2>
 <p>cron is a loop over wall-clock minutes. Each minute it wakes, compares now against every crontab line, runs the matches, and sleeps again. A minute that does not happen — because the machine was asleep — is never compared against anything.</p>
 <p>There is no queue, so there is nothing to drain on wake. There is no record, because a job that never started produced no output, no exit code, and no mail. From cron's point of view nothing went wrong, which is precisely why the failure is invisible for weeks.</p>

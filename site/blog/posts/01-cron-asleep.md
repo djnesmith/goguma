@@ -33,9 +33,9 @@ This is why the failure mode is so hard to catch. A crashed job leaves a stack t
 
 ## launchd is genuinely different, and this is the part people get wrong
 
-macOS prefers launchd, and launchd handles this case. From Apple's own documentation:
+macOS prefers launchd, and launchd handles this case. From `launchd.plist(5)`, the man page on your own machine:
 
-> Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up.
+> Unlike cron which skips job invocations when the computer is asleep, launchd will start the job the next time the computer wakes up. If multiple intervals transpire before the computer is woken, those events will be coalesced into one event upon wake from sleep.
 
 So a `StartCalendarInterval` job whose fire time passed during sleep runs **once**, on wake. Two caveats that matter:
 
