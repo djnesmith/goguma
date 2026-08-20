@@ -98,9 +98,16 @@ def build():
         j["fires_per_night"] = fires
         # The daemon's own formula, so the two columns agree with each other.
         j["nightly_battery_pct"] = round(fires * per_run, 2)
+        # cold_start and ceiling_hits were NOT being overridden, so they came
+        # through from whichever real job the shape was cloned from. That put
+        # "not enough history yet, using the default ceiling" on a fixture job
+        # with 96 runs and a stated ceiling, which is the one thing the picture
+        # is meant to show working. Same class of leak as the status payload
+        # above: sanitising half of what is read is not sanitising it.
         j["stats"].update(job_id=name, battery_per_run=per_run, runs=runs,
                           typical=typ, p95=p95, ceiling=ceil,
-                          failures=0, never_detected=0)
+                          failures=0, never_detected=0,
+                          cold_start=False, ceiling_hits=0)
         j["ceiling_reason"] = f"nearly the slowest of {runs} runs, plus 20%"
         out.append(j)
     jl["jobs"] = out

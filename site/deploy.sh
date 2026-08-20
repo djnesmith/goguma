@@ -21,7 +21,7 @@ REPO="$(cd "$SITE/.." && pwd)"
 PUSH=0
 [[ "${1:-}" == "--push" ]] && PUSH=1
 
-PAGES=(index.html updates/index.html)
+PAGES=(index.html updates/index.html privacy/index.html terms/index.html)
 # Working branch name for the orphan commit. Never pushed under this name, and
 # deleted at both ends of the run; see the note by `git branch -D` below.
 STAGE_BRANCH="gh-pages-staging"
