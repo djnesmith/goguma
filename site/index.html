@@ -882,14 +882,14 @@ details code{font-family:var(--mono);font-size:.92em;background:color-mix(in srg
 /* The alternative under the closing button, matching the hero's note: fine
    print attached to the button rather than a competing choice. */
 .close-alt{margin:11px 0 0;text-align:center;font-family:var(--mono);font-size:12px;
-  color:rgba(36,26,44,.46)}
+  color:rgba(36,26,44,.66)}
 .close-alt a{color:inherit;text-decoration:underline;text-underline-offset:3px;
   text-decoration-color:rgba(36,26,44,.26)}
 .close-alt a:hover{color:rgba(36,26,44,.74);text-decoration-color:currentColor}
 
 /* 40, not 84. With the closing block's own 26 below it that is still 66px
    under the last line, which is a margin rather than a gap. */
-footer{padding:0 0 40px;text-align:center;font-size:13px;color:rgba(36,26,44,.52);background:none}
+footer{padding:0 0 40px;text-align:center;font-size:13px;color:rgba(36,26,44,.66);background:none}
 footer a{color:rgba(36,26,44,.64)}
 /* Two lines, not one run-on: the links are navigation and the licence is a
    statement. Running them together with middots made "open source · source"
@@ -897,7 +897,7 @@ footer a{color:rgba(36,26,44,.64)}
 .foot-links{margin:0;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 .foot-links a{text-decoration:none;border-bottom:1px solid rgba(36,26,44,.18);padding-bottom:1px}
 .foot-links a:hover{color:rgba(36,26,44,.85);border-bottom-color:currentColor}
-.foot-fine{margin:9px 0 0;font-size:12px;color:rgba(36,26,44,.4)}
+.foot-fine{margin:9px 0 0;font-size:12px;color:rgba(36,26,44,.62)}
 
 /* Reveal on scroll, driven by CSS rather than by JavaScript.
 
@@ -958,7 +958,7 @@ html,body{margin:0;padding:0}
    is the finished state.
    ---------------------------------------------------------------------- */
 
-#wg-finds [data-wg-paused]{background-image:url("assets/widget-wall.jpg");background-size:cover;background-position:center top;background-repeat:no-repeat}
+#wg-finds [data-wg-paused]{background-image:url("assets/widget-wall.webp");background-size:cover;background-position:center top;background-repeat:no-repeat}
 
 @keyframes wg-cursor{
 0%{opacity:0;transform:translate(16.4cqw,9.9cqw)}
@@ -1201,7 +1201,7 @@ html,body{margin:0;padding:0}
    the resting state is the finished state.
    ---------------------------------------------------------------------- */
 
-#wg-sleep [data-wall]{background-image:url("assets/widget-wall.jpg")}
+#wg-sleep [data-wall]{background-image:url("assets/widget-wall.webp")}
 
 @keyframes vs-head{0%{transform:translateX(0%);animation-timing-function:cubic-bezier(.42,0,.58,1)}7%{transform:translateX(20%);animation-timing-function:cubic-bezier(.42,0,.58,1)}24%{transform:translateX(34%);animation-timing-function:cubic-bezier(.42,0,.58,1)}34%{transform:translateX(50%);animation-timing-function:cubic-bezier(.42,0,.58,1)}39.6%{transform:translateX(52.75%);animation-timing-function:cubic-bezier(.42,0,.58,1)}54%{transform:translateX(78%);animation-timing-function:cubic-bezier(.42,0,.58,1)}65.7%{transform:translateX(83.5%);animation-timing-function:cubic-bezier(.42,0,.58,1)}80%{transform:translateX(100%)}100%{transform:translateX(100%)}}
 @keyframes vs-fill{0%{transform:translateX(-100.00%);animation-timing-function:cubic-bezier(.42,0,.58,1)}7%{transform:translateX(-80.00%);animation-timing-function:cubic-bezier(.42,0,.58,1)}24%{transform:translateX(-66.00%);animation-timing-function:cubic-bezier(.42,0,.58,1)}34%{transform:translateX(-50.00%);animation-timing-function:cubic-bezier(.42,0,.58,1)}39.6%{transform:translateX(-47.25%);animation-timing-function:cubic-bezier(.42,0,.58,1)}54%{transform:translateX(-22.00%);animation-timing-function:cubic-bezier(.42,0,.58,1)}65.7%{transform:translateX(-16.50%);animation-timing-function:cubic-bezier(.42,0,.58,1)}80%{transform:translateX(0.00%)}100%{transform:translateX(0.00%)}}
@@ -1426,19 +1426,19 @@ html,body{margin:0;padding:0}
 
 <div class="mac">
 <div class="menubar" aria-label="macOS menu bar">
-  <img src="assets/apple.png" alt="">
+  <img src="assets/apple.webp" alt="" width="57" height="71">
   <span class="app">goguma</span>
   <span class="hide-sm">File</span><span class="hide-sm">Edit</span>
   <span class="hide-sm">View</span><span class="hide-sm">Window</span>
   <span class="hide-sm">Help</span>
   <span class="sp"></span>
   <span class="right">
-    <span class="me-anchor"><img class="me" src="assets/potato.png" alt="goguma">
+    <span class="me-anchor"><img class="me" src="assets/potato.webp" alt="goguma" width="253" height="249">
       <span class="klik" aria-hidden="true"></span>
       <span class="pointer" aria-hidden="true"><svg viewBox="0 0 12.3 18.6" focusable="false"><path d="M0 0 L0 16.5 L4.2 12.6 L6.8 18.6 L9.6 17.4 L7 11.6 L12.3 11.6 Z" fill="#000" stroke="#F9F9F9" stroke-width="1.6" stroke-linejoin="round" paint-order="stroke"/></svg></span>
     </span>
-    <img src="assets/battery.png" alt=""><img src="assets/wifi.png" alt="">
-    <img src="assets/control.png" alt=""><img src="assets/search.png" alt="">
+    <img src="assets/battery.webp" alt="" width="109" height="52"><img src="assets/wifi.webp" alt="" width="85" height="61">
+    <img src="assets/control.webp" alt="" width="76" height="69"><img src="assets/search.webp" alt="" width="76" height="71">
     <!-- Must agree with the panel below it. The plate is a real capture, so it
          carries a real date and a real countdown ("15 Aug at 7:58 PM · in
          3h 15m"), which puts "now" at about 16:43 on Sat 15 Aug. This read
@@ -1454,11 +1454,11 @@ html,body{margin:0;padding:0}
        cursor goes up and clicks that status item first, because that is the
        gesture the whole product is reached by. -->
   <div class="hang" aria-hidden="true">
-    <img src="assets/plate-idle.webp" alt="">
+    <img src="assets/plate-idle.webp" alt="" width="1360" height="980">
   </div>
 
   <div class="desk">
-    <h1 class="up" style="--d:.08s"><img class="mark" src="assets/potato.png" alt="">Close the lid.<br>The jobs <span class="rest">still</span> run.</h1>
+    <h1 class="up" style="--d:.08s"><img class="mark" src="assets/potato.webp" alt="" width="253" height="249">Close the lid.<br>The jobs <span class="rest">still</span> run.</h1>
     <div class="cta up" style="--d:.34s">
       <!-- "Download" is honest now: there is a signed, notarized .dmg with the
            command line tools inside it, so the button lands on the thing it
@@ -1476,10 +1476,10 @@ html,body{margin:0;padding:0}
   </div>
 
   <div class="dock up" style="--d:.78s" aria-hidden="true">
-    <i><img src="assets/dock-finder.png" alt=""></i>
-    <i><img src="assets/dock-messages.png" alt=""></i>
-    <i><img src="assets/dock-claude.png" alt=""></i>
-    <i class="me"><img src="assets/potato.png" alt=""></i>
+    <i><img src="assets/dock-finder.webp" alt="" width="192" height="192"></i>
+    <i><img src="assets/dock-messages.webp" alt="" width="192" height="192"></i>
+    <i><img src="assets/dock-claude.webp" alt="" width="192" height="192"></i>
+    <i class="me"><img src="assets/potato.webp" alt="" width="253" height="249"></i>
   </div>
 </header>
 </div>
@@ -1902,7 +1902,7 @@ goguma install">Copy</button>
 
 <div class="ending">
 <div class="close">
-  <h2 class="rise"><img class="mark" src="assets/potato.png" alt="">Let it sleep.</h2>
+  <h2 class="rise"><img class="mark" src="assets/potato.webp" alt="" width="253" height="249">Let it sleep.</h2>
   <div class="cta" style="justify-content:center;margin-top:22px">
     <!-- The same button as the hero, deliberately. This is the point of
          highest intent on the page, and sending someone to a repository here

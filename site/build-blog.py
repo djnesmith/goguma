@@ -80,12 +80,12 @@ blockquote p + p{margin-top:10px}
 .home img{width:23px;height:23px}
 .home:hover{opacity:.7}
 .head{padding-top:clamp(30px,6vh,64px)}
-.crumbs{margin:0 0 14px;font-size:13.5px;color:rgba(36,26,44,.5)}
+.crumbs{margin:0 0 14px;font-size:13.5px;color:rgba(36,26,44,.66)}
 .crumbs a{color:rgba(36,26,44,.62);text-decoration:none}
 .crumbs a:hover{color:var(--accent);text-decoration:underline}
 .crumbs span{margin:0 6px}
 .stamp{margin:16px 0 0;font-family:var(--mono);font-size:12.5px;
-  color:rgba(36,26,44,.46);letter-spacing:.01em}
+  color:rgba(36,26,44,.66);letter-spacing:.01em}
 /* The answer, before the article. Someone who came from a search result wants
    it in the first screen, not after a preamble. */
 .answer{margin:clamp(24px,4vh,34px) 0 0;padding-bottom:clamp(24px,4vh,34px);
@@ -111,11 +111,11 @@ blockquote p + p{margin-top:10px}
 .idx .t{font-size:20px;font-weight:600;letter-spacing:-.028em;line-height:1.2}
 .idx .d{margin-top:6px;font-size:15.5px;line-height:1.55;color:var(--ink-2)}
 footer{padding:clamp(20px,4vh,52px) 0 22px;text-align:center;font-size:13px;
-  color:rgba(36,26,44,.52)}
+  color:rgba(36,26,44,.66)}
 footer a{color:rgba(36,26,44,.64)}
 .foot-links{margin:0;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 .foot-links a{text-decoration:none;border-bottom:1px solid rgba(36,26,44,.18);padding-bottom:1px}
-.foot-fine{margin:9px 0 0;font-size:12px;color:rgba(36,26,44,.4)}
+.foot-fine{margin:9px 0 0;font-size:12px;color:rgba(36,26,44,.62)}
 """
 
 FOOT = """<footer>
@@ -307,7 +307,7 @@ def page(meta, body_html, posts):
 <body>
 <div class="page">
   <div class="wrap top">
-    <a class="home" href="../../"><img src="../../assets/potato.png" alt="">goguma</a>
+    <a class="home" href="../../"><img src="../../assets/potato.webp" alt="" width="253" height="249">goguma</a>
   </div>
   <div class="wrap head">
     <h1>{html.escape(title)}</h1>
@@ -371,7 +371,7 @@ def index(posts):
 <body>
 <div class="page">
   <div class="wrap top">
-    <a class="home" href="../"><img src="../assets/potato.png" alt="">goguma</a>
+    <a class="home" href="../"><img src="../assets/potato.webp" alt="" width="253" height="249">goguma</a>
   </div>
   <div class="wrap head">
     <h1>Writing</h1>
