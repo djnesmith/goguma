@@ -733,6 +733,15 @@ struct DaemonStatus: Codable, Sendable, Hashable {
     var lastRun: Run?
     var warnings: [DaemonWarning]
 
+    /// Agents observed working while `agent_hooks` is off, and therefore not
+    /// being held for.
+    ///
+    /// Always empty when the setting is on, because each of those is a real
+    /// hold and arrives in `holds` instead. Defaults empty so an older daemon,
+    /// which never sends the key, reads as "nothing to report" rather than
+    /// failing to decode.
+    var agentSessions: [AgentSession] = []
+
     enum CodingKeys: String, CodingKey {
         case starting
         case schemaVersion = "schema_version"
@@ -753,6 +762,7 @@ struct DaemonStatus: Codable, Sendable, Hashable {
         case power, paused, cutout
         case lastRun = "last_run"
         case warnings
+        case agentSessions = "agent_sessions"
     }
 
     init(from decoder: any Decoder) throws {
@@ -778,6 +788,7 @@ struct DaemonStatus: Codable, Sendable, Hashable {
         cutout = c.optional(.cutout)
         lastRun = c.optional(.lastRun)
         warnings = c.value(.warnings, [DaemonWarning]())
+        agentSessions = c.value(.agentSessions, [AgentSession]())
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -1415,5 +1426,30 @@ extension Stats {
         return batteryPerRun < 10
             ? String(format: "%.1f%%", batteryPerRun)
             : String(format: "%.0f%%", batteryPerRun)
+    }
+}
+
+/// An agent goguma can see working but is deliberately not holding sleep for.
+///
+/// Distinct from `Hold`, and deliberately thinner: it has no deadline and no
+/// ceiling because nothing has been committed. It is an observation, and the
+/// only thing the popover does with it is say so.
+struct AgentSession: Codable, Sendable, Hashable {
+    var label: String
+    var since: WGDate?
+
+    enum CodingKeys: String, CodingKey {
+        case label, since
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = c.value(.label, "agent")
+        since = c.optional(.since)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(label, forKey: .label)
     }
 }
