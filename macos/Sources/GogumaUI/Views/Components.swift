@@ -592,13 +592,18 @@ struct OutcomeBadge: View {
 }
 
 /// A row-level warning indicator with its reasons in the tooltip.
+///
+/// The size follows the text it sits beside: table rows read at `iconRow`,
+/// the popover's caption-sized rows pass `iconInline` so the glyph does not
+/// outweigh an 11pt label.
 struct SeverityBadge: View {
     let severity: RowSeverity
     let reasons: [String]
+    var font: Font = Theme.Typography.iconRow
 
     var body: some View {
         Image(systemName: severity == .info ? Theme.Icon.info : Theme.Icon.warning)
-            .font(Theme.Typography.iconRow)
+            .font(font)
             .foregroundStyle(tint)
             .help(reasons.joined(separator: "\n"))
             .accessibilityLabel(reasons.joined(separator: ". "))

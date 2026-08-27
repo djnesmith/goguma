@@ -667,7 +667,10 @@ struct PopoverView: View {
         Button {
             withAnimation(Theme.motion(reduced: reduceMotion)) { jobsExpanded.toggle() }
         } label: {
-            HStack(spacing: Theme.Space.xs) {
+            // Baseline-aligned: the badge is a symbol whose glyph sits on the
+            // baseline of an otherwise empty descender box, so centering the
+            // boxes floats the triangle above the label's optical middle.
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.xs) {
                 Image(systemName: Theme.Icon.disclosure)
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.textTertiary)
@@ -677,7 +680,10 @@ struct PopoverView: View {
                     .foregroundStyle(Theme.Colors.textTertiary)
                 Spacer(minLength: Theme.Space.sm)
                 if let severity = worstJobSeverity {
-                    SeverityBadge(severity: severity, reasons: jobWarnings)
+                    SeverityBadge(
+                        severity: severity, reasons: jobWarnings,
+                        font: Theme.Typography.iconInline
+                    )
                 }
             }
             .contentShape(.rect)
@@ -732,7 +738,10 @@ struct PopoverView: View {
             Spacer(minLength: 0)
 
             if let severity = view.worstSeverity {
-                SeverityBadge(severity: severity, reasons: view.rowWarnings)
+                SeverityBadge(
+                    severity: severity, reasons: view.rowWarnings,
+                    font: Theme.Typography.iconInline
+                )
             }
             if view.holding {
                 Image(systemName: Theme.Icon.holding)
