@@ -112,29 +112,14 @@ struct PopoverView: View {
     /// the better hierarchy anyway: the title says what is happening, the
     /// counter is a detail of it.
     private var header: some View {
-        // No mark on the title row. The wordmark carries the name on its own,
-        // and every arrangement that put a glyph up there cost something: left
-        // of the title indented "goguma" while the lines below stayed flush,
-        // and right of it stranded the mark between the wordmark and the
-        // author link. The mark now rides with the state line instead, where
-        // it has a short piece of text to sit against rather than a gap.
+        // No mark on the title row: it rides with the state line below, where it
+        // has a short piece of text to sit against rather than a gap.
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                // Centred, not baseline-aligned.
-                //
-                // This row is two items now that the mark moved to the state
-                // line, and they are 20pt and 11pt. A shared baseline is
-                // correct typography and reads as a mistake at that ratio: the
-                // small text's mass ends up well below the large text's, so
-                // the credit looked like it had slipped down the row.
-                HStack(alignment: .center, spacing: Theme.Space.sm) {
-                    Text("goguma")
-                        .font(Theme.Typography.popoverTitle)
-                        .foregroundStyle(Theme.Colors.heading)
-                        .themeHeading()
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: Theme.Space.sm)
-                    authorLink
-                }
+                Text("goguma")
+                    .font(Theme.Typography.popoverTitle)
+                    .foregroundStyle(Theme.Colors.heading)
+                    .themeHeading()
+                    .fixedSize(horizontal: false, vertical: true)
 
                 HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -906,75 +891,6 @@ struct PopoverView: View {
         }
     }
 
-    // MARK: - Brand
-
-    /// The credit, on the title's row.
-    ///
-    /// It had a row of its own above the title, which left a near-empty band
-    /// across the top of the popover: one short string, right-aligned, over an
-    /// otherwise blank line. Beside the name it costs no vertical space and
-    /// reads as a byline, which is what it is.
-    private var authorLink: some View {
-        HStack(spacing: Theme.Space.sm) {
-            starLink
-            authorCredit
-        }
-    }
-
-    /// One ask, in the quietest place that is still seen.
-    ///
-    /// A star costs the person nothing and is worth a great deal to a project
-    /// nobody has heard of, so asking once is fair. Asking more than once is
-    /// not, and this is the only place it is asked: a menu bar popover is
-    /// opened to find out what the machine is doing, and a tool whose whole
-    /// argument is that it stays out of the way cannot spend that moment on
-    /// itself. It sits beside the byline, at byline weight, and never moves,
-    /// grows, or comes back.
-    private var starLink: some View {
-        Link(destination: URL(string: Self.repoURL)!) {
-            // One Text with the glyphs interpolated into it, not an HStack of
-            // three views.
-            //
-            // `.underline()` is a text modifier: applied to a stack it rules
-            // the words and leaves the images alone, so the line started after
-            // the star and the mark sat above nothing. Interpolated, the glyphs
-            // are part of the run being ruled, and the underline is continuous
-            // across the whole link.
-            //
-            // Size stated rather than inherited. The byline beside this sets
-            // `caption` explicitly, and leaving this to the ambient font made
-            // the ask larger than the credit.
-            Text("\(Image(systemName: "star")) Star \(Image(systemName: "arrow.up.right"))")
-                .font(Theme.Typography.caption)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(FooterButtonStyle(underlined: true))
-        .pointingHand()
-        .help("Star goguma on GitHub. It is free and it helps people find it.")
-        .accessibilityLabel("Star goguma on GitHub")
-    }
-
-    private var authorCredit: some View {
-        Group {
-            Link(destination: URL(string: Self.authorURL)!) {
-                HStack(spacing: 2) {
-                    Text(Self.authorLabel)
-                    Image(systemName: "arrow.up.right")
-                        .font(Theme.Typography.iconInline)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(FooterButtonStyle(underlined: true))
-            .help("Open Jun Nam's LinkedIn profile")
-            .accessibilityLabel("Open the profile of Jun Nam, who made goguma")
-        }
-        .font(Theme.Typography.caption)
-
-    }
-
-    // Author rather than project: the popover already says goguma on the left,
-    // so repeating the repository path here spends the widest row on the page
-    // saying the same word twice. Swap to the site when there is one.
     /// The state's own colour, so the demoted line still reads as the live
     /// value rather than as a second subtitle.
     private var stateColour: Color {
@@ -986,16 +902,6 @@ struct PopoverView: View {
         case .idle: Theme.Colors.heading
         }
     }
-
-    /// The author, not the project.
-    ///
-    /// The title directly below already says goguma, so pointing this at the
-    /// repository would spend the widest row on the surface saying the same
-    /// word twice. Someone who wants the source has the title, the README and
-    /// the release they installed from; this row is for the person behind it.
-    private static let repoURL = "https://github.com/junnam586/goguma"
-    private static let authorURL = "https://www.linkedin.com/in/jun-nam-4ba16b326/"
-    private static let authorLabel = "made by Jun Nam"
 
     // MARK: - Footer
 
@@ -1078,19 +984,11 @@ struct PopoverView: View {
 
 /// Secondary text that lifts to primary on hover and dims while pressed.
 ///
-/// `underlinesOnHover` is for the one item that leaves the app. Everything else
-/// in the footer navigates within it, where an underline would be web chrome in
-/// a Mac popover; a link out is the exception, because the underline is what
-/// says "this opens a browser" before you click it.
+/// No underline. Every item styled this way navigates within the app, where a
+/// rule under the words would be web chrome in a Mac popover. The one item that
+/// left the app — the author credit — carried an underline for exactly that
+/// reason, and went with it.
 private struct FooterButtonStyle: ButtonStyle {
-    /// Draw the underline at rest, not only under the pointer.
-    ///
-    /// Hover-only underlining is discoverable by people who were already going
-    /// to click. For the credit in the title row, which is the one link on the
-    /// surface and sits among plain labels, the rule has to be there before
-    /// the pointer is.
-    var underlined = false
-
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -1098,7 +996,6 @@ private struct FooterButtonStyle: ButtonStyle {
             .foregroundStyle(
                 hovering ? Theme.Colors.textPrimary : Theme.Colors.textSecondary
             )
-            .underline(underlined)
             .opacity(configuration.isPressed ? 0.55 : 1)
             .contentShape(Rectangle())
             .onHover { isHovering in
