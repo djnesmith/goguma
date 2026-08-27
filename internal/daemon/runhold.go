@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -90,6 +91,36 @@ func runHoldJob(id, label string) *model.Job {
 // keyed hold that command already has.
 func (d *Daemon) StartRun(req ipc.RunStartReq, now time.Time) (ipc.RunStartResp, error) {
 	label, key := req.Label, strings.TrimSpace(req.Key)
+
+	// A key means an agent harness reporting itself; `goguma run` never sets
+	// one. With agent_hooks off, the report opens no hold — but it is still
+	// worth something, so it is recorded rather than thrown away.
+	//
+	// Two problems, one answer. The first: turning the setting off takes the
+	// hook lines back out of every agent's config, but an agent already
+	// running read that config when it started and goes on firing the hook
+	// until it is restarted. Honouring those meant the Mac refused to sleep
+	// for an agent hours after the feature was switched off, with nothing
+	// explaining why — `goguma hooks` reporting nothing installed while
+	// `status` listed a live agent hold.
+	//
+	// The second: with the setting off and the reports discarded, an agent
+	// working through a lid close is invisible. goguma is the one process on
+	// the machine that knows, and saying nothing wastes it. So the sighting is
+	// kept and surfaced as plain information — "these are working, nothing is
+	// holding the Mac awake" — which is what makes the manual Keep Awake a
+	// decision rather than a guess.
+	//
+	// It creates no hold, touches no lease, and never reaches the helper.
+	// Nothing here can keep the machine awake.
+	//
+	// Returned empty rather than refused: the hook discards the reply and is
+	// built never to fail its agent, so an error would achieve nothing an
+	// empty response does not.
+	if key != "" && !d.agentHooksEnabled() {
+		d.noteAgentSighting(keyedRunID(key), label, now)
+		return ipc.RunStartResp{}, nil
+	}
 
 	lease := runLease
 	if key != "" {
@@ -229,4 +260,111 @@ func (d *Daemon) EndRun(id string, exitCode *int, now time.Time) bool {
 		Kind: store.EventHoldReleased, JobID: id, JobName: h.job.Name, Message: msg,
 	})
 	return true
+}
+
+// agentSighting is an agent session goguma can see but is not holding for.
+//
+// `firstSeen` is what the user is shown ("working for 4m"); `lastSeen` is what
+// decides when to stop believing in it.
+type agentSighting struct {
+	label     string
+	firstSeen time.Time
+	lastSeen  time.Time
+}
+
+// noteAgentSighting records that an agent reported activity while agent_hooks
+// is off.
+//
+// The label is refreshed on every report because a harness can rename a session
+// mid-run, and the newer name is the more useful one to show.
+func (d *Daemon) noteAgentSighting(id, label string, now time.Time) {
+	name := strings.TrimSpace(label)
+	if name == "" {
+		name = "agent"
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if seen, ok := d.agentsSeen[id]; ok {
+		seen.label, seen.lastSeen = name, now
+		d.agentsSeen[id] = seen
+		return
+	}
+	d.agentsSeen[id] = agentSighting{label: name, firstSeen: now, lastSeen: now}
+	// Logged once per session rather than once per report. A hook fires on
+	// every prompt and every tool call, so the per-report line this replaced
+	// wrote continuously into a log nothing rotates.
+	d.log.Info("agent working, not held; agent_hooks is off", "agent", name)
+}
+
+// forgetAgentSighting drops a session that has said it is finished.
+//
+// Called on the stop event and on the same id an actual hold would have used,
+// so a session that was being held when the setting was on and is merely
+// observed now is closed by exactly the same message either way.
+func (d *Daemon) forgetAgentSighting(id string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.agentsSeen, id)
+}
+
+// agentSessions returns the sessions still worth reporting, dropping any that
+// have gone quiet.
+//
+// Expired against `agentLease`, the same window a real hold would have had:
+// a harness killed outright never sends its stop event, and a sighting that
+// outlived the hold it would have replaced would claim an agent is working
+// long after it stopped. Swept here, on read, rather than on a timer — there
+// is nothing to release, so nothing needs freeing promptly, and a stale entry
+// costs nothing until someone looks.
+func (d *Daemon) agentSessions(now time.Time) []model.AgentSession {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.agentsSeen) == 0 {
+		return nil
+	}
+	out := make([]model.AgentSession, 0, len(d.agentsSeen))
+	for id, seen := range d.agentsSeen {
+		if now.Sub(seen.lastSeen) > agentLease {
+			delete(d.agentsSeen, id)
+			continue
+		}
+		out = append(out, model.AgentSession{Label: seen.label, Since: seen.firstSeen})
+	}
+	// Stable order, so the popover's list does not reshuffle between polls.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Since.Equal(out[j].Since) {
+			return out[i].Label < out[j].Label
+		}
+		return out[i].Since.Before(out[j].Since)
+	})
+	return out
+}
+
+// releaseAgentHolds closes every hold opened by an agent harness.
+//
+// Called when agent_hooks is switched off. Without it a session already
+// holding keeps the machine awake until its lease runs out, up to fifteen
+// minutes after the user asked for that to stop — and during that window
+// `goguma hooks` correctly reports nothing installed while `status` still
+// lists a live agent hold, which is the exact contradiction this whole gate
+// exists to remove.
+func (d *Daemon) releaseAgentHolds(now time.Time) int {
+	d.mu.Lock()
+	var ids []string
+	for id := range d.holds {
+		if strings.HasPrefix(id, model.RunHoldPrefix+"k:") {
+			ids = append(ids, id)
+		}
+	}
+	for _, id := range ids {
+		if h, ok := d.holds[id]; ok {
+			d.finishHoldLocked(h, now, model.OutcomeOK)
+		}
+	}
+	d.mu.Unlock()
+	if len(ids) > 0 {
+		d.log.Info("released agent holds; agent_hooks was switched off", "count", len(ids))
+		d.syncSleepBlock()
+	}
+	return len(ids)
 }
