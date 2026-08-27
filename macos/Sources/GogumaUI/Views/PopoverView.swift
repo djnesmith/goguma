@@ -918,11 +918,60 @@ struct PopoverView: View {
                 .pointingHand()
             footerButton("Settings", icon: Theme.Icon.settings) { coordinator.showSettings() }
                 .pointingHand()
+            // Beside Quit because they are the two "something looks wrong"
+            // moves, and because this is the one recovery that needs launchd
+            // rather than the daemon: a daemon that has stopped answering
+            // cannot be restarted over the socket it is stuck on.
+            footerButton("Restart", icon: Theme.Icon.sync) { restartService() }
+                .pointingHand()
+                .disabled(store.isPerformingAction)
+                .help("Restart the background service.")
             Spacer(minLength: Theme.Space.sm)
             temperature
             footerButton("Quit", icon: Theme.Icon.quit) { coordinator.quit() }
                 .pointingHand()
         }
+    }
+
+    /// Restarts the service and waits for the replacement to answer.
+    ///
+    /// Through `performReporting` like every other action on this surface, which
+    /// is what reports the outcome in the message row, disables the controls
+    /// while it runs, and refreshes afterwards. An earlier version spawned
+    /// launchctl and returned immediately: a failure was invisible, and so was
+    /// a success.
+    ///
+    /// The wait is the difference between reporting a restart and appearing to
+    /// break. This popover polls the daemon while it is open, and the socket is
+    /// gone for the moment between the kill and the replacement binding it, so
+    /// returning straight away swapped the surface to "goguma isn't running"
+    /// and then back. Waiting for the new daemon to answer means the panel the
+    /// user sees next is the running one.
+    private func restartService() {
+        store.performReporting { client in
+            try await WindowCoordinator.restartDaemon()
+            try await Self.awaitDaemon(client)
+            return "Background service restarted."
+        }
+    }
+
+    /// Polls until the replacement daemon answers, or gives up saying so.
+    ///
+    /// Five seconds is far longer than a local respawn needs and short enough
+    /// that a service which is not coming back is reported rather than waited
+    /// on. Reporting it matters: `KeepAlive` does not restart a job launchd has
+    /// been told to stop, so "restarted, still not answering" is a real state
+    /// and the user needs to be told rather than shown a success message over a
+    /// dead socket.
+    private static func awaitDaemon(_ client: DaemonClient) async throws {
+        for _ in 0..<20 {
+            try? await Task.sleep(for: .milliseconds(250))
+            if (try? await client.status()) != nil { return }
+        }
+        throw ServiceRestartError(
+            status: 0,
+            detail: "it was restarted but has not started answering. "
+                + "Open Settings, or check that goguma is still installed.")
     }
 
     /// CPU temperature, when the machine reports one.
