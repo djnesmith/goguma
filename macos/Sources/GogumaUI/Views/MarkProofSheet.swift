@@ -26,6 +26,35 @@ struct MarkProofSheet: View {
                         flesh: NSColor(Theme.Colors.potatoFlesh)))
                 }
             }
+            // The glyph the menu bar actually draws.
+            //
+            // First, because it is the only one of these that ships to a status
+            // item, and this sheet's whole claim is that 18pt is the size where
+            // a decision about the mark can be judged. It was rendering two
+            // marks the menu bar no longer uses and not the one it does.
+            //
+            // Drawn twice against opposite backgrounds: a template is tinted by
+            // the system, so the question it has to survive is not "does this
+            // look right" but "does this read on a light bar and a dark one".
+            VStack(spacing: Theme.Space.md) {
+                Text("menu bar · template")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                ForEach([false, true], id: \.self) { onDark in
+                    HStack(spacing: Theme.Space.md) {
+                        Image(nsImage: SweetPotatoMark.templateImage(
+                            size: Theme.StatusItem.glyphSize))
+                            .renderingMode(.template)
+                            .foregroundStyle(onDark ? Color.white : Color.black)
+                        Image(nsImage: SweetPotatoMark.templateImage(size: 96))
+                            .renderingMode(.template)
+                            .foregroundStyle(onDark ? Color.white : Color.black)
+                    }
+                    .padding(Theme.Space.sm)
+                    .background(onDark ? Color.black : Color.white)
+                }
+            }
+
             ForEach([false, true], id: \.self) { asleep in
                 VStack(spacing: Theme.Space.md) {
                     Text(asleep ? "idle · asleep" : "holding · awake")

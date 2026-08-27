@@ -585,13 +585,18 @@ enum Theme {
         /// Renders the menu bar glyph as a template image, so AppKit tints it to
         /// match the menu bar in light, dark, and while highlighted.
         ///
-        /// This is the Mac-native choice and what the brief asks for, and it has
-        /// one consequence worth stating plainly: a template image **cannot
-        /// carry colour**, so state in the menu bar is communicated by
-        /// silhouette alone. That is exactly why the glyphs are as far apart as
-        /// `eye` and `zzz` rather than two variants of one shape. Set this to
-        /// false to tint by state instead; `StatusItemController` honours both
-        /// paths.
+        /// This is the Mac-native choice, and it has one consequence worth
+        /// stating plainly: a template image **cannot carry colour**, so
+        /// nothing in the menu bar can be communicated by tint.
+        ///
+        /// The mark does not carry state at all — see `SweetPotatoMark` — so in
+        /// practice that costs nothing: the menu bar says which app, and the
+        /// popover behind it says what the app is doing, in words.
+        ///
+        /// Read by `MenuBarIcon.image(for:)`, which honours both paths: set
+        /// this false to get the state-tinted, non-template glyph instead. It
+        /// was read by nothing at all for a while, which is how a flag
+        /// documented as the default came to have no effect.
         static let rendersAsTemplate = true
 
         /// Point size of the menu bar glyph.
