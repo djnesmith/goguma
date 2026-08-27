@@ -550,6 +550,10 @@ enum Theme {
         static let nextWake = "alarm"
         static let clock = "clock"
         static let job = "briefcase"
+        /// A coding agent goguma can see working. Deliberately not a warning
+        /// glyph: an agent running is ordinary, and the line it marks is
+        /// information rather than a problem to be fixed.
+        static let agent = "terminal"
 
         // Detection modes
         static let detectionMark = "target"

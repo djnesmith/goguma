@@ -67,13 +67,22 @@ struct PopoverView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                // Outside the scroll region. These are the popover's actions;
-                // if the job list is long enough to scroll, they must not be
-                // the thing that scrolls out of reach.
+                // Both outside the scroll region. These are the popover's
+                // actions and the context for them; if the job list is long
+                // enough to scroll, neither may scroll out of reach.
                 //
-                // A beat above them: they are a change of subject from "what is
+                // A beat above: they are a change of subject from "what is
                 // scheduled" to "do something about it", and collapsed they
                 // would otherwise sit directly under the Jobs row.
+                //
+                // Context first, and here rather than in the status block,
+                // because what it is for is the moment before a decision.
+                // "Agents are working and nothing is holding the Mac awake" is
+                // only useful beside the button that would hold it.
+                contextStrip
+                    .padding(.horizontal, Theme.Space.md)
+                    .padding(.top, Theme.Space.xs)
+
                 controls
                     .padding(.horizontal, Theme.Space.md)
                     .padding(.top, Theme.Space.xs)
@@ -816,6 +825,87 @@ struct PopoverView: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
         .labelStyle(.titleAndIcon)
+        // Same wrapping guard as the footer, applied to the whole grid.
+        //
+        // These cells are half the popover wide and their labels are short, so
+        // they had room at the default text size — but "Stop · 1h 04m" is the
+        // longest string on the surface and it grows with the user's text size
+        // like everything else. One line, and shrink a little before giving up,
+        // which a bordered button has the padding to absorb.
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+    }
+
+    /// What is going on that the controls below might be the answer to.
+    ///
+    /// Two lines at most, both quiet, both purely informational: agents that
+    /// are working without being held for, and the CPU temperature. The
+    /// temperature used to sit in the footer and moved here when a fourth
+    /// button arrived: it is the one item down there that was information
+    /// rather than a control, and its width was what pushed the labelled
+    /// footer over the popover's.
+    @ViewBuilder
+    private var contextStrip: some View {
+        let agents = store.status?.agentSessions ?? []
+        if !agents.isEmpty || hasTemperature {
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                if !agents.isEmpty { agentSessionsLine(agents) }
+                temperature
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var hasTemperature: Bool {
+        guard let celsius = store.status?.power.cpuTempC else { return false }
+        return Format.temperature(celsius) != nil
+    }
+
+    /// Agents working, with nothing holding the Mac awake for them.
+    ///
+    /// Only ever shown in that state: with `agent_hooks` on these are real
+    /// holds and appear in the hold list above, and the daemon sends this list
+    /// empty. So the wording does not have to hedge, and must not — the whole
+    /// value of the line is that it says plainly what will happen if the lid
+    /// closes, while there is still time to press the button beside it.
+    ///
+    /// "will still sleep", not "may sleep" or "is not held": the reader is
+    /// being told the consequence, not the internal state.
+    @ViewBuilder
+    private func agentSessionsLine(_ agents: [AgentSession]) -> some View {
+        HStack(alignment: .top, spacing: Theme.Space.sm) {
+            Image(systemName: Theme.Icon.agent)
+                .font(Theme.Typography.iconInline)
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .frame(width: Theme.IconSize.row)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(agentSessionsHeadline(agents.count))
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .lineLimit(1)
+                // The names, so "2 agents" is answerable without opening
+                // anything. Truncated rather than wrapped: the count above is
+                // the fact, and these are which ones.
+                Text(agents.map(\.label).joined(separator: " · "))
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+        }
+        .help("goguma can see these agents working. It is not holding the Mac "
+            + "awake for them, so it will sleep normally. Keep Awake holds it.")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(agentSessionsHeadline(agents.count)). "
+                + agents.map(\.label).joined(separator: ", "))
+    }
+
+    private func agentSessionsHeadline(_ count: Int) -> String {
+        let subject = count == 1 ? "1 agent is working" : "\(count) agents are working"
+        return "\(subject) · the Mac will still sleep"
     }
 
     /// One cell: start a manual hold, or stop the one that is running.
@@ -912,24 +1002,60 @@ struct PopoverView: View {
     /// competing with the one accented value the surface is actually about.
     /// They are navigation to somewhere else, which is the least important
     /// thing here, so they read as quiet secondary text and brighten on hover.
+    /// Labelled if it fits, icons if it does not.
+    ///
+    /// A fourth item (Restart) put this row over the popover's width, and
+    /// SwiftUI's answer to a too-wide `HStack` of text is to break the words:
+    /// the footer rendered as "Settin gs", "Rest art", "48.4° C". Every label is
+    /// now `lineLimit(1)` and `fixedSize`, so no label can be broken — which
+    /// turns wrapping into overflow, and `ViewThatFits` resolves the overflow by
+    /// choosing an arrangement that fits instead.
+    ///
+    /// **The labelled row is the normal case, and that had to be earned.** A
+    /// first attempt kept the temperature here and offered the labelled row as
+    /// the first candidate; measured at the real 340pt it never fit at any text
+    /// size, so every user got four bare icons, always. "No wrapping" by way of
+    /// "no words" is not a fix. The temperature moved to the context strip above
+    /// the controls — it was the one item down here that was information rather
+    /// than a control — and the labels fit again with room to spare.
+    ///
+    /// The icon row remains as the fallback for large accessibility text sizes,
+    /// where each button still keeps its tooltip and its accessibility label.
+    /// This is measured rather than assumed, so it holds at those sizes without
+    /// anyone having to guess a width.
     private var footer: some View {
-        HStack(spacing: Theme.Space.md) {
-            footerButton("Jobs", icon: Theme.Icon.jobs) { coordinator.showJobs() }
-                .pointingHand()
-            footerButton("Settings", icon: Theme.Icon.settings) { coordinator.showSettings() }
-                .pointingHand()
+        ViewThatFits(in: .horizontal) {
+            footerRow(labelled: true)
+            footerRow(labelled: false)
+        }
+    }
+
+    @ViewBuilder
+    private func footerRow(labelled: Bool) -> some View {
+        HStack(spacing: labelled ? Theme.Space.md : Theme.Space.sm) {
+            footerButton("Jobs", icon: Theme.Icon.jobs, labelled: labelled) {
+                coordinator.showJobs()
+            }
+            .pointingHand()
+            footerButton("Settings", icon: Theme.Icon.settings, labelled: labelled) {
+                coordinator.showSettings()
+            }
+            .pointingHand()
             // Beside Quit because they are the two "something looks wrong"
             // moves, and because this is the one recovery that needs launchd
             // rather than the daemon: a daemon that has stopped answering
             // cannot be restarted over the socket it is stuck on.
-            footerButton("Restart", icon: Theme.Icon.sync) { restartService() }
-                .pointingHand()
-                .disabled(store.isPerformingAction)
-                .help("Restart the background service.")
-            Spacer(minLength: Theme.Space.sm)
-            temperature
-            footerButton("Quit", icon: Theme.Icon.quit) { coordinator.quit() }
-                .pointingHand()
+            footerButton("Restart", icon: Theme.Icon.sync, labelled: labelled) {
+                restartService()
+            }
+            .pointingHand()
+            .disabled(store.isPerformingAction)
+            .help("Restart the background service.")
+            Spacer(minLength: Theme.Space.xs)
+            footerButton("Quit", icon: Theme.Icon.quit, labelled: labelled) {
+                coordinator.quit()
+            }
+            .pointingHand()
         }
     }
 
@@ -996,6 +1122,10 @@ struct PopoverView: View {
                 Text(text)
                     .font(Theme.Typography.caption)
                     .monospacedDigit()
+                    // "48.4°C" is one token; broken across two lines it read as
+                    // "48.4° C", which looks like a rendering fault.
+                    .lineLimit(1)
+                    .fixedSize()
             }
             // Warm once it is within ten degrees of the cutout, so the colour
             // arrives before the release does rather than reporting it.
@@ -1011,15 +1141,30 @@ struct PopoverView: View {
     /// Ten degrees below the daemon's default 80°C thermal cutout.
     private static let warmThresholdC: Double = 70
 
+    /// One footer item, with or without its written label.
+    ///
+    /// `lineLimit(1)` and `fixedSize` together are what stop the wrapping: the
+    /// first forbids a second line, the second forbids the truncation SwiftUI
+    /// would otherwise reach for, so the label reports its true width and lets
+    /// `ViewThatFits` above decide honestly whether the row fits.
+    ///
+    /// The accessibility label is applied either way, not only when the written
+    /// label is dropped: it costs nothing when the text is present, and without
+    /// it a glyph on its own says nothing to VoiceOver.
     private func footerButton(
-        _ title: String, icon: String, action: @escaping () -> Void
+        _ title: String, icon: String, labelled: Bool = true,
+        action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: Theme.Space.xs) {
                 Image(systemName: icon)
                     .font(Theme.Typography.iconInline)
-                Text(title)
-                    .font(Theme.Typography.caption)
+                if labelled {
+                    Text(title)
+                        .font(Theme.Typography.caption)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
             }
             // The whole label is the target, not just the glyphs, a 4pt gap
             // between icon and text that does nothing on click is the kind of
@@ -1028,6 +1173,7 @@ struct PopoverView: View {
         }
         .buttonStyle(FooterButtonStyle())
         .help(title)
+        .accessibilityLabel(title)
     }
 }
 
