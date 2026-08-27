@@ -237,6 +237,71 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         NSApp.terminate(nil)
     }
 
+    /// Asks launchd to restart the background service.
+    ///
+    /// Via `launchctl kickstart -k` rather than a request on the daemon socket,
+    /// because the reason anyone reaches for this is a daemon that has stopped
+    /// answering, and a wedged daemon cannot be asked, over the socket it is
+    /// wedged on, to restart itself. launchd owns the process, so launchd is
+    /// what restarts it. `KeepAlive` in the agent's plist is what brings the
+    /// replacement up.
+    ///
+    /// **A sleep block open at the time is not released by the kill.** The block
+    /// is global `pmset -a disablesleep`, held by the root helper rather than by
+    /// the daemon, and `kickstart -k` does not deliver the SIGTERM the daemon's
+    /// clear-on-exit hangs off. What clears it is the replacement daemon's first
+    /// state push, reporting no holds, and failing that the helper's own
+    /// 60-second dead-man. Seconds either way, but not instant, and worth
+    /// knowing for anyone here because `disablesleep` was stuck on.
+    ///
+    /// Throws rather than logging. `launchctl` exits non-zero when launchd does
+    /// not know the label — the ordinary case on a machine where goguma was
+    /// never installed, and reachable from the popover because this button is
+    /// offered in the disconnected state too. Swallowing that leaves a button
+    /// that visibly does nothing.
+    ///
+    /// Fixed executable, fixed arguments, no shell. The only value interpolated
+    /// is the uid this app is already running as. The label matches
+    /// `DaemonLabel` in internal/paths/paths_darwin.go, spelled out here for the
+    /// same reason `uiPreferenceDomain` is spelled out on the Go side: neither
+    /// language can read the other's constant.
+    ///
+    /// `nonisolated` and continuation-based so the wait for launchctl to exit
+    /// happens off the main actor: the kill and respawn take a noticeable
+    /// fraction of a second, and blocking the main thread for it would freeze
+    /// the popover that is showing the result.
+    nonisolated static func restartDaemon() async throws {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        task.arguments = ["kickstart", "-k", "gui/\(getuid())/glass.goguma.daemon"]
+        let errors = Pipe()
+        task.standardError = errors
+        task.standardOutput = Pipe()
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            task.terminationHandler = { finished in
+                let detail = String(
+                    decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self
+                ).trimmingCharacters(in: .whitespacesAndNewlines)
+                if finished.terminationStatus == 0 {
+                    continuation.resume()
+                } else {
+                    continuation.resume(
+                        throwing: ServiceRestartError(
+                            status: finished.terminationStatus, detail: detail))
+                }
+            }
+            do {
+                try task.run()
+            } catch {
+                // Spawn failed, so the handler above will never run and must not
+                // be left holding the continuation.
+                task.terminationHandler = nil
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
     // MARK: - Construction
 
     private func makeWindow(
@@ -451,5 +516,22 @@ private extension NSWindow {
                 y: visible.midY - frame.height / 2 + visible.height * 0.08
             )
         )
+    }
+}
+
+/// Why a service restart did not happen.
+///
+/// Carries launchctl's own stderr rather than a generic message: the two
+/// answers worth telling apart are "launchd has never heard of this label"
+/// (goguma is not installed, run setup) and "the job is disabled", and only
+/// launchctl can tell them apart.
+struct ServiceRestartError: LocalizedError {
+    let status: Int32
+    let detail: String
+
+    var errorDescription: String? {
+        detail.isEmpty
+            ? "Couldn't restart the background service (launchctl exited \(status))."
+            : "Couldn't restart the background service: \(detail)"
     }
 }
