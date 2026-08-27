@@ -75,6 +75,26 @@ private struct MenuBarRoot: View {
 enum MenuBarIcon {
     @MainActor
     static func image(for state: GogumaState) -> NSImage {
+        // The template path, and the default.
+        //
+        // `Theme.StatusItem.rendersAsTemplate` documented this as the Mac-native
+        // choice and claimed a controller honoured it; nothing read the flag, so
+        // the menu bar had been showing a full-colour emoji that stayed the same
+        // shade against a light bar, a dark bar and the inverted highlight.
+        // Reading it here is what makes the setting mean something.
+        //
+        // A template carries no colour, so state is not in the glyph. That is
+        // the documented intent for this mark either way — the emoji ignored
+        // state too — and the popover behind it carries the state in words.
+        if Theme.StatusItem.rendersAsTemplate {
+            return Theme.Colors.sweetPotato
+                ? SweetPotatoMark.templateImage(size: Theme.StatusItem.glyphSize)
+                // The bear does carry state in its silhouette, so it keeps it:
+                // eyes open while holding, closed at rest.
+                : MenuBarMark.image(
+                    size: Theme.StatusItem.glyphSize, asleep: state != .holding)
+        }
+
         let base: NSImage
         switch state {
         case .idle:
