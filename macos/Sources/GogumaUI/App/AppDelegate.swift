@@ -175,27 +175,57 @@ enum MainMenu {
         appItem.submenu = appMenu
         main.addItem(appItem)
 
+        // The Edit menu, and why it has to exist at all.
+        //
+        // ⌘V is not handled by the text field. AppKit turns the keystroke into
+        // a menu key-equivalent lookup first, and only if some menu item claims
+        // `paste:` is the message sent down the responder chain to the field
+        // editor. An app with no Edit menu therefore has text fields that
+        // cannot be pasted into — the stock failure of an `LSUIElement` app,
+        // which starts with no menu bar and gets one only if it builds it.
+        //
+        // Titled explicitly. `NSMenuItem()` begins with an empty title, which
+        // leaves the menu installed but with nothing to click on in the menu
+        // bar: no way to see that Cut, Copy and Paste are there, or what their
+        // shortcuts are. (The app menu above gets away with an empty title
+        // because AppKit names the first item after the application itself.
+        // Nothing does that for the ones after it.)
+        //
+        // Selectors as bare strings, in a table. `#selector(NSText.paste(_:))`
+        // produces exactly `paste:` and would work identically; the table is
+        // for the reader, because what matters about these is that they are the
+        // standard editing messages in the standard order, and a list says that
+        // better than six near-identical calls. `#selector` does carry one real
+        // hazard here — `NSText.copy(_:)` can resolve against `NSObject.copy()`
+        // — but that is a reason to be careful, not the reason for the shape.
+        //
+        // `target` stays nil so each item dispatches down the responder chain
+        // to whatever has focus. That is the whole mechanism: the menu item
+        // claims the key equivalent, the field editor performs it.
         let editItem = NSMenuItem()
+        editItem.title = "Edit"
         let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        for (title, selector, key) in [
+            ("Undo", "undo:", "z"),
+            ("Redo", "redo:", "Z"),
+        ] {
+            editMenu.addItem(withTitle: title, action: Selector(selector), keyEquivalent: key)
+        }
         editMenu.addItem(.separator())
-        editMenu.addItem(
-            withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"
-        )
-        editMenu.addItem(
-            withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"
-        )
-        editMenu.addItem(
-            withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"
-        )
-        editMenu.addItem(
-            withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"
-        )
+        for (title, selector, key) in [
+            ("Cut", "cut:", "x"),
+            ("Copy", "copy:", "c"),
+            ("Paste", "paste:", "v"),
+            ("Delete", "delete:", ""),
+            ("Select All", "selectAll:", "a"),
+        ] {
+            editMenu.addItem(withTitle: title, action: Selector(selector), keyEquivalent: key)
+        }
         editItem.submenu = editMenu
         main.addItem(editItem)
 
         let windowItem = NSMenuItem()
+        windowItem.title = "Window"
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(
             withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"
