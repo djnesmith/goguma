@@ -118,8 +118,15 @@ struct SettingsWindowView: View {
                     case .safety: safetySection
                     case .alerts:
                         alertsSection
-                        sectionRule
-                        updatesSection
+                        // The rule and the heading are inside the condition, not
+                        // just the row. A build with no advisory key compiled in
+                        // — which is every build of this fork — would otherwise
+                        // draw a rule and the heading "Staying up to date" over
+                        // an empty space.
+                        if store.advisoriesAvailable {
+                            sectionRule
+                            updatesSection
+                        }
                     case .advanced: advancedSection
                     }
                     // Shown on every tab. A setting goguma had to correct is not a fact
@@ -576,42 +583,19 @@ struct SettingsWindowView: View {
     /// whose description is of a thing the pane does not offer is worse than
     /// no section, and its caption-then-text rhythm did not match any other
     /// group here.
+    /// Only rendered when `advisoriesAvailable`; see the call site.
     private var updatesSection: some View {
         settingsSection("Staying up to date", nil) {
-            // Only when this build can actually verify a notice.
-            if store.advisoriesAvailable {
-                unlabelledRow {
-                    Toggle("Tell me when a problem is found", isOn: Binding(
-                        get: { store.config?.advisoryChecks ?? false },
-                        set: { apply("advisory_checks", $0 ? "on" : "off") }
-                    ))
-                    .toggleStyle(.checkbox)
-                    .help("Fetches a small signed file from getgoguma.com once a day. It "
-                        + "sends nothing about you or your jobs: no account, no identifier, "
-                        + "not even the version you are running. What comes back can show a "
-                        + "message and can't change any setting.")
-                }
-            }
-
-            // The same shape as "Watching every scheduler on this Mac. [Update
-            // now]" two sections up: a sentence, then the action beside it.
             unlabelledRow {
-                HStack(spacing: Theme.Space.sm) {
-                    Text(store.advisoriesAvailable
-                        ? "Or by email, when there is something to say."
-                        : "Get an email when something breaks or gets fixed.")
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Sign up") {
-                        if let url = URL(string: "https://getgoguma.com/updates") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .controlSize(.small)
-                    Spacer(minLength: 0)
-                }
+                Toggle("Tell me when a problem is found", isOn: Binding(
+                    get: { store.config?.advisoryChecks ?? false },
+                    set: { apply("advisory_checks", $0 ? "on" : "off") }
+                ))
+                .toggleStyle(.checkbox)
+                .help("Fetches a small signed file from getgoguma.com once a day. It "
+                    + "sends nothing about you or your jobs: no account, no identifier, "
+                    + "not even the version you are running. What comes back can show a "
+                    + "message and can't change any setting.")
             }
         }
     }
