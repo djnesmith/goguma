@@ -68,6 +68,33 @@ type Status struct {
 	// a job whose match pattern has never fired. Surfaced in `status` and the
 	// GUI so a broken config is loud rather than silent.
 	Warnings []Warning `json:"warnings,omitempty"`
+
+	// AgentSessions are coding agents observed working while `agent_hooks` is
+	// off, and therefore NOT being held for.
+	//
+	// Always empty when the setting is on, because each of those is a real
+	// hold and appears in Holds instead. Reporting them separately is the
+	// whole point: with the setting off the machine will sleep straight
+	// through a working agent, and the only thing that stops it is the user
+	// deciding to hold it awake. This is what lets a surface say so while
+	// there is still time to act, rather than afterwards.
+	AgentSessions []AgentSession `json:"agent_sessions,omitempty"`
+}
+
+// AgentSession is an agent goguma can see working but is deliberately not
+// holding sleep off for.
+//
+// Carries no deadline or ceiling, unlike Hold, because there is nothing to
+// expire: it is an observation, not a commitment. It stops being reported when
+// the agent says it has stopped, or when it has gone quiet for longer than a
+// hold's lease would have survived.
+type AgentSession struct {
+	// Label is the session's own name for itself, the same string a hold for
+	// it would have carried.
+	Label string `json:"label"`
+
+	// Since is when this session was first seen working.
+	Since time.Time `json:"since"`
 }
 
 // Hold is one active sleep-block, one per job in its wake window.

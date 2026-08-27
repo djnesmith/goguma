@@ -36,10 +36,17 @@ type Daemon struct {
 	helper  *helperLink
 	hooks   *webhookSender
 
-	mu       sync.RWMutex
-	cfg      config.Config
-	cfgWarn  []string
-	holds    map[string]*hold
+	mu      sync.RWMutex
+	cfg     config.Config
+	cfgWarn []string
+	holds   map[string]*hold
+
+	// agentsSeen are agent sessions reporting activity while agent_hooks is
+	// off: observed, shown, and deliberately not held for. Keyed by the same
+	// id a hold for that session would have used, so the stop event can drop
+	// the sighting with the id it already resolves.
+	agentsSeen map[string]agentSighting
+
 	latch    CutoutLatch
 	paused   bool
 	lastRun  *model.Run
@@ -142,18 +149,19 @@ type Daemon struct {
 // New constructs a daemon.
 func New(version string, log *slog.Logger, st *store.Store, plat power.Platform) *Daemon {
 	return &Daemon{
-		version:   version,
-		log:       log,
-		store:     st,
-		plat:      plat,
-		helper:    newHelperLink(log),
-		hooks:     newWebhookSender(log),
-		holds:     map[string]*hold{},
-		skipUntil: map[string]time.Time{},
-		served:    map[string]time.Time{},
-		lateWatch: map[string]lateWindow{},
-		cfg:       config.Default(),
-		observers: resolveObservers(),
+		version:    version,
+		log:        log,
+		store:      st,
+		plat:       plat,
+		helper:     newHelperLink(log),
+		hooks:      newWebhookSender(log),
+		holds:      map[string]*hold{},
+		agentsSeen: map[string]agentSighting{},
+		skipUntil:  map[string]time.Time{},
+		served:     map[string]time.Time{},
+		lateWatch:  map[string]lateWindow{},
+		cfg:        config.Default(),
+		observers:  resolveObservers(),
 		// Unknown until the first tick reads the machine. The zero value of
 		// power.State is "0%, not on AC", which is a perfectly plausible
 		// reading of a nearly-flat battery, so before this, a daemon that had
@@ -884,6 +892,17 @@ func (d *Daemon) webhookURL() string {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.cfg.WebhookURL
+}
+
+// agentHooksEnabled reports whether agent-reported holds are being honoured.
+//
+// Read live rather than captured at startup: the setting is changed while the
+// daemon is running, and the whole point of the check in StartRun is to take
+// effect for agents that are mid-session at the moment it flips.
+func (d *Daemon) agentHooksEnabled() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.cfg.AgentHooks
 }
 
 func (d *Daemon) event(e store.Event) {

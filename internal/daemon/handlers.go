@@ -204,6 +204,12 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 			id = keyedRunID(req.Key)
 		}
 		d.EndRun(id, req.ExitCode, time.Now())
+		// The same message closes a hold and clears a sighting, so a session
+		// stops being reported whichever of the two it had. Unconditional
+		// because agent_hooks may have been switched on since the sighting was
+		// recorded, in which case there is a hold to close and nothing to
+		// forget, and the delete is a no-op.
+		d.forgetAgentSighting(id)
 		return nil, nil
 
 	case ipc.OpMarkStart:
@@ -227,10 +233,17 @@ func (d *Daemon) handle(ctx context.Context, op ipc.Op, payload json.RawMessage)
 
 // Status assembles the full daemon snapshot.
 func (d *Daemon) Status() model.Status {
+	// Read before the snapshot lock below, not inside it. agentSessions prunes
+	// sightings that have gone quiet, so it takes the write lock, and
+	// sync.RWMutex is not reentrant: calling it under the RLock deadlocks the
+	// daemon on the first status request.
+	agents := d.agentSessions(time.Now())
+
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	st := model.Status{
+		AgentSessions:   agents,
 		SchemaVersion:   1,
 		DaemonRunning:   true,
 		DaemonVersion:   d.version,

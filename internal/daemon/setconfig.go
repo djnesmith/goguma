@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/junnam586/goguma/internal/config"
 	"github.com/junnam586/goguma/internal/ipc"
@@ -164,6 +165,16 @@ func (d *Daemon) setConfig(req ipc.ConfigSetReq) (ipc.ConfigResp, error) {
 	// configuration back out of every agent it was added to; there is no state
 	// where the setting says one thing and the agents do another.
 	if key == "agent_hooks" {
+		// Switching off releases what agents are already holding, rather than
+		// only declining to open more. A keyed hold survives fifteen minutes
+		// without renewal, so without this the Mac stays awake for up to that
+		// long after the user asked it to stop — and for the whole of that
+		// window `goguma hooks` correctly reports nothing installed while
+		// `status` still lists a live agent hold, the exact contradiction the
+		// setting exists to remove.
+		if !next.AgentHooks {
+			d.releaseAgentHolds(time.Now())
+		}
 		d.bg.Add(1)
 		go func() {
 			defer d.bg.Done()
