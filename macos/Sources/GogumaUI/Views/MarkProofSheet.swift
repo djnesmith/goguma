@@ -33,22 +33,43 @@ struct MarkProofSheet: View {
             // a decision about the mark can be judged. It was rendering two
             // marks the menu bar no longer uses and not the one it does.
             //
-            // Drawn twice against opposite backgrounds: a template is tinted by
-            // the system, so the question it has to survive is not "does this
-            // look right" but "does this read on a light bar and a dark one".
+            // Drawn against both grounds, because the question these have to
+            // survive is not "does this look right" but "does this read on a
+            // light bar and a dark one".
+            //
+            // This is the only instrument for that: there is no test target for
+            // drawing code. It is worth saying what it does and does not prove.
+            // The resting glyph is a template, so what is shown here is the
+            // system tinting it, which is real. The holding glyph carries its
+            // own ink, and `holdingInk` is a single value rather than an
+            // adaptive pair precisely so that what renders here is what renders
+            // on the bar — an adaptive colour would resolve against this
+            // window's appearance and show the same ink twice, proving nothing.
             VStack(spacing: Theme.Space.md) {
-                Text("menu bar · template")
+                Text("menu bar · at rest, and holding")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.textSecondary)
                 ForEach([false, true], id: \.self) { onDark in
                     HStack(spacing: Theme.Space.md) {
-                        Image(nsImage: SweetPotatoMark.templateImage(
+                        // Idle: the template, at menu bar size and large. The
+                        // small one is the heavier-stroke, three-mark drawing
+                        // and the large one is not, which is the whole reason
+                        // both are here.
+                        Image(nsImage: SweetPotatoMark.outlineImage(
                             size: Theme.StatusItem.glyphSize))
                             .renderingMode(.template)
                             .foregroundStyle(onDark ? Color.white : Color.black)
-                        Image(nsImage: SweetPotatoMark.templateImage(size: 96))
+                        Image(nsImage: SweetPotatoMark.outlineImage(size: 96))
                             .renderingMode(.template)
                             .foregroundStyle(onDark ? Color.white : Color.black)
+                        // Holding: not a template, so it arrives with its ink
+                        // already in it. Single-valued, so this is exactly what
+                        // the menu bar draws on either appearance.
+                        Image(nsImage: SweetPotatoMark.outlineImage(
+                            size: Theme.StatusItem.glyphSize,
+                            colour: Theme.StatusItem.holdingInk))
+                        Image(nsImage: SweetPotatoMark.outlineImage(
+                            size: 96, colour: Theme.StatusItem.holdingInk))
                     }
                     .padding(Theme.Space.sm)
                     .background(onDark ? Color.black : Color.white)

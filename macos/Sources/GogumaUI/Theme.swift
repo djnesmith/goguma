@@ -154,7 +154,7 @@ enum Theme {
         /// uses it reads as a yellow smudge rather than as an accent. This is
         /// the palette's own colour and clears the floor in both themes.
         ///
-        /// `emberFill` still tints the menu bar glyph, where a 16pt shape on the
+        /// `emberFill` is the app's own holding colour, where a 16pt shape on the
         /// system's own bar is a different contrast problem from body text.
         static let stateHolding = potatoSkin
         /// The user has paused goguma.
@@ -589,15 +589,45 @@ enum Theme {
         /// stating plainly: a template image **cannot carry colour**, so
         /// nothing in the menu bar can be communicated by tint.
         ///
-        /// The mark does not carry state at all — see `SweetPotatoMark` — so in
-        /// practice that costs nothing: the menu bar says which app, and the
-        /// popover behind it says what the app is doing, in words.
+        /// State is therefore carried by *which* image is used rather than by
+        /// tinting one: at rest the glyph is a template and the system paints
+        /// it; while sleep is held off it is not a template and arrives with
+        /// `holdingInk` already in it. See `MenuBarIcon.image(for:)`.
         ///
         /// Read by `MenuBarIcon.image(for:)`, which honours both paths: set
         /// this false to get the state-tinted, non-template glyph instead. It
         /// was read by nothing at all for a while, which is how a flag
         /// documented as the default came to have no effect.
         static let rendersAsTemplate = true
+
+        /// The ink for the holding glyph, which is not a template and so keeps
+        /// whatever colour is painted into it.
+        ///
+        /// Warm, because what it signals is "this Mac is being held open", and
+        /// warm against an otherwise cool menu bar is what registers at a
+        /// glance.
+        ///
+        /// **One value, not an adaptive pair**, for the reason already recorded
+        /// on `brandFill`: the menu bar glyph sits on the user's wallpaper,
+        /// where there is no app appearance to adapt to. An adaptive pair is
+        /// also actively unsafe here. This image is not a template, so the ink
+        /// is resolved once, inside a drawing handler, and baked in; the icon is
+        /// then only redrawn on a *state* change. Flip appearance mid-hold and
+        /// a dark-mode ink can be left sitting on a light bar — and the bright
+        /// value that pairing wanted, `#F09E4A`, measures 2.17:1 on white,
+        /// under the 3:1 floor for a non-text glyph. Stranded, it would be
+        /// nearly invisible exactly when it is saying the Mac cannot sleep.
+        ///
+        /// This value clears the floor in both directions: 3.91:1 on white,
+        /// 5.37:1 on black.
+        ///
+        /// Outside `Colors` deliberately. `ember` and `emberFill` mean "holding"
+        /// on the app's own surfaces, which are painted on `Colors.surface` and
+        /// tuned against it. This one is painted on whatever the user's desktop
+        /// happens to be, so it answers to a different constraint and is kept
+        /// where the other status item decisions live.
+        static let holdingInk = NSColor(
+            srgbRed: 0xC2 / 255, green: 0x6A / 255, blue: 0x1E / 255, alpha: 1)
 
         /// Point size of the menu bar glyph.
         ///

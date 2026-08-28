@@ -8,11 +8,12 @@ import AppKit
 /// blob at 16pt. Apple already ships artwork that is unmistakable at every size
 /// it is used at, so the honest move is to draw that rather than approximate it.
 ///
-/// One of those attempts did come back, in `templateImage` below — but for the
-/// menu bar only, and stripped to a single colour on purpose rather than losing
-/// its palette by accident. "Reads as a purple blob" was a complaint about a
-/// colour drawing competing with the emoji; it is not a complaint about a
-/// monochrome silhouette, which is what a status item is supposed to be.
+/// One of those attempts did come back, in `outlineImage` below — but for the
+/// menu bar only, and drawn as an outline rather than a filled shape. "Reads as
+/// a purple blob" was a complaint about a colour drawing competing with the
+/// emoji, and a filled monochrome shape has the same problem for a different
+/// reason: it has an edge and nothing else. An outline has an interior, and the
+/// interior is where the surface marks go.
 ///
 /// **Rendered once large, then scaled, never drawn at the requested size.**
 /// Apple Color Emoji is a bitmap font with fixed strikes, so its metrics are
@@ -26,23 +27,23 @@ import AppKit
 /// image and cannot be tinted.
 ///
 /// **That cost is why the menu bar no longer draws it.** A status item is
-/// supposed to be a template — macOS discards the colour and tints the alpha to
-/// match a light bar, a dark bar and the inverted highlight — and this image
-/// cannot be one. So the menu bar draws `templateImage` below instead: the
-/// outline, hand-built after all, because at 18pt the shape is the part that
-/// identifies a sweet potato and the palette is the part that cannot survive.
-/// The emoji is still what every surface *inside* the app uses, where colour is
-/// wanted and nothing is being tinted.
+/// normally a template — macOS discards the colour and tints the alpha to match
+/// a light bar, a dark bar and the inverted highlight — and this image cannot
+/// be one. So the menu bar draws `outlineImage` below instead: the outline,
+/// hand-built after all, because at 18pt the shape is the part that identifies
+/// a sweet potato and the palette is the part that cannot survive. The emoji is
+/// still what every surface *inside* the app uses, where colour is wanted and
+/// nothing is being tinted.
 ///
-/// **The glyph does not change with state**, in either form. Fading it at rest
-/// was tried and removed: what makes a sweet potato legible at a glance is the
-/// yellow cut face against the purple skin, and dimming to 45% washed exactly
-/// that away.
+/// **The emoji does not change with state.** Fading it at rest was tried and
+/// removed: what makes a sweet potato legible at a glance is the yellow cut
+/// face against the purple skin, and dimming to 45% washed exactly that away.
 ///
-/// So state lives where it still reads: the popover's headline, the status
-/// line, and the hold counter. The menu bar says *which app*, not *what it is
-/// doing*. That is a real reduction from the bear, whose eyes carried the state
-/// in shape and survived greyscale.
+/// `outlineImage` does carry state, by colour rather than by shape: it is a
+/// template at rest and a coloured non-template while sleep is being held off.
+/// That is the one thing worth knowing without opening anything — whether the
+/// Mac can sleep right now — and it is the only state in the glyph. Everything
+/// else is in the popover, in words.
 enum SweetPotatoMark {
     /// The glyph itself: a roasted sweet potato, purple skin, yellow flesh.
     private static let glyph = "\u{1F360}"
@@ -92,103 +93,178 @@ enum SweetPotatoMark {
         return image
     }
 
-    /// The mark as a **template**: one flat silhouette, no colour.
+    /// The mark for the menu bar: a stroked outline, hollow, with surface
+    /// marks — and coloured or not depending on what the Mac is doing.
     ///
-    /// This is what the menu bar gets. A status item image is meant to be a
-    /// template — macOS discards the colour, tints the alpha to match a light
-    /// bar or a dark bar, and inverts it while the menu is open. The colour
-    /// emoji above cannot be one: its alpha channel is the entire potato, so
-    /// handing it over as a template gives a featureless blob carrying none of
-    /// what makes the emoji legible, which is worse than either option.
+    /// - Parameter colour: `nil` produces a **template**, which macOS tints
+    ///   itself to match a light bar, a dark bar and the inverted highlight.
+    ///   That is the resting state. Pass a colour to get a non-template image
+    ///   that keeps it, which is how "holding sleep off" is shown: a template
+    ///   cannot carry colour, so the state has to be painted in.
     ///
-    /// So the outline is drawn rather than borrowed. At 18pt the emoji's
-    /// internal detail — the cut face, the skin — is already doing very little;
-    /// what identifies it at that size is the tapered tuber shape, and that is
-    /// the part that survives being reduced to one colour.
+    /// **Why an outline and not the filled shape it replaced.** The filled
+    /// version was a solid lozenge, and at menu bar size a solid lozenge is a
+    /// blob: it has an edge and nothing else, so it says "something is here"
+    /// and stops. An outline has an interior, and the interior is where the
+    /// surface marks live; those marks are most of what makes a sweet potato
+    /// read as a sweet potato rather than as a bean, a leaf or a stone.
     ///
-    /// State is deliberately not in this glyph, unchanged from the emoji it
-    /// replaces: the menu bar says *which app*, and the popover behind it says
-    /// what the app is doing, in words.
-    static func templateImage(size: CGFloat) -> NSImage {
+    /// The shape is two arcs meeting at two tips — the same construction as the
+    /// drawing this is taken from — rather than an ellipse, because a leaf has
+    /// points at both ends and an ellipse never does.
+    ///
+    /// Stroke weight and mark count are chosen from the requested size, not
+    /// scaled from one drawing. A stroke that looks correct at 96pt is a hairline
+    /// at 18 and disappears into the bar, and five marks inside an 18pt outline
+    /// collapse into a smudge. Small gets a heavier stroke and three marks; the
+    /// proof sheet renders both so the difference is visible rather than
+    /// asserted.
+    static func outlineImage(size: CGFloat, colour: NSColor? = nil) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            let path = tuber()
-            // Fit the ink rather than a nominal box: the shape is rotated, so
-            // its bounds are not worth working out by hand, and asking the path
-            // stays correct if the numbers below are ever tuned.
-            let ink = path.boundingBoxOfPath
+            let small = size < Outline.smallBelow
+            let stroke = Outline.stroke(small: small)
+
+            let body = leaf(small: small)
+            // The stroke straddles the path, so the ink is half a stroke wider
+            // than the geometry on every side. Fitting the geometry alone
+            // clipped the outline at the tips.
+            let ink = body.boundingBoxOfPath.insetBy(dx: -stroke / 2, dy: -stroke / 2)
             guard ink.width > 0, ink.height > 0 else { return false }
-            let scale =
-                min(rect.width / ink.width, rect.height / ink.height) * Outline.fill
+            let scale = min(rect.width / ink.width, rect.height / ink.height) * Outline.fill
             ctx.translateBy(
                 x: rect.midX - ink.midX * scale,
                 y: rect.midY - ink.midY * scale
             )
             ctx.scaleBy(x: scale, y: scale)
-            // Black is only the alpha carrier; the system chooses the ink.
-            ctx.setFillColor(NSColor.black.cgColor)
-            ctx.addPath(path)
-            ctx.fillPath()
+
+            // Black is only the alpha carrier for a template; for the holding
+            // state this is the real ink.
+            ctx.setStrokeColor((colour ?? .black).cgColor)
+            ctx.setLineWidth(stroke)
+            // Round joins and caps: the tips meet at an angle sharp enough that
+            // a miter join spikes past them, and the marks are short enough
+            // that butt caps make them read as scratches rather than marks.
+            ctx.setLineJoin(.round)
+            ctx.setLineCap(.round)
+
+            ctx.addPath(body)
+            ctx.strokePath()
+            ctx.addPath(marks(small: small))
+            ctx.strokePath()
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = colour == nil
         return image
     }
 
-    /// The silhouette, in its own 120×120 units.
+    /// The outline, in its own 120×120 units.
     ///
-    /// **Lobed at both ends, and only moderately tilted.** The first version was
-    /// a long shallow body with a single round bulb at one end, tilted 30°.
-    /// Rendered at proof size that silhouette is unmistakably phallic — which is
-    /// not a thing to discover in a menu bar, in a screen share, permanently.
-    /// A real tuber is lumpy at both ends and not much longer than it is wide,
-    /// so this is: two unequal lobes, a shorter body, and less lean.
+    /// Two drawings, not one drawing scaled. Below `smallBelow` every
+    /// proportion changes, because the small one is not a shrunk version of the
+    /// large one and cannot be: at 18pt a stroke that looks right at 96 closes
+    /// the interior, and a mark shorter than the stroke is wide renders as a
+    /// dot, since round caps on a segment shorter than the line width *are* a
+    /// circle. The first attempt shipped exactly that — three dots in a blob.
     private enum Outline {
-        static let centre = CGPoint(x: 60, y: 60)
-        /// Shorter and deeper than a shaft: aspect near 2:1, not 3:1.
-        static let bodyRadius = CGSize(width: 36, height: 21)
-        /// Both ends carry a lobe. Unequal radii keep it from reading as a
-        /// capsule, which is the other failure mode; equal ones made a pill.
-        static let lobes: [(centre: CGPoint, radius: CGFloat)] = [
-            (CGPoint(x: 84, y: 57), 22),
-            (CGPoint(x: 34, y: 64), 17),
-        ]
-        /// Enough lean to look grown rather than drawn, not enough to read as
-        /// a diagonal shaft.
-        static let tilt: CGFloat = -.pi / 9
+        /// The two tips, lower-left and upper-right.
+        static let tipA = CGPoint(x: 20, y: 26)
+        static let tipB = CGPoint(x: 100, y: 94)
+
+        /// Below this point size the small drawing is used. 24pt sits above the
+        /// 18pt the menu bar asks for and well below the proof sheet's 96.
+        static let smallBelow: CGFloat = 24
+
+        /// How far each arc bows from the line between the tips. The small
+        /// drawing is fatter, to leave an interior worth marking after its
+        /// heavier stroke has eaten into both sides.
+        static func bow(small: Bool) -> CGFloat { small ? 30 : 25 }
+
+        /// Heavier at small size in absolute terms, lighter relative to the
+        /// body it encloses.
+        static func stroke(small: Bool) -> CGFloat { small ? 8 : 7 }
+
+        /// Marks are longer at small size, not shorter. What has to stay true
+        /// is that a mark reads as a line and not a dot, and that is a ratio
+        /// against the stroke, not an absolute length.
+        static func markLength(small: Bool) -> CGFloat { small ? 16 : 9 }
+
+        /// Three marks at small size: five inside an 18pt outline merge.
+        static func markCount(small: Bool) -> Int { small ? 3 : 5 }
+
         /// Leaves a margin, so no edge touches the bounds at any size.
         static let fill: CGFloat = 0.94
     }
 
-    /// Body and both lobes as one path, filled non-zero so they union — the
-    /// same construction `MenuBarMark` uses for its ears and head.
-    private static func tuber() -> CGPath {
-        let rotation = CGAffineTransform(
-            translationX: Outline.centre.x, y: Outline.centre.y
-        )
-        .rotated(by: Outline.tilt)
-        .translatedBy(x: -Outline.centre.x, y: -Outline.centre.y)
+    /// The closed contour: two arcs, tip to tip.
+    ///
+    /// Symmetric, where the drawing is slightly heavier at the lower tip. At
+    /// 18pt that asymmetry is under half a pixel, and symmetry is what keeps the
+    /// two arcs from needing four hand-tuned control points instead of two.
+    private static func leaf(small: Bool) -> CGPath {
+        let a = Outline.tipA
+        let b = Outline.tipB
+        let along = CGVector(dx: b.x - a.x, dy: b.y - a.y)
+        let length = (along.dx * along.dx + along.dy * along.dy).squareRoot()
+        // Unit normal to the tip-to-tip line; the arcs bow along ±this.
+        let normal = CGVector(dx: -along.dy / length, dy: along.dx / length)
+        // A cubic bows to about three quarters of its control offset, so the
+        // offset is the wanted bow scaled back up.
+        let offset = Outline.bow(small: small) * 4 / 3
+
+        func control(_ t: CGFloat, _ side: CGFloat) -> CGPoint {
+            CGPoint(
+                x: a.x + along.dx * t + normal.dx * offset * side,
+                y: a.y + along.dy * t + normal.dy * offset * side
+            )
+        }
 
         let path = CGMutablePath()
-        path.addEllipse(
-            in: CGRect(
-                x: Outline.centre.x - Outline.bodyRadius.width,
-                y: Outline.centre.y - Outline.bodyRadius.height,
-                width: Outline.bodyRadius.width * 2,
-                height: Outline.bodyRadius.height * 2
-            ),
-            transform: rotation
-        )
-        for lobe in Outline.lobes {
-            path.addEllipse(
-                in: CGRect(
-                    x: lobe.centre.x - lobe.radius,
-                    y: lobe.centre.y - lobe.radius,
-                    width: lobe.radius * 2,
-                    height: lobe.radius * 2
-                ),
-                transform: rotation
+        path.move(to: a)
+        path.addCurve(to: b, control1: control(1.0 / 3, 1), control2: control(2.0 / 3, 1))
+        path.addCurve(to: a, control1: control(2.0 / 3, -1), control2: control(1.0 / 3, -1))
+        path.closeSubpath()
+        return path
+    }
+
+    /// The surface marks: short strokes across the body, not along it.
+    ///
+    /// Perpendicular to the tip-to-tip line, which is what they are in the
+    /// drawing and is also the only orientation that reads at 18pt — marks
+    /// running the long way merge with the outline they sit inside.
+    ///
+    /// Scattered off the centre line rather than strung along it, so they read
+    /// as markings on a surface instead of as a seam down the middle.
+    private static func marks(small: Bool) -> CGPath {
+        let a = Outline.tipA
+        let b = Outline.tipB
+        let along = CGVector(dx: b.x - a.x, dy: b.y - a.y)
+        let length = (along.dx * along.dx + along.dy * along.dy).squareRoot()
+        let unit = CGVector(dx: along.dx / length, dy: along.dy / length)
+        let normal = CGVector(dx: -unit.dy, dy: unit.dx)
+
+        // Position along the body, and how far off the centre line, for each
+        // mark. Five for the large drawing; the small one takes the middle
+        // three, which keeps the scatter rather than thinning it to a line.
+        let placements: [(t: CGFloat, offset: CGFloat)] = [
+            (0.28, 2), (0.41, -6), (0.54, 5), (0.67, -4), (0.78, 1),
+        ]
+        let count = Outline.markCount(small: small)
+        let chosen = count >= placements.count
+            ? placements
+            : Array(placements[1..<(1 + count)])
+
+        let path = CGMutablePath()
+        for place in chosen {
+            let centre = CGPoint(
+                x: a.x + along.dx * place.t + normal.dx * place.offset,
+                y: a.y + along.dy * place.t + normal.dy * place.offset
             )
+            let half = Outline.markLength(small: small) / 2
+            path.move(to: CGPoint(
+                x: centre.x - normal.dx * half, y: centre.y - normal.dy * half))
+            path.addLine(to: CGPoint(
+                x: centre.x + normal.dx * half, y: centre.y + normal.dy * half))
         }
         return path
     }

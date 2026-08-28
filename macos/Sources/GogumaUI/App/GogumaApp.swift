@@ -83,16 +83,31 @@ enum MenuBarIcon {
         // shade against a light bar, a dark bar and the inverted highlight.
         // Reading it here is what makes the setting mean something.
         //
-        // A template carries no colour, so state is not in the glyph. That is
-        // the documented intent for this mark either way — the emoji ignored
-        // state too — and the popover behind it carries the state in words.
+        // Which image is used carries the state; see the block below.
         if Theme.StatusItem.rendersAsTemplate {
-            return Theme.Colors.sweetPotato
-                ? SweetPotatoMark.templateImage(size: Theme.StatusItem.glyphSize)
-                // The bear does carry state in its silhouette, so it keeps it:
+            guard Theme.Colors.sweetPotato else {
+                // The bear carries state in its silhouette, so it keeps it:
                 // eyes open while holding, closed at rest.
-                : MenuBarMark.image(
+                return MenuBarMark.image(
                     size: Theme.StatusItem.glyphSize, asleep: state != .holding)
+            }
+            // Colour is the state, and it is the only state in the glyph.
+            //
+            // Holding sleep off is the one condition where the answer to "can
+            // this Mac sleep right now" is no, and it is worth knowing without
+            // clicking anything. A template cannot carry colour — the system
+            // repaints it to match the bar — so the holding glyph is
+            // deliberately NOT a template and keeps the ink painted into it.
+            // Everything else resolves to the template, which is what lets the
+            // resting icon sit in a light bar and a dark bar unchanged.
+            //
+            // Two states, not five. Paused, cutout and disconnected are all
+            // "not holding", which is what the colour is answering, and the
+            // popover behind the icon names which of them it is in words. A
+            // third colour here would be a quiz.
+            return SweetPotatoMark.outlineImage(
+                size: Theme.StatusItem.glyphSize,
+                colour: state == .holding ? Theme.StatusItem.holdingInk : nil)
         }
 
         let base: NSImage
