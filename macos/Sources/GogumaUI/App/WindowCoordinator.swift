@@ -361,7 +361,24 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     private func front(_ window: NSWindow) {
         NSApp.setActivationPolicy(.regular)
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+
+        // Activation, on the modern API where there is one.
+        //
+        // `activate(ignoringOtherApps:)` is deprecated on macOS 14 and is no
+        // longer a guarantee: the system decides, and an app that was
+        // `.accessory` a moment ago is exactly the kind it declines. The paste
+        // self-test caught the consequence — policy `.regular`, a window
+        // ordered front, and `NSApp.isActive == false` with no key window. An
+        // inactive app has no menu bar, which is why a correctly built Edit menu
+        // still left ⌘V with nowhere to go.
+        //
+        // The policy change is what has to land before the activation request,
+        // which is why this is not merged into the line above it.
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
         // Nothing starts focused.
         //
         // AppKit hands first responder to the first text field it finds, which

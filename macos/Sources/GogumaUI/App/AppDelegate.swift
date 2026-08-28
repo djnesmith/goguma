@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // window opens (see WindowCoordinator).
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = MainMenu.build()
+        // The menu alone is not enough in a menu bar app; see EditingKeys.
+        EditingKeys.install()
 
         installMenuBarItem()
         store.startPolling()
@@ -35,6 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // when to tint the battery reading as a problem, and waiting for the
         // user to open Settings first would leave that quietly wrong.
         Task { await store.loadConfig() }
+
+        // Debug harness, reached only by an argument the app is never launched
+        // with. See PasteSelfTest.
+        if PasteSelfTest.runIfRequested(coordinator: coordinator) { return }
 
         presentFirstRunIfNeeded()
     }
