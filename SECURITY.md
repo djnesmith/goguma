@@ -151,12 +151,15 @@ coding agent it finds, so the agent reports when it is working and the machine
 stays awake until it stops. This is on by default and is the one write on this
 page that is not asked about job by job, so it is worth being exact.
 
-It is a setting, `agent_hooks`, and the background service keeps every agent in
-line with it. Turning it off takes the configuration back out of every agent it
-was added to, rather than merely declining to add more; there is no state where
-the setting says one thing and your agents do another. `goguma config set
-agent_hooks off`, or the switch in the app's settings, and `goguma hooks` shows
-what is in place at any point.
+It is a setting, `agent_hooks`, and it decides whether a working agent **holds
+sleep off** — not whether agents report. They report either way, because that
+report is the only way anything on the machine can know an agent is working, and
+with the setting off the menu bar says so while leaving the Mac free to sleep.
+`goguma config set agent_hooks off`, or the switch in the app's settings.
+
+To stop goguma touching those files at all, `goguma hooks remove` takes the lines
+back out and the background service leaves them out until `goguma hooks install`
+puts them back. `goguma hooks` shows what is in place at any point.
 
 What goes in is a line calling `goguma agent-hook` on that agent's own
 prompt, tool-use and stop events, in `~/.claude/settings.json`,
@@ -168,9 +171,9 @@ does not parse, the original is put back. A configuration goguma cannot read is
 refused rather than replaced.
 
 `goguma hooks remove` takes out exactly what it added, leaving the rest of the
-file as it was, and `goguma hooks` shows what is in place without changing
-anything. There is no third state: goguma either has one line in that file or
-none.
+file as it was, and is remembered, so the background service does not put the
+lines back on its next start. `goguma hooks` shows what is in place without
+changing anything. goguma either has one line in that file or none.
 
 **Wrapping a scheduled job.** `goguma import --register` offers to put the
 `goguma-mark` wrapper in front of

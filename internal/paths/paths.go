@@ -59,6 +59,18 @@ func (l Layout) HistoryFile(jobID string) string {
 // its permissions follow the user's own directory.
 func (l Layout) DaemonSocket() string { return filepath.Join(l.StateDir, "daemon.sock") }
 
+// HooksOptOut records that the user took the agent hooks out by hand.
+//
+// The daemon reinstalls the hooks on every start, because they are the signal
+// that tells goguma an agent is working and `agent_hooks` only decides whether
+// that signal opens a hold. Without this file `goguma hooks remove` would be
+// undone at the next login, which makes it a command that does not do what it
+// says. Its presence is the one thing that stops the reconcile.
+//
+// A file rather than a setting: it is a record of a deliberate CLI action, not
+// a knob. `goguma hooks install` removes it again.
+func (l Layout) HooksOptOut() string { return filepath.Join(l.StateDir, "hooks-opted-out") }
+
 // CrontabBackup is written before `import` ever rewrites a crontab line.
 func (l Layout) CrontabBackup() string { return filepath.Join(l.StateDir, "crontab.backup") }
 

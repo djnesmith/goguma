@@ -370,12 +370,16 @@ struct SettingsWindowView: View {
                 .help(
                     "An agent cannot be recognised from outside: its process is there "
                         + "whether or not it is working, so it has to say so. This adds one "
-                        + "line to Claude Code, Codex and Cursor's own settings, beside "
-                        + "whatever is already there, and the machine stays awake until the "
-                        + "agent stops rather than for a fixed time. The limits on the "
-                        + "Safety tab still apply: it sleeps anyway if the Mac gets too hot "
-                        + "or the battery runs low. Turning this off takes that line back "
-                        + "out, and an agent stops when the lid closes."
+                        + "line to Claude Code, Codex, Cursor and Gemini's own settings, "
+                        + "beside whatever is already there. On, the Mac stays awake until "
+                        + "the agent stops. Off, agents still report and are still shown "
+                        + "here while they work — the Mac just sleeps normally unless you "
+                        + "press Keep Awake, and an agent stops when the lid closes. "
+                        + "Either way the line stays in their settings: it is what lets "
+                        + "goguma know an agent is working at all. To take it out, run "
+                        + "'goguma hooks remove'. The limits on the Safety tab apply to "
+                        + "both: it sleeps anyway if the Mac gets too hot or the battery "
+                        + "runs low."
                 )
             }
         }

@@ -52,12 +52,16 @@ func gogumaEntries(t *testing.T, path string) (mine, theirs int) {
 	return mine, theirs
 }
 
-// TestTurningTheSettingOffTakesTheConfigurationBackOut.
+// TestTurningTheSettingOffKeepsTheHooksInstalled.
 //
-// The reason the daemon owns this rather than the installer. A setting that
-// only decided whether to add more would leave "off" meaning "still on, but no
-// longer spreading", which is not what anyone reads it as.
-func TestTurningTheSettingOffTakesTheConfigurationBackOut(t *testing.T) {
+// This asserted the opposite until the passive display existed, and the old
+// behaviour is what broke it: switching off took the hook lines back out, so
+// agents stopped reporting, so goguma had nothing to show and could not say an
+// agent was working. It had deafened itself.
+//
+// `agent_hooks off` means "do not hold sleep off for agents". Whether a report
+// opens a hold is decided in StartRun; the hooks are the signal and stay put.
+func TestTurningTheSettingOffKeepsTheHooksInstalled(t *testing.T) {
 	path := withFakeHome(t, `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"my-notifier"}]}]}}`)
 	d := testDaemon(t)
 
@@ -71,6 +75,7 @@ func TestTurningTheSettingOffTakesTheConfigurationBackOut(t *testing.T) {
 	if mine == 0 {
 		t.Fatal("nothing was configured with the setting on")
 	}
+	installed := mine
 	if theirs != 1 {
 		t.Errorf("the user's own hook count is %d, want 1", theirs)
 	}
@@ -78,11 +83,29 @@ func TestTurningTheSettingOffTakesTheConfigurationBackOut(t *testing.T) {
 	cfg.AgentHooks = false
 	d.reconcileAgentHooks(cfg)
 	mine, theirs = gogumaEntries(t, path)
-	if mine != 0 {
-		t.Errorf("%d goguma entries survived the setting being turned off", mine)
+	if mine != installed {
+		t.Errorf("goguma entries went from %d to %d turning the setting off; "+
+			"off must keep listening, or nothing can be reported", installed, mine)
 	}
 	if theirs != 1 {
 		t.Errorf("the user's own hook was lost turning the setting off; count is %d", theirs)
+	}
+}
+
+// TestReconcilingOffFromScratchStillInstalls: a machine that has never had the
+// hooks, with the setting already off, still gets them. Otherwise the passive
+// display would work only for people who had once had the setting on.
+func TestReconcilingOffFromScratchStillInstalls(t *testing.T) {
+	path := withFakeHome(t, `{"model":"opus"}`)
+	d := testDaemon(t)
+
+	cfg := config.Default()
+	cfg.AgentHooks = false
+	d.reconcileAgentHooks(cfg)
+
+	mine, _ := gogumaEntries(t, path)
+	if mine == 0 {
+		t.Fatal("no hooks installed with the setting off; agents would never report")
 	}
 }
 
@@ -108,28 +131,75 @@ func TestReconcilingRepeatedlyIsStable(t *testing.T) {
 	}
 }
 
-// TestReconcilingOffWhenNothingIsInstalledWritesNothing. A user who turned this
-// off should not have goguma rewriting their agent's config on every start
-// merely to confirm it is still absent.
-func TestReconcilingOffWhenNothingIsInstalledWritesNothing(t *testing.T) {
+// TestReconcilingOffWhenAlreadyInstalledWritesNothing.
+//
+// This used to assert that reconciling with the setting off wrote nothing at
+// all, which was true when off meant "take the hooks out" and is false now that
+// it means "keep listening, do not hold". The property worth keeping is the one
+// underneath it: the daemon must not rewrite somebody else's config on every
+// start merely to confirm it already says what it should.
+func TestReconcilingOffWhenAlreadyInstalledWritesNothing(t *testing.T) {
 	path := withFakeHome(t, `{"model":"opus"}`)
+	d := testDaemon(t)
+	cfg := config.Default()
+	cfg.AgentHooks = false
+
+	// First pass installs.
+	d.reconcileAgentHooks(cfg)
+	if mine, _ := gogumaEntries(t, path); mine == 0 {
+		t.Fatal("nothing was installed on the first pass")
+	}
 	before, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := testDaemon(t)
-	cfg := config.Default()
-	cfg.AgentHooks = false
-	d.reconcileAgentHooks(cfg)
 
+	// Second pass has nothing to do.
+	d.reconcileAgentHooks(cfg)
 	after, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !before.ModTime().Equal(after.ModTime()) {
-		t.Error("the config was rewritten even though there was nothing to remove")
+		t.Error("the config was rewritten even though it was already correct")
 	}
-	if _, err := os.Stat(path + ".goguma-backup"); err == nil {
-		t.Error("a backup was written for a change that was not needed")
+	// A backup is written only when the file is, so its mtime is the second
+	// witness that nothing happened on the idle pass.
+	if bk, err := os.Stat(path + ".goguma-backup"); err == nil {
+		if bk.ModTime().After(before.ModTime()) {
+			t.Error("a backup was written for a pass that changed nothing")
+		}
+	}
+}
+
+// TestOptOutMarkerStopsTheReconcile.
+//
+// The daemon reinstalls the hooks on every start, because they are the signal
+// and `agent_hooks` only decides whether that signal opens a hold. That would
+// undo `goguma hooks remove` at the next login and make it a command with a
+// success message and no effect, so the CLI records the removal and this is
+// what reads it.
+func TestOptOutMarkerStopsTheReconcile(t *testing.T) {
+	path := withFakeHome(t, `{"model":"opus"}`)
+	d := testDaemon(t)
+	cfg := config.Default()
+
+	if err := os.WriteFile(d.store.Layout().HooksOptOut(), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.reconcileAgentHooks(cfg)
+
+	if mine, _ := gogumaEntries(t, path); mine != 0 {
+		t.Fatalf("%d hooks were installed despite the opt-out marker", mine)
+	}
+
+	// Clearing it lets the reconcile run again, which is what `hooks install`
+	// relies on.
+	if err := os.Remove(d.store.Layout().HooksOptOut()); err != nil {
+		t.Fatal(err)
+	}
+	d.reconcileAgentHooks(cfg)
+	if mine, _ := gogumaEntries(t, path); mine == 0 {
+		t.Fatal("nothing was installed after the opt-out was cleared")
 	}
 }

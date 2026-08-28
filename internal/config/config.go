@@ -150,14 +150,24 @@ type Config struct {
 	// `goguma config set advisory_checks off` ends it permanently.
 	AdvisoryChecks bool `json:"advisory_checks"`
 
-	// AgentHooks keeps the coding agents on this machine configured to report
-	// when they are working, so sleep is held off while an agent runs and
-	// released when it stops.
+	// AgentHooks decides whether a working coding agent HOLDS SLEEP OFF.
+	//
+	// It does not decide whether agents report. They always report: the hooks
+	// stay installed in both states, and the daemon keeps them that way.
+	//
+	//	on   an agent working holds sleep off until it stops
+	//	off  an agent working is shown in the menu bar, and holds nothing;
+	//	     the Mac sleeps normally unless you hold it awake yourself
+	//
+	// Off used to take the hooks back out, which made the second line
+	// impossible: agents stopped reporting, so goguma had nothing to show and
+	// could not say an agent was working. Listening costs one local socket
+	// write per prompt and per tool call, and it is the only view anyone has of
+	// what is running, so it is not what the switch turns off.
 	//
 	// On by default and reconciled by the daemon rather than applied once at
-	// install: an agent installed next month gets set up without anyone having
-	// to remember, and turning this off takes the configuration back out rather
-	// than merely declining to add more.
+	// install, so an agent installed next month is set up without anyone having
+	// to remember.
 	//
 	// This is the only setting that writes to a file belonging to another
 	// program. What goes in is one command on that agent's own prompt, tool-use

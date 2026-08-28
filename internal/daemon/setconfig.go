@@ -161,9 +161,11 @@ func (d *Daemon) setConfig(req ipc.ConfigSetReq) (ipc.ConfigResp, error) {
 	d.log.Info("configuration changed", "key", key, "value", req.Value)
 
 	// Applied here rather than only on the next start, so the toggle in the
-	// menu bar app does what it says the moment it is flipped. Off takes the
-	// configuration back out of every agent it was added to; there is no state
-	// where the setting says one thing and the agents do another.
+	// menu bar app does what it says the moment it is flipped.
+	//
+	// The reconcile is the cheap half: hooks are installed in both states, so
+	// it almost always finds them already correct. Releasing the open holds is
+	// the half that has to happen now.
 	if key == "agent_hooks" {
 		// Switching off releases what agents are already holding, rather than
 		// only declining to open more. A keyed hold survives fifteen minutes

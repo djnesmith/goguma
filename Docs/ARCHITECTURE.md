@@ -377,9 +377,11 @@ sleeping it mid-run.
 **The daemon keeps it true, rather than the installer doing it once.** `agent_hooks`
 is a setting, on by default, reconciled on every daemon start and whenever it
 changes. An agent installed a month after goguma is set up without anyone
-remembering to; turning the setting off takes the configuration back out of every
-agent it was added to, which is what lets the switch live in the app's settings,
-since that sets config over IPC and never runs the CLI.
+remembering to. Turning the setting off does not take the configuration back
+out: the hooks are the signal, and the setting only decides whether that signal
+opens a hold, so switching off leaves agents reporting and shows them without
+holding. `goguma hooks remove` is the way out, and it writes a marker the
+reconcile honours so it is not undone at the next start.
 
 ---
 
