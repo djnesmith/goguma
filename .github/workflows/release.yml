@@ -114,12 +114,15 @@ jobs:
             cp -R "$dir" "$staging/"
           done
           ditto -c -k "$staging" /tmp/goguma-cli.zip
-          xcrun notarytool submit /tmp/goguma-cli.zip \
+          out=$(xcrun notarytool submit /tmp/goguma-cli.zip \
             --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" --wait
-          # Prove a binary now passes the assessment a user's Mac will run,
-          # rather than trusting that the ticket exists.
-          spctl --assess --type execute -vv dist/*_darwin_arm64*/goguma
+            --team-id "$APPLE_TEAM_ID" --wait | tee /dev/stderr)
+          # Apple's verdict is the assertion, asserted by hand because
+          # notarytool has completed submissions with exit code 0 whatever
+          # the verdict said. spctl cannot stand in for it here: its execute
+          # assessment blesses only app bundles, so a perfectly notarized
+          # bare binary comes back "does not seem to be an app".
+          grep -q "status: Accepted" <<<"$out"
 
   # The download: a signed, notarized, stapled disk image containing the menu
   # bar app, with the command line tools bundled inside it.
