@@ -88,6 +88,39 @@ jobs:
           # is what every build did before this existed.
           SIGN_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
 
+      # The archives goreleaser just built are signed but not notarized. The
+      # app and disk image get their tickets in the app job below; these bare
+      # binaries are what the Homebrew cask downloads, Homebrew quarantines
+      # what it downloads, and Gatekeeper rejects a quarantined binary whose
+      # cdhash Apple has never seen. In the field that read as `brew install`
+      # working and the first `goguma` hanging on a dialog nobody associates
+      # with a command line tool.
+      #
+      # A bare Mach-O cannot be stapled, so there is nothing to write back
+      # into the archives: the ticket lives with Apple and Gatekeeper fetches
+      # it online at first run. That is also why running after goreleaser has
+      # assembled and uploaded the archives is sound; their bytes do not
+      # change. One zip holding both darwin directories notarizes all eight
+      # cdhashes in a single submission.
+      - name: notarize the darwin binaries
+        if: steps.creds.outputs.have == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          staging=$(mktemp -d)
+          for dir in dist/*_darwin_*/; do
+            cp -R "$dir" "$staging/"
+          done
+          ditto -c -k "$staging" /tmp/goguma-cli.zip
+          xcrun notarytool submit /tmp/goguma-cli.zip \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" --wait
+          # Prove a binary now passes the assessment a user's Mac will run,
+          # rather than trusting that the ticket exists.
+          spctl --assess --type execute -vv dist/*_darwin_arm64*/goguma
+
   # The download: a signed, notarized, stapled disk image containing the menu
   # bar app, with the command line tools bundled inside it.
   #
