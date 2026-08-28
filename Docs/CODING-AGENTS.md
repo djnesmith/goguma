@@ -53,8 +53,9 @@ change it, or switch it off:
 
 ```sh
 goguma hooks                          # what is set up
-goguma config set agent_hooks off     # stop, and take it back out
-goguma config set agent_hooks on      # start again
+goguma config set agent_hooks off     # stop holding; agents are still shown
+goguma config set agent_hooks on      # hold again
+goguma hooks remove                   # stop listening too, and stay out
 ```
 
 The switch is in the app's settings too, under "Keep coding agents running with

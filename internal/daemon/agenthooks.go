@@ -8,29 +8,23 @@ import (
 	"github.com/junnam586/goguma/internal/config"
 )
 
-// reconcileAgentHooks brings every coding agent on this machine into line with
-// the agent_hooks setting.
+// reconcileAgentHooks makes sure every coding agent on this machine is
+// configured to report when it is working.
 //
-// The daemon owns this rather than the installer, for two reasons.
+// Unconditionally, in both states of `agent_hooks`. The hooks are the signal;
+// the setting decides only whether that signal opens a hold, and that decision
+// is made in StartRun. See Config.AgentHooks for why the two were separated.
 //
-// It has to keep being true. An agent installed a month after goguma would
-// otherwise never be set up, and the user would have no reason to suspect that
-// closing the lid on it behaves differently from the one that was there on
-// install day. Reconciling on every start makes "which agents are configured"
-// a question about what is on the machine now rather than what was there once.
-//
-// And the setting has to mean something from wherever it is changed. The menu
-// bar app sets config over IPC and never runs the CLI, so a toggle there would
-// otherwise do nothing at all until the next install. Turning it off takes the
-// configuration back out, which is the only reading of "off" that is not a lie.
-//
-// Failures are logged and dropped. Somebody else's config file being
-// unreadable, or read-only, is not a reason for goguma's daemon to fail to
-// start, and the hooks command reports the same conditions properly when a
-// human asks.
+// The one thing that stops it is `goguma hooks remove`, which records the
+// removal so this does not undo it at the next start.
 func (d *Daemon) reconcileAgentHooks(cfg config.Config) {
 	binDir := gogumaBinDir()
 	if binDir == "" {
+		return
+	}
+	// Somebody ran `goguma hooks remove`. Reinstalling here would undo it at
+	// the next login and make that command a no-op with a success message.
+	if _, err := os.Stat(d.store.Layout().HooksOptOut()); err == nil {
 		return
 	}
 	for _, h := range agenthooks.Harnesses {
@@ -42,11 +36,20 @@ func (d *Daemon) reconcileAgentHooks(cfg config.Config) {
 			d.log.Debug("couldn't read an agent's config", "agent", h.ID, "err", st.Err)
 			continue
 		}
-		// Already in the state the setting asks for.
-		if st.Installed && !st.Stale == cfg.AgentHooks {
-			continue
-		}
-		if !cfg.AgentHooks && !st.Installed {
+		// Installed in both states, and this is the whole point.
+		//
+		// `agent_hooks off` means "do not hold sleep off for agents", not "stop
+		// listening to them". Those used to be the same thing: switching off
+		// took the hook lines back out, so agents stopped reporting, so the
+		// passive display had no data and never appeared — goguma could not say
+		// "an agent is working and nothing is holding the Mac awake" because it
+		// had just deafened itself.
+		//
+		// The hook is what carries the signal; whether that signal opens a hold
+		// is decided in StartRun, against the live setting. Leaving the hooks in
+		// place costs an agent one local socket write per prompt and per tool
+		// call, and buys the only view anyone has of what is running.
+		if st.Installed && !st.Stale {
 			continue
 		}
 		doc, err := agenthooks.ReadConfig(h.Path())
@@ -55,14 +58,15 @@ func (d *Daemon) reconcileAgentHooks(cfg config.Config) {
 			continue
 		}
 		if _, err := agenthooks.WriteConfig(h.Path(),
-			agenthooks.Apply(doc, h, binDir, !cfg.AgentHooks)); err != nil {
+			agenthooks.Apply(doc, h, binDir, false)); err != nil {
 			d.log.Warn("couldn't update an agent's config", "agent", h.ID, "err", err)
 			continue
 		}
 		if cfg.AgentHooks {
-			d.log.Info("agent will report when it is working", "agent", h.ID)
+			d.log.Info("agent will report, and will hold sleep off", "agent", h.ID)
 		} else {
-			d.log.Info("agent will no longer report to goguma", "agent", h.ID)
+			d.log.Info("agent will report; holding is off, so it will only be shown",
+				"agent", h.ID)
 		}
 	}
 }

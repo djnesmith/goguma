@@ -93,23 +93,16 @@ func (d *Daemon) StartRun(req ipc.RunStartReq, now time.Time) (ipc.RunStartResp,
 	label, key := req.Label, strings.TrimSpace(req.Key)
 
 	// A key means an agent harness reporting itself; `goguma run` never sets
-	// one. With agent_hooks off, the report opens no hold — but it is still
-	// worth something, so it is recorded rather than thrown away.
+	// one. With agent_hooks off the report opens no hold — and is recorded
+	// rather than thrown away.
 	//
-	// Two problems, one answer. The first: turning the setting off takes the
-	// hook lines back out of every agent's config, but an agent already
-	// running read that config when it started and goes on firing the hook
-	// until it is restarted. Honouring those meant the Mac refused to sleep
-	// for an agent hours after the feature was switched off, with nothing
-	// explaining why — `goguma hooks` reporting nothing installed while
-	// `status` listed a live agent hold.
-	//
-	// The second: with the setting off and the reports discarded, an agent
-	// working through a lid close is invisible. goguma is the one process on
-	// the machine that knows, and saying nothing wastes it. So the sighting is
-	// kept and surfaced as plain information — "these are working, nothing is
-	// holding the Mac awake" — which is what makes the manual Keep Awake a
-	// decision rather than a guess.
+	// Both halves matter. The setting means "do not hold sleep off for
+	// agents", so no hold is the whole point. But goguma is the only process
+	// on the machine that knows an agent is working, and an agent working
+	// through a lid close is worth saying out loud: the sighting is surfaced
+	// as plain information — "these are working, nothing is holding the Mac
+	// awake" — which is what makes the manual Keep Awake a decision rather
+	// than a guess.
 	//
 	// It creates no hold, touches no lease, and never reaches the helper.
 	// Nothing here can keep the machine awake.

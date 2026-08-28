@@ -7,15 +7,9 @@ import (
 	"github.com/junnam586/goguma/internal/ipc"
 )
 
-// TestAgentReportOpensNoHoldWhenAgentHooksIsOff covers the gap between turning
-// the setting off and the agents on the machine noticing.
-//
-// `goguma config set agent_hooks off` takes the hook lines back out of every
-// agent's config, but an agent already running read that config when it started
-// and keeps firing the hook until it is restarted. The daemon used to honour
-// those reports, so a Mac could still be held awake for an agent hours after
-// the feature was switched off — with `goguma hooks` correctly reporting
-// nothing installed while `status` listed a live agent hold.
+// TestAgentReportOpensNoHoldWhenAgentHooksIsOff pins the meaning of the
+// setting: off is "do not hold sleep off for agents", and a report arriving
+// while it is off must not open a hold.
 func TestAgentReportOpensNoHoldWhenAgentHooksIsOff(t *testing.T) {
 	d, _ := runDaemon(t)
 	d.cfg.AgentHooks = false

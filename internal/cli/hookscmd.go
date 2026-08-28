@@ -2,10 +2,12 @@ package cli
 
 import (
 	"fmt"
-	"github.com/junnam586/goguma/internal/agenthooks"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/junnam586/goguma/internal/agenthooks"
+	"github.com/junnam586/goguma/internal/ipc"
 )
 
 var cmdHooks = &Command{
@@ -43,7 +45,8 @@ lapses by itself rather than being left on. The safety cutouts still apply.
 What it writes is one command per event in that agent's own configuration file,
 alongside whatever is already there. Your existing hooks are kept, a copy of the
 file is made first, and if the result does not parse the original goes back.
-'goguma hooks remove' takes out what it added and nothing else.
+'goguma hooks remove' takes out what it added and nothing else, and the
+background service leaves them out until 'goguma hooks install' puts them back.
 
 Nothing here is recorded as a job run.`,
 	Run: func(ctx *Context, args []string) error {
@@ -112,9 +115,40 @@ func pickHarnesses(names []string) ([]agenthooks.Harness, error) {
 	return out, nil
 }
 
+// hooksStatus reports what each agent is configured to do, and — separately —
+// whether goguma will act on what they report.
+//
+// The two are not the same thing and must not be printed as if they were. A
+// hook being installed means the agent will SAY when it is working; whether
+// that opens a hold is `agent_hooks`. With the setting off this used to read
+// "holding sleep off while it works" beside every agent, which was flatly
+// untrue: they were reporting and nothing was being held.
 func hooksStatus(ctx *Context, binDir string) error {
 	r := ctx.Out
 	sym := r.Sym()
+
+	// Best effort. A daemon that is not running cannot be asked, and the
+	// installed/not-installed half of this is still worth printing; assume the
+	// default rather than refusing to say anything.
+	holding, known := true, false
+	var cfgResp ipc.ConfigResp
+	if err := ipc.Do(ctx.Socket, ipc.OpConfigGet, nil, &cfgResp); err == nil {
+		holding, known = cfgResp.Config.AgentHooks, true
+	}
+	installedNote := "reporting; holds sleep off while it works"
+	summary := "all set. The machine stays awake while an agent works, and sleeps when it stops."
+	switch {
+	case !known:
+		// Say what is installed, and do not guess at what it will do. The
+		// setting lives in the daemon, and the daemon is not answering.
+		installedNote = "reporting (the background service isn't running, so " +
+			"whether it holds is unknown)"
+		summary = "start the background service to see whether these hold sleep off."
+	case !holding:
+		installedNote = "reporting; not held (agent_hooks is off)"
+		summary = "agents report and are shown in the menu bar, but nothing is held: " +
+			"the Mac sleeps normally unless you keep it awake yourself."
+	}
 
 	var anyPresent, anyMissing bool
 	for _, h := range agenthooks.Harnesses {
@@ -131,7 +165,7 @@ func hooksStatus(ctx *Context, binDir string) error {
 				r.Warn("configured, but for a goguma somewhere else; re-run install"))
 		case st.Installed:
 			anyPresent = true
-			r.Printf("  %s %-14s %s\n", r.Good(sym.OK), h.ID, r.Muted("holding sleep off while it works"))
+			r.Printf("  %s %-14s %s\n", r.Good(sym.OK), h.ID, r.Muted(installedNote))
 		default:
 			anyPresent, anyMissing = true, true
 			r.Printf("  %s %-14s %s\n", r.Muted(sym.Idle), h.ID, r.Muted("found, not set up yet"))
@@ -139,13 +173,19 @@ func hooksStatus(ctx *Context, binDir string) error {
 	}
 
 	r.Blank()
+	if _, err := os.Stat(ctx.Layout.HooksOptOut()); err == nil {
+		r.Printf("  %s\n", r.Muted(
+			"taken out by 'goguma hooks remove'; the background service will leave them out. "+
+				"Put them back with: "+r.Accent("goguma hooks install")))
+		r.Blank()
+	}
 	switch {
 	case !anyPresent:
 		r.Printf("  %s\n", r.Muted("no coding agents found. Wrap one directly instead: goguma run -- <command>"))
 	case anyMissing:
 		r.Printf("  %s\n", r.Muted("set them up with: "+r.Accent("goguma hooks install")))
 	default:
-		r.Printf("  %s\n", r.Muted("all set. The machine stays awake while an agent works, and sleeps when it stops."))
+		r.Printf("  %s\n", r.Muted(summary))
 	}
 	return nil
 }
@@ -182,6 +222,21 @@ func hooksApply(ctx *Context, chosen []agenthooks.Harness, binDir string, remove
 		if backup != "" {
 			r.Printf("    %s\n", r.Muted("previous version kept at "+shortenHome(backup)))
 		}
+	}
+
+	// Record the removal, or clear the record on install.
+	//
+	// The daemon reinstalls the hooks on every start — they are the signal, and
+	// `agent_hooks` only decides whether that signal opens a hold — so without
+	// this marker `hooks remove` would be quietly undone at the next login.
+	optOut := ctx.Layout.HooksOptOut()
+	if remove {
+		if err := os.WriteFile(optOut, []byte("removed by goguma hooks remove\n"), 0o600); err != nil {
+			r.Printf("  %s\n", r.Warn(
+				"couldn't record the removal, so the background service may put these back: "+err.Error()))
+		}
+	} else if err := os.Remove(optOut); err != nil && !os.IsNotExist(err) {
+		r.Printf("  %s\n", r.Warn("couldn't clear the opt-out marker: "+err.Error()))
 	}
 
 	r.Blank()

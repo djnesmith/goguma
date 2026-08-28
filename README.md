@@ -290,9 +290,10 @@ goguma can watch the process table for it instead (`--detection pattern
 Yes, and it is set up for you. Claude Code, Codex, Cursor and Gemini CLI are
 configured to
 report when they are working, so the machine stays awake until they finish and
-sleeps once they do. It is a setting: `goguma config set agent_hooks off`, or
-the switch in the app, takes it back out. `goguma hooks` shows what is in place and
-`goguma hooks remove` undoes it. For anything you launch yourself, wrap it:
+sleeps once they do. `goguma config set agent_hooks off`, or the switch in the
+app, stops the holding: agents still report and are still shown in the menu bar,
+the Mac just sleeps normally. `goguma hooks` shows what is in place and
+`goguma hooks remove` takes the lines out for good. For anything you launch yourself, wrap it:
 `goguma run -- <command>`.
 
 **Does it keep the machine awake the whole time an editor is open?**
