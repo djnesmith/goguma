@@ -5,7 +5,7 @@
   <link href="https://getgoguma.com/feed.xml" rel="self"/>
   <link href="https://getgoguma.com/blog/"/>
   <id>https://getgoguma.com/blog/</id>
-  <updated>2026-08-20T00:00:00Z</updated>
+  <updated>2026-08-28T00:00:00Z</updated>
   <author><name>Jun Nam</name></author>
   <entry>
     <title>Why your Mac's cron jobs don't run while it's asleep</title>
@@ -76,5 +76,61 @@
     <id>https://getgoguma.com/blog/keep-coding-agent-running-lid-closed/</id>
     <updated>2026-08-20T00:00:00Z</updated>
     <summary>Why the agent dies the moment the lid shuts, the three ways to fix it ranked by how badly each fails, and the hook configuration for all four major harnesses.</summary>
+  </entry>
+  <entry>
+    <title>How to keep a MacBook awake with the lid closed</title>
+    <link href="https://getgoguma.com/blog/keep-macbook-awake-lid-closed/"/>
+    <id>https://getgoguma.com/blog/keep-macbook-awake-lid-closed/</id>
+    <updated>2026-08-28T00:00:00Z</updated>
+    <summary>Closing the lid sleeps a MacBook regardless of every timer and every keep-awake app. Here is the one supported way, the one mechanism that works without a display, and what each costs.</summary>
+  </entry>
+  <entry>
+    <title>How to find out what woke your Mac</title>
+    <link href="https://getgoguma.com/blog/what-woke-my-mac/"/>
+    <id>https://getgoguma.com/blog/what-woke-my-mac/</id>
+    <updated>2026-08-28T00:00:00Z</updated>
+    <summary>Your Mac keeps a log of every sleep and wake, with a reason for each. Here is how to read pmset -g log, what the wake reasons mean, and how to tell a real wake from a maintenance dark wake.</summary>
+  </entry>
+  <entry>
+    <title>How to keep a Mac awake from the terminal until a command finishes</title>
+    <link href="https://getgoguma.com/blog/keep-mac-awake-terminal-command/"/>
+    <id>https://getgoguma.com/blog/keep-mac-awake-terminal-command/</id>
+    <updated>2026-08-28T00:00:00Z</updated>
+    <summary>caffeinate can scope a sleep hold to exactly one command or process, so the Mac stays awake precisely as long as the work runs. The flags, the traps, and the one case it cannot cover.</summary>
+  </entry>
+  <entry>
+    <title>"pmset repeat: put your Mac's sleep and wake on a daily schedule"</title>
+    <link href="https://getgoguma.com/blog/pmset-repeat-wake-schedule/"/>
+    <id>https://getgoguma.com/blog/pmset-repeat-wake-schedule/</id>
+    <updated>2026-08-28T00:00:00Z</updated>
+    <summary>macOS still has scheduled sleep and wake — the Energy Saver UI for it is gone, but pmset repeat does everything the panel did and more. Syntax, weekday codes, verification, and the gotchas.</summary>
+  </entry>
+  <entry>
+    <title>"Dark wake and Power Nap: when your Mac is awake but not really"</title>
+    <link href="https://getgoguma.com/blog/dark-wake-power-nap/"/>
+    <id>https://getgoguma.com/blog/dark-wake-power-nap/</id>
+    <updated>2026-08-28T00:00:00Z</updated>
+    <summary>macOS punctuates a long sleep with brief wakes that never turn on the screen. What dark wakes are for, how to spot them in the log, and why your scheduled jobs do not run during them.</summary>
+  </entry>
+  <entry>
+    <title>"pmset disablesleep: the sleep switch with no owner"</title>
+    <link href="https://getgoguma.com/blog/pmset-disablesleep/"/>
+    <id>https://getgoguma.com/blog/pmset-disablesleep/</id>
+    <updated>2026-08-28T00:00:00Z</updated>
+    <summary>One command overrides every kind of sleep on a Mac, including the lid. It is also undocumented, global, and stays set when the thing that set it dies. How to use it without stranding it.</summary>
+  </entry>
+  <entry>
+    <title>Every pmset sleep setting, explained</title>
+    <link href="https://getgoguma.com/blog/pmset-sleep-settings-explained/"/>
+    <id>https://getgoguma.com/blog/pmset-sleep-settings-explained/</id>
+    <updated>2026-08-28T00:00:00Z</updated>
+    <summary>"sleep, displaysleep, standby, hibernatemode 0, 3 and 25, womp, ttyskeepawake, powernap: what each setting in pmset -g actually controls, with the defaults and the traps."</summary>
+  </entry>
+  <entry>
+    <title>Why SSH sessions drop when your Mac sleeps, and what actually survives</title>
+    <link href="https://getgoguma.com/blog/ssh-sessions-mac-sleep/"/>
+    <id>https://getgoguma.com/blog/ssh-sessions-mac-sleep/</id>
+    <updated>2026-08-28T00:00:00Z</updated>
+    <summary>Sleep suspends the network, so every SSH connection dies with it — in both directions. What tmux and mosh actually solve, what ttyskeepawake does, and how to keep either end alive on purpose.</summary>
   </entry>
 </feed>

@@ -85,6 +85,14 @@ that signature cannot be verified.
 - [You cannot tell whether an AI coding agent is working by watching it](https://getgoguma.com/blog/cannot-detect-ai-agent-working/)
 - [Is it safe to keep a MacBook awake with the lid closed in a bag?](https://getgoguma.com/blog/macbook-awake-in-bag-safe/)
 - [How to keep Claude Code or Codex running with the lid closed](https://getgoguma.com/blog/keep-coding-agent-running-lid-closed/)
+- [How to keep a MacBook awake with the lid closed](https://getgoguma.com/blog/keep-macbook-awake-lid-closed/)
+- [How to find out what woke your Mac](https://getgoguma.com/blog/what-woke-my-mac/)
+- [How to keep a Mac awake from the terminal until a command finishes](https://getgoguma.com/blog/keep-mac-awake-terminal-command/)
+- [pmset repeat: put your Mac's sleep and wake on a daily schedule](https://getgoguma.com/blog/pmset-repeat-wake-schedule/)
+- [Dark wake and Power Nap: when your Mac is awake but not really](https://getgoguma.com/blog/dark-wake-power-nap/)
+- [pmset disablesleep: the sleep switch with no owner](https://getgoguma.com/blog/pmset-disablesleep/)
+- [Every pmset sleep setting, explained](https://getgoguma.com/blog/pmset-sleep-settings-explained/)
+- [Why SSH sessions drop when your Mac sleeps, and what actually survives](https://getgoguma.com/blog/ssh-sessions-mac-sleep/)
 
 ## Docs
 
