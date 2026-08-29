@@ -81,6 +81,54 @@
    "headline": "How to keep Claude Code or Codex running when you close the MacBook lid",
    "url": "https://getgoguma.com/blog/keep-coding-agent-running-lid-closed/",
    "datePublished": "2026-08-20"
+  },
+  {
+   "@type": "BlogPosting",
+   "headline": "How to keep a MacBook awake with the lid closed",
+   "url": "https://getgoguma.com/blog/keep-macbook-awake-lid-closed/",
+   "datePublished": "2026-08-28"
+  },
+  {
+   "@type": "BlogPosting",
+   "headline": "How to find out what woke your Mac",
+   "url": "https://getgoguma.com/blog/what-woke-my-mac/",
+   "datePublished": "2026-08-28"
+  },
+  {
+   "@type": "BlogPosting",
+   "headline": "How to keep a Mac awake from the terminal until a command finishes",
+   "url": "https://getgoguma.com/blog/keep-mac-awake-terminal-command/",
+   "datePublished": "2026-08-28"
+  },
+  {
+   "@type": "BlogPosting",
+   "headline": "\"pmset repeat: put your Mac's sleep and wake on a daily schedule\"",
+   "url": "https://getgoguma.com/blog/pmset-repeat-wake-schedule/",
+   "datePublished": "2026-08-28"
+  },
+  {
+   "@type": "BlogPosting",
+   "headline": "\"Dark wake and Power Nap: when your Mac is awake but not really\"",
+   "url": "https://getgoguma.com/blog/dark-wake-power-nap/",
+   "datePublished": "2026-08-28"
+  },
+  {
+   "@type": "BlogPosting",
+   "headline": "\"pmset disablesleep: the sleep switch with no owner\"",
+   "url": "https://getgoguma.com/blog/pmset-disablesleep/",
+   "datePublished": "2026-08-28"
+  },
+  {
+   "@type": "BlogPosting",
+   "headline": "Every pmset sleep setting, explained",
+   "url": "https://getgoguma.com/blog/pmset-sleep-settings-explained/",
+   "datePublished": "2026-08-28"
+  },
+  {
+   "@type": "BlogPosting",
+   "headline": "Why SSH sessions drop when your Mac sleeps, and what actually survives",
+   "url": "https://getgoguma.com/blog/ssh-sessions-mac-sleep/",
+   "datePublished": "2026-08-28"
   }
  ]
 }
@@ -182,7 +230,7 @@ footer a{color:rgba(36,26,44,.64)}
       work it was supposed to do, why the usual advice does not fix it, and how
       each of the tools in this area really behaves.</p></div>
   </div>
-  <div class="wrap body idx"><a href="cron-jobs-dont-run-mac-asleep/"><span class="t">Why your Mac&#x27;s cron jobs don&#x27;t run while it&#x27;s asleep</span><span class="d">cron skips a job whose time passed while the Mac was asleep — no error, no retry, no record. launchd behaves differently. Here is exactly what happens, and what to do about it.</span></a><a href="wake-mac-for-scheduled-job-pmset/"><span class="t">How to wake a Mac for a scheduled job with pmset</span><span class="d">The complete method — computing the wake time, arming it, holding sleep off until the job finishes, and re-arming for next time — plus the four things that go wrong.</span></a><a href="find-missed-scheduled-jobs-mac/"><span class="t">How to find which of your scheduled jobs your Mac has been missing</span><span class="d">cron keeps no record of a job it skipped, so you have to reconstruct it — replay each schedule against the machine&#x27;s own sleep history. Here is how, by hand.</span></a><a href="launchd-vs-cron-sleep/"><span class="t">launchd vs cron on macOS — which one survives sleep</span><span class="d">launchd re-fires a missed calendar job on wake; cron skips it silently. Which one you are using decides whether a sleeping Mac is a problem or a non-event.</span></a><a href="caffeinate-vs-pmset-vs-amphetamine/"><span class="t">caffeinate vs pmset vs Amphetamine — what each one actually does</span><span class="d">Three tools people reach for interchangeably that behave completely differently with the lid closed, on battery, and when the thing holding the assertion dies.</span></a><a href="caffeinate-lid-closed/"><span class="t">Why caffeinate doesn&#x27;t work when you close the lid</span><span class="d">caffeinate asserts against idle sleep. Closing the lid is a different sleep path entirely, which is why your job dies the moment the MacBook shuts — and what actually holds it.</span></a><a href="amphetamine-alternatives-mac/"><span class="t">Amphetamine alternatives for macOS, compared honestly</span><span class="d">Every keep-awake app for the Mac, what each actually does with the lid closed, and the question that separates them — what happens when you forget to turn it off.</span></a><a href="cannot-detect-ai-agent-working/"><span class="t">You cannot tell whether an AI coding agent is working by watching it</span><span class="d">Measured over ten seconds, the idle Claude Code session used more CPU than the one actively working. Here is the data, and why every process-watching approach to agent sleep prevention is built on sand.</span></a><a href="macbook-awake-in-bag-safe/"><span class="t">Is it safe to keep a MacBook awake with the lid closed in a bag?</span><span class="d">The two real risks are thermal and battery, and the reason lid-closed is the dangerous case is that you cannot see anything is wrong. What a safety cutoff has to check, and the sensor trap that makes a naive one useless.</span></a><a href="keep-coding-agent-running-lid-closed/"><span class="t">How to keep Claude Code or Codex running when you close the MacBook lid</span><span class="d">Why the agent dies the moment the lid shuts, the three ways to fix it ranked by how badly each fails, and the hook configuration for all four major harnesses.</span></a></div>
+  <div class="wrap body idx"><a href="cron-jobs-dont-run-mac-asleep/"><span class="t">Why your Mac&#x27;s cron jobs don&#x27;t run while it&#x27;s asleep</span><span class="d">cron skips a job whose time passed while the Mac was asleep — no error, no retry, no record. launchd behaves differently. Here is exactly what happens, and what to do about it.</span></a><a href="wake-mac-for-scheduled-job-pmset/"><span class="t">How to wake a Mac for a scheduled job with pmset</span><span class="d">The complete method — computing the wake time, arming it, holding sleep off until the job finishes, and re-arming for next time — plus the four things that go wrong.</span></a><a href="find-missed-scheduled-jobs-mac/"><span class="t">How to find which of your scheduled jobs your Mac has been missing</span><span class="d">cron keeps no record of a job it skipped, so you have to reconstruct it — replay each schedule against the machine&#x27;s own sleep history. Here is how, by hand.</span></a><a href="launchd-vs-cron-sleep/"><span class="t">launchd vs cron on macOS — which one survives sleep</span><span class="d">launchd re-fires a missed calendar job on wake; cron skips it silently. Which one you are using decides whether a sleeping Mac is a problem or a non-event.</span></a><a href="caffeinate-vs-pmset-vs-amphetamine/"><span class="t">caffeinate vs pmset vs Amphetamine — what each one actually does</span><span class="d">Three tools people reach for interchangeably that behave completely differently with the lid closed, on battery, and when the thing holding the assertion dies.</span></a><a href="caffeinate-lid-closed/"><span class="t">Why caffeinate doesn&#x27;t work when you close the lid</span><span class="d">caffeinate asserts against idle sleep. Closing the lid is a different sleep path entirely, which is why your job dies the moment the MacBook shuts — and what actually holds it.</span></a><a href="amphetamine-alternatives-mac/"><span class="t">Amphetamine alternatives for macOS, compared honestly</span><span class="d">Every keep-awake app for the Mac, what each actually does with the lid closed, and the question that separates them — what happens when you forget to turn it off.</span></a><a href="cannot-detect-ai-agent-working/"><span class="t">You cannot tell whether an AI coding agent is working by watching it</span><span class="d">Measured over ten seconds, the idle Claude Code session used more CPU than the one actively working. Here is the data, and why every process-watching approach to agent sleep prevention is built on sand.</span></a><a href="macbook-awake-in-bag-safe/"><span class="t">Is it safe to keep a MacBook awake with the lid closed in a bag?</span><span class="d">The two real risks are thermal and battery, and the reason lid-closed is the dangerous case is that you cannot see anything is wrong. What a safety cutoff has to check, and the sensor trap that makes a naive one useless.</span></a><a href="keep-coding-agent-running-lid-closed/"><span class="t">How to keep Claude Code or Codex running when you close the MacBook lid</span><span class="d">Why the agent dies the moment the lid shuts, the three ways to fix it ranked by how badly each fails, and the hook configuration for all four major harnesses.</span></a><a href="keep-macbook-awake-lid-closed/"><span class="t">How to keep a MacBook awake with the lid closed</span><span class="d">Closing the lid sleeps a MacBook regardless of every timer and every keep-awake app. Here is the one supported way, the one mechanism that works without a display, and what each costs.</span></a><a href="what-woke-my-mac/"><span class="t">How to find out what woke your Mac</span><span class="d">Your Mac keeps a log of every sleep and wake, with a reason for each. Here is how to read pmset -g log, what the wake reasons mean, and how to tell a real wake from a maintenance dark wake.</span></a><a href="keep-mac-awake-terminal-command/"><span class="t">How to keep a Mac awake from the terminal until a command finishes</span><span class="d">caffeinate can scope a sleep hold to exactly one command or process, so the Mac stays awake precisely as long as the work runs. The flags, the traps, and the one case it cannot cover.</span></a><a href="pmset-repeat-wake-schedule/"><span class="t">&quot;pmset repeat: put your Mac&#x27;s sleep and wake on a daily schedule&quot;</span><span class="d">macOS still has scheduled sleep and wake — the Energy Saver UI for it is gone, but pmset repeat does everything the panel did and more. Syntax, weekday codes, verification, and the gotchas.</span></a><a href="dark-wake-power-nap/"><span class="t">&quot;Dark wake and Power Nap: when your Mac is awake but not really&quot;</span><span class="d">macOS punctuates a long sleep with brief wakes that never turn on the screen. What dark wakes are for, how to spot them in the log, and why your scheduled jobs do not run during them.</span></a><a href="pmset-disablesleep/"><span class="t">&quot;pmset disablesleep: the sleep switch with no owner&quot;</span><span class="d">One command overrides every kind of sleep on a Mac, including the lid. It is also undocumented, global, and stays set when the thing that set it dies. How to use it without stranding it.</span></a><a href="pmset-sleep-settings-explained/"><span class="t">Every pmset sleep setting, explained</span><span class="d">&quot;sleep, displaysleep, standby, hibernatemode 0, 3 and 25, womp, ttyskeepawake, powernap: what each setting in pmset -g actually controls, with the defaults and the traps.&quot;</span></a><a href="ssh-sessions-mac-sleep/"><span class="t">Why SSH sessions drop when your Mac sleeps, and what actually survives</span><span class="d">Sleep suspends the network, so every SSH connection dies with it — in both directions. What tmux and mosh actually solve, what ttyskeepawake does, and how to keep either end alive on purpose.</span></a></div>
 </div>
 <footer>
   <p class="foot-links">
