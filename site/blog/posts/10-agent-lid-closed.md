@@ -43,7 +43,7 @@ This genuinely works. Two problems.
 
 **Remembering the second line.** This is the classic flat-battery-in-a-bag story, and it is not a discipline problem — you set it expecting to be back in twenty minutes and then the day happens.
 
-**It persists past the thing that set it.** `disablesleep` is written into the power management preferences and is **not** cleared when the process that set it exits or is killed. A script that sets it and dies before its cleanup line leaves a Mac that cannot sleep at all until someone works out why. Anything automating this needs a dead-man switch — something independent that clears the setting when the owner disappears.
+**It persists past the thing that set it.** [`disablesleep`](../pmset-disablesleep/) is written into the power management preferences and is **not** cleared when the process that set it exits or is killed. A script that sets it and dies before its cleanup line leaves a Mac that cannot sleep at all until someone works out why. Anything automating this needs a dead-man switch — something independent that clears the setting when the owner disappears.
 
 ### 1. Scope the hold to the work
 

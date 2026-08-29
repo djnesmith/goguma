@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>&quot;pmset repeat: put your Mac&#x27;s sleep and wake on a daily schedule&quot;</title>
+<title>pmset repeat: put your Mac&#x27;s sleep and wake on a daily schedule</title>
 <meta name="description" content="macOS still has scheduled sleep and wake — the Energy Saver UI for it is gone, but pmset repeat does everything the panel did and more. Syntax, weekday codes, verification, and the gotchas.">
 <link rel="icon" href="../../assets/potato.png">
-<meta property="og:title" content="&quot;pmset repeat: put your Mac&#x27;s sleep and wake on a daily schedule&quot;">
+<meta property="og:title" content="pmset repeat: put your Mac&#x27;s sleep and wake on a daily schedule">
 <meta property="og:description" content="macOS still has scheduled sleep and wake — the Energy Saver UI for it is gone, but pmset repeat does everything the panel did and more. Syntax, weekday codes, verification, and the gotchas.">
 <meta property="og:image" content="https://getgoguma.com/assets/og.png">
 <meta property="og:image:width" content="1200">
@@ -15,7 +15,7 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="goguma">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="&quot;pmset repeat: put your Mac&#x27;s sleep and wake on a daily schedule&quot;">
+<meta name="twitter:title" content="pmset repeat: put your Mac&#x27;s sleep and wake on a daily schedule">
 <meta name="twitter:image" content="https://getgoguma.com/assets/og.png">
 <link rel="alternate" type="application/atom+xml" title="goguma · writing" href="../../feed.xml">
 <link rel="canonical" href="https://getgoguma.com/blog/pmset-repeat-wake-schedule/">
@@ -23,7 +23,7 @@
 {
  "@context": "https://schema.org",
  "@type": "TechArticle",
- "headline": "\"pmset repeat: put your Mac's sleep and wake on a daily schedule\"",
+ "headline": "pmset repeat: put your Mac's sleep and wake on a daily schedule",
  "description": "macOS still has scheduled sleep and wake \u2014 the Energy Saver UI for it is gone, but pmset repeat does everything the panel did and more. Syntax, weekday codes, verification, and the gotchas.",
  "datePublished": "2026-08-28",
  "dateModified": "2026-08-28",
@@ -69,7 +69,7 @@
   {
    "@type": "ListItem",
    "position": 3,
-   "name": "\"pmset repeat: put your Mac's sleep and wake on a daily schedule\"",
+   "name": "pmset repeat: put your Mac's sleep and wake on a daily schedule",
    "item": "https://getgoguma.com/blog/pmset-repeat-wake-schedule/"
   }
  ]
@@ -85,7 +85,7 @@
    "name": "How do I schedule my Mac to wake at the same time every day?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "'sudo pmset repeat wakeorpoweron MTWRFSU 07:45:00 \u2014 the weekday string is any subset of MTWRFSU, so MTWRF is weekdays only. Verify with pmset -g sched.'"
+    "text": "sudo pmset repeat wakeorpoweron MTWRFSU 07:45:00 \u2014 the weekday string is any subset of MTWRFSU, so MTWRF is weekdays only. Verify with pmset -g sched."
    }
   },
   {
@@ -207,13 +207,13 @@ footer a{color:rgba(36,26,44,.64)}
     <a class="home" href="../../"><img src="../../assets/potato.webp" alt="" width="253" height="249">goguma</a>
   </div>
   <div class="wrap head">
-    <h1>&quot;pmset repeat: put your Mac&#x27;s sleep and wake on a daily schedule&quot;</h1>
+    <h1>pmset repeat: put your Mac&#x27;s sleep and wake on a daily schedule</h1>
     <nav class="crumbs" aria-label="Breadcrumb">
       <a href="../../">goguma</a> <span aria-hidden="true">›</span>
       <a href="../">Writing</a>
     </nav>
     <p class="stamp">2026-08-28</p>
-    <div class="answer"><p>'<code>sudo pmset repeat wakeorpoweron MTWRF 07:45:00</code> wakes (or powers on) the Mac at 7:45 every weekday; <code>sudo pmset repeat cancel</code> clears it. Weekdays are a subset of MTWRFSU. Only one repeating rule of each kind exists at a time — a new one replaces the old — and <code>pmset -g sched</code> shows what is currently armed. The scheduled-sleep half is refused if anything is actively holding sleep off at that moment.'</p></div>
+    <div class="answer"><p><code>sudo pmset repeat wakeorpoweron MTWRF 07:45:00</code> wakes (or powers on) the Mac at 7:45 every weekday; <code>sudo pmset repeat cancel</code> clears it. Weekdays are a subset of MTWRFSU. Only one repeating rule of each kind exists at a time — a new one replaces the old — and <code>pmset -g sched</code> shows what is currently armed. The scheduled-sleep half is refused if anything is actively holding sleep off at that moment.</p></div>
   </div>
   <div class="wrap body">
 <h2>The schedule outlived its settings panel</h2>
@@ -236,7 +236,7 @@ Scheduled power events:
 <p><strong>Scheduled sleep is polite.</strong> The repeating sleep half will not force a machine down past active work — assertions held against sleep win, which is the same mechanism <a href="../keep-mac-awake-terminal-command/">caffeinate</a> uses in the other direction. Treat scheduled sleep as "start trying to sleep at 20:00", not as a guarantee.</p>
 <p><strong>Wake is a moment, not a state.</strong> The 07:45 wake brings the machine up; the ordinary sleep timers then apply. If nothing touches it, it drifts back to sleep on the usual idle schedule. A wake scheduled so a job can run needs the job to *hold* the machine awake for its duration, or the machine may not still be up when the job's real work starts.</p>
 <p><strong>Repeat expresses routines, not job schedules.</strong> A daily 07:45 wake is a routine. A crontab with jobs at 02:00, 03:30, and hourly-on-Sundays is not — expressing it as repeat rules is impossible, and arming one-shots for each fire time, forever, <a href="../cron-jobs-dont-run-mac-asleep/">is a job for software</a> rather than for a person. That is the half goguma automates: it reads the schedules you already have and keeps the next one-shot wake armed, so the standing-rule limitations stop mattering.</p>
-<h2>Common questions</h2><h3>How do I schedule my Mac to wake at the same time every day?</h3><p>'sudo pmset repeat wakeorpoweron MTWRFSU 07:45:00 — the weekday string is any subset of MTWRFSU, so MTWRF is weekdays only. Verify with pmset -g sched.'</p><h3>Where did the Energy Saver schedule UI go?</h3><p>Apple removed the Schedule panel from System Settings; the underlying mechanism remains and pmset repeat drives it directly.</p><h3>What is the difference between pmset repeat and pmset schedule?</h3><p>repeat sets one standing rule that fires every matching day. schedule arms a one-shot event at an absolute date and time, which is consumed when it fires. Repeating rules are for routines; one-shots are for waking before a particular job.</p><h3>Can I schedule different wake times for different days?</h3><p>Not with repeat alone — one repeating wake rule exists at a time, and setting a new one replaces it. Varying times per day means arming one-shot wakes with pmset schedule, and re-arming after each fire.</p>
+<h2>Common questions</h2><h3>How do I schedule my Mac to wake at the same time every day?</h3><p>sudo pmset repeat wakeorpoweron MTWRFSU 07:45:00 — the weekday string is any subset of MTWRFSU, so MTWRF is weekdays only. Verify with pmset -g sched.</p><h3>Where did the Energy Saver schedule UI go?</h3><p>Apple removed the Schedule panel from System Settings; the underlying mechanism remains and pmset repeat drives it directly.</p><h3>What is the difference between pmset repeat and pmset schedule?</h3><p>repeat sets one standing rule that fires every matching day. schedule arms a one-shot event at an absolute date and time, which is consumed when it fires. Repeating rules are for routines; one-shots are for waking before a particular job.</p><h3>Can I schedule different wake times for different days?</h3><p>Not with repeat alone — one repeating wake rule exists at a time, and setting a new one replaces it. Varying times per day means arming one-shot wakes with pmset schedule, and re-arming after each fire.</p>
     <div class="cta">
       <p><strong>goguma</strong> does this for you: it reads the scheduled jobs
         already on your Mac, wakes the machine shortly before each one is due,

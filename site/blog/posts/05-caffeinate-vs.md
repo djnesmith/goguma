@@ -31,7 +31,7 @@ The last row is the one worth staring at. The first three are the same category 
 
 ## caffeinate
 
-Built into macOS. It creates a power assertion and holds it for a duration or for the lifetime of a command:
+Built into macOS. It creates a power assertion and holds it for a duration or [for the lifetime of a command](../keep-mac-awake-terminal-command/):
 
 ```sh
 caffeinate -s /usr/local/bin/nightly-backup   # until the command exits
@@ -58,7 +58,7 @@ Two things make it dangerous in a way `caffeinate` is not.
 
 **It persists.** This is the part that catches people. `disablesleep` is written into the power management preferences. It is **not** cleared when the process that set it exits, crashes, or is force-killed. A script that sets it and dies before its cleanup line leaves a Mac that will never sleep again until a human notices and runs `pmset` by hand — and the symptom is a laptop that arrives somewhere with a flat battery and a warm chassis, hours later, with nothing to point at the cause.
 
-Any tool built on `disablesleep` therefore needs a dead-man switch: something that notices the owner is gone and clears the setting. goguma's privileged helper clears a stranded block after 60 seconds without contact from the daemon, for exactly this reason.
+Any tool built on [`disablesleep`](../pmset-disablesleep/) therefore needs a dead-man switch: something that notices the owner is gone and clears the setting. goguma's privileged helper clears a stranded block after 60 seconds without contact from the daemon, for exactly this reason.
 
 ## Amphetamine
 

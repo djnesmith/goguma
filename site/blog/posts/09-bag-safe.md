@@ -69,6 +69,6 @@ If you are going to leave a Mac working with the lid shut:
 - **Hard surface, not a bag,** whenever you have the choice. A desk or a stand beats a rucksack by a wide margin.
 - **Mains power if you can.** It removes the battery risk completely and leaves only heat.
 - **Hold sleep off only while work is happening,** not as a permanent toggle. This is the single biggest difference between a safe setup and a flat battery — and it is why a hold should expire by itself rather than waiting to be switched off.
-- **Make sure something releases the hold if the tool dies.** `pmset disablesleep` persists after the process that set it is killed, so a crash can leave a Mac that cannot sleep at all.
+- **Make sure something releases the hold if the tool dies.** [`pmset disablesleep` persists](../pmset-disablesleep/) after the process that set it is killed, so a crash can leave a Mac that cannot sleep at all.
 
 goguma applies both cutouts only with the lid closed, fires the thermal one on the OS warning as well as on the degree reading, refuses a wake the battery cannot afford using that job's own measured drain, and expires every hold on a timer so nothing depends on a clean shutdown.

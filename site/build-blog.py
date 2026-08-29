@@ -131,6 +131,19 @@ FOOT = """<footer>
 </footer>"""
 
 
+def unquote(v):
+    """Strip one layer of matching YAML-style quotes.
+
+    A title with a colon in it invites quoting, and the natural instinct is
+    right in real YAML — but this parser takes everything after the first
+    colon verbatim, so the quotes shipped into <title> tags until this
+    existed. Symmetric quotes at both ends are wrapping, not content.
+    """
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        return v[1:-1]
+    return v
+
+
 def parse(src):
     """Split a post into its header and its body."""
     m = re.match(r"^---\n(.*?)\n---\n(.*)$", src, re.S)
@@ -147,13 +160,13 @@ def parse(src):
             if re.match(r"\s*-\s*q:", line):
                 if q:
                     faq.append(q)
-                q = {"q": line.split("q:", 1)[1].strip()}
+                q = {"q": unquote(line.split("q:", 1)[1].strip())}
             elif re.match(r"\s+a:", line) and q is not None:
-                q["a"] = line.split("a:", 1)[1].strip()
+                q["a"] = unquote(line.split("a:", 1)[1].strip())
             continue
         if ":" in line:
             k, v = line.split(":", 1)
-            meta[k.strip()] = v.strip()
+            meta[k.strip()] = unquote(v.strip())
     if q:
         faq.append(q)
     meta["faq"] = faq
@@ -394,11 +407,14 @@ def main():
         meta, _ = parse(open(os.path.join(POSTS, f)).read())
         metas.append(meta)
     metas.sort(key=lambda m: int(m.get("order", 99)))
+    docs = []
     for f in srcs:
         meta, body = parse(open(os.path.join(POSTS, f)).read())
         d = os.path.join(ROOT, "blog", meta["slug"])
         os.makedirs(d, exist_ok=True)
         open(os.path.join(d, "index.html"), "w").write(page(meta, render(body), metas))
+        docs.append((meta, body))
+    docs.sort(key=lambda d: int(d[0].get("order", 99)))
     open(os.path.join(ROOT, "blog", "index.html"), "w").write(index(metas))
 
     # The sitemap is generated here rather than maintained by hand, because a
@@ -451,7 +467,20 @@ def main():
 {entries}</feed>
 """)
 
-    print(f"built {len(srcs)} posts + index + sitemap ({len(urls)} urls) + feed")
+    # llms-full.txt: every article, whole, in one markdown file. llms.txt is
+    # the index an answer engine reads to know what exists; this is the corpus,
+    # for the crawlers that ingest content wholesale rather than following
+    # links. Assembled from the same sources as the pages, so it cannot drift
+    # from what a reader sees.
+    full = [f"# goguma · writing\n\n"
+            f"> Every article from {SITE}/blog/, in full.\n"
+            f"> The index and project overview are at {SITE}/llms.txt"]
+    for m, b in docs:
+        full.append(f"\n---\n\n# {m['title']}\n\n"
+                    f"URL: {SITE}/blog/{m['slug']}/\n\n{m['answer'].strip()}\n{b}")
+    open(os.path.join(ROOT, "llms-full.txt"), "w").write("\n".join(full) + "\n")
+
+    print(f"built {len(srcs)} posts + index + sitemap ({len(urls)} urls) + feed + llms-full.txt")
     for m in metas:
         print(f"  /blog/{m['slug']}/")
 

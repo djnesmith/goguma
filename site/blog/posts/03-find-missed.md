@@ -73,7 +73,7 @@ That last group matters more than it looks. The temptation after an audit is to 
 
 ## One subtlety about "asleep"
 
-A Mac is not simply awake or asleep. Overnight it cycles through brief dark wakes — powering up for a few seconds to fetch mail or run maintenance, then going back down. A fire time that lands inside one of those windows *might* have run.
+A Mac is not simply awake or asleep. Overnight it cycles through [brief dark wakes](../dark-wake-power-nap/) — powering up for a few seconds to fetch mail or run maintenance, then going back down. A fire time that lands inside one of those windows *might* have run.
 
 Treat dark wake as sleep for auditing purposes. It is short, it is not scheduled around your job, and relying on your 03:00 job coinciding with a dark wake is not a strategy. If you are counting misses, counting a dark-wake coincidence as a hit will flatter the numbers and hide the problem.
 
