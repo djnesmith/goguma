@@ -52,7 +52,7 @@ If your job is in crontab, or if running eight hours late is the same as not run
 
 **"Just schedule it during the day."** This assumes your Mac is awake during the day. A closed laptop is asleep at 14:00 exactly as much as at 03:00. The lid, not the hour, is what decides.
 
-**"Just use caffeinate."** caffeinate stops a Mac falling asleep. It cannot wake one that already is. To use it for a 03:00 job you have to prevent sleep from the moment you stop working until the job finishes — that is a full night of a machine running at desk power to do ninety seconds of work. It also [does not survive the lid closing](../caffeinate-lid-closed/).
+**"Just use caffeinate."** caffeinate [stops a Mac falling asleep](../keep-mac-awake-terminal-command/). It cannot wake one that already is. To use it for a 03:00 job you have to prevent sleep from the moment you stop working until the job finishes — that is a full night of a machine running at desk power to do ninety seconds of work. It also [does not survive the lid closing](../caffeinate-lid-closed/).
 
 **"Just leave it plugged in."** Mains power changes when a Mac sleeps, not whether. It still sleeps.
 
@@ -72,6 +72,6 @@ That wakes the machine at 02:58:30 so a 03:00 job has a machine to run on. You t
 
 You cannot ask cron, because cron kept no record. What you can do is reconstruct it: take each job's schedule, replay it against the machine's sleep and wake history, and count the fire times that fell inside a sleep interval.
 
-macOS keeps that history. `pmset -g log` includes every sleep and wake with a timestamp and a reason, going back days. Replaying a cron expression against those intervals gives you the number nobody has: how many times each job has silently not run.
+macOS keeps that history. `pmset -g log` includes every sleep and wake with [a timestamp and a reason](../what-woke-my-mac/), going back days. Replaying a cron expression against those intervals gives you the number nobody has: how many times each job has silently not run.
 
 That is what [finding your silently missed jobs](../find-missed-scheduled-jobs-mac/) covers.

@@ -22,7 +22,7 @@ faq:
 
 Feature lists in this category all look similar. Two things actually separate the tools:
 
-**Does it hold a closed lid?** With no external display and no mains power. Tools built on power assertions — the classic menu bar toggles — cannot, because [an assertion does not cover the clamshell sleep path](../caffeinate-lid-closed/). Only tools that reach for `pmset disablesleep` manage it.
+**Does it hold a closed lid?** With no external display and no mains power. Tools built on power assertions — the classic menu bar toggles — cannot, because [an assertion does not cover the clamshell sleep path](../caffeinate-lid-closed/). Only tools that reach for [`pmset disablesleep`](../pmset-disablesleep/) manage it.
 
 **Does it release by itself?** A toggle you have to remember to switch off has one predictable failure: a laptop that arrives somewhere flat and warm. Everything else is preference.
 

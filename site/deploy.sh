@@ -84,8 +84,12 @@ refs=$(
 # URLs because they are somebody else's server. So the one image whose entire
 # job is to be fetched by Reddit, Slack and iMessage was the one image that
 # would not have shipped.
-EXTRA=(advisories.json robots.txt sitemap.xml llms.txt feed.xml 404.html assets/og.png
-       _headers vercel.json)
+# llms-full.txt is the whole article corpus in one file, for the crawlers
+# that ingest content wholesale. The hex-named .txt is the IndexNow key:
+# search engines verify a URL submission by fetching that file at the root,
+# so it has to ship even though nothing links to it.
+EXTRA=(advisories.json robots.txt sitemap.xml llms.txt llms-full.txt feed.xml 404.html
+       assets/og.png _headers vercel.json b791e51769af4045aac2b3f2777219ef.txt)
 
 MISSING=0
 FILES=("${PAGES[@]}")

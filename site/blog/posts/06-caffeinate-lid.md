@@ -36,7 +36,7 @@ Close the lid on a MacBook that has an external display and mains power attached
 
 People then conclude that closing the lid is fine and caffeinate is holding it. Unplug at a café and the same setup dies within seconds. The display and the power adapter were doing the work.
 
-The conditions vary by model, but the general shape on Apple silicon is: external display **and** mains power. Battery alone, with no display, sleeps.
+The conditions vary by model, but the general shape on Apple silicon is: external display **and** mains power. Battery alone, with no display, sleeps — [the ways around that are their own subject](../keep-macbook-awake-lid-closed/).
 
 ## What actually holds it
 

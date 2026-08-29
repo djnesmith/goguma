@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Every pmset sleep setting, explained</title>
-<meta name="description" content="&quot;sleep, displaysleep, standby, hibernatemode 0, 3 and 25, womp, ttyskeepawake, powernap: what each setting in pmset -g actually controls, with the defaults and the traps.&quot;">
+<meta name="description" content="sleep, displaysleep, standby, hibernatemode 0, 3 and 25, womp, ttyskeepawake, powernap: what each setting in pmset -g actually controls, with the defaults and the traps.">
 <link rel="icon" href="../../assets/potato.png">
 <meta property="og:title" content="Every pmset sleep setting, explained">
-<meta property="og:description" content="&quot;sleep, displaysleep, standby, hibernatemode 0, 3 and 25, womp, ttyskeepawake, powernap: what each setting in pmset -g actually controls, with the defaults and the traps.&quot;">
+<meta property="og:description" content="sleep, displaysleep, standby, hibernatemode 0, 3 and 25, womp, ttyskeepawake, powernap: what each setting in pmset -g actually controls, with the defaults and the traps.">
 <meta property="og:image" content="https://getgoguma.com/assets/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -24,7 +24,7 @@
  "@context": "https://schema.org",
  "@type": "TechArticle",
  "headline": "Every pmset sleep setting, explained",
- "description": "\"sleep, displaysleep, standby, hibernatemode 0, 3 and 25, womp, ttyskeepawake, powernap: what each setting in pmset -g actually controls, with the defaults and the traps.\"",
+ "description": "sleep, displaysleep, standby, hibernatemode 0, 3 and 25, womp, ttyskeepawake, powernap: what each setting in pmset -g actually controls, with the defaults and the traps.",
  "datePublished": "2026-08-28",
  "dateModified": "2026-08-28",
  "author": {
@@ -85,7 +85,7 @@
    "name": "What is hibernatemode 3 vs 25?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "'Mode 3, the laptop default, keeps memory powered during sleep and also writes a disk image as insurance: wakes are instant, and power loss costs nothing. Mode 25 writes the image and powers memory off \u2014 slower to sleep and wake, better battery, and the man page names it the setting to use if what you want is hibernation.'"
+    "text": "Mode 3, the laptop default, keeps memory powered during sleep and also writes a disk image as insurance: wakes are instant, and power loss costs nothing. Mode 25 writes the image and powers memory off \u2014 slower to sleep and wake, better battery, and the man page names it the setting to use if what you want is hibernation."
    }
   },
   {
@@ -93,7 +93,7 @@
    "name": "Why do my pmset settings differ on battery and charger?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "'Settings exist per power source. pmset -b sets battery values, -c charger values, -a both \u2014 and defaults differ, which is why a Mac behaves differently plugged in. pmset -g shows the set currently in effect.'"
+    "text": "Settings exist per power source. pmset -b sets battery values, -c charger values, -a both \u2014 and defaults differ, which is why a Mac behaves differently plugged in. pmset -g shows the set currently in effect."
    }
   },
   {
@@ -213,7 +213,7 @@ footer a{color:rgba(36,26,44,.64)}
       <a href="../">Writing</a>
     </nav>
     <p class="stamp">2026-08-28</p>
-    <div class="answer"><p>"Run <code>pmset -g</code> to see your Mac's power settings. The ones that matter: <code>sleep</code> is the idle timer for the whole system, <code>displaysleep</code> for the screen alone. <code>hibernatemode</code> picks the sleep style — 0 is memory-only (desktop default), 3 keeps memory powered plus a disk image (laptop default), 25 powers memory off and restores from disk. <code>standby</code> moves a long-sleeping laptop into that deeper state, <code>womp</code> is Wake for network access, <code>ttyskeepawake</code> keeps the Mac up while an SSH session is active, and settings can differ per power source — <code>-b</code> battery, <code>-c</code> charger, <code>-a</code> both."</p></div>
+    <div class="answer"><p>Run <code>pmset -g</code> to see your Mac's power settings. The ones that matter: <code>sleep</code> is the idle timer for the whole system, <code>displaysleep</code> for the screen alone. <code>hibernatemode</code> picks the sleep style — 0 is memory-only (desktop default), 3 keeps memory powered plus a disk image (laptop default), 25 powers memory off and restores from disk. <code>standby</code> moves a long-sleeping laptop into that deeper state, <code>womp</code> is Wake for network access, <code>ttyskeepawake</code> keeps the Mac up while an SSH session is active, and settings can differ per power source — <code>-b</code> battery, <code>-c</code> charger, <code>-a</code> both.</p></div>
   </div>
   <div class="wrap body">
 <h2>Reading your own machine</h2>
@@ -232,7 +232,7 @@ footer a{color:rgba(36,26,44,.64)}
 <ul><li><strong><code>womp</code></strong> — wake on magic packet; the "Wake for network access" checkbox. A sleeping Mac stays reachable, at the cost of brief <a href="../dark-wake-power-nap/">dark wakes</a> to maintain its network presence.</li><li><strong><code>powernap</code></strong> — permits background work (mail, backups) during those display-off wakes on supported machines.</li><li><strong><code>ttyskeepawake</code></strong> — while a terminal session is active, no idle sleep. This is why a Mac someone is SSH'd into stays up — and the fine print is that a tty only counts as inactive once its idle time exceeds the sleep timer. <a href="../ssh-sessions-mac-sleep/">More on SSH and sleep</a>.</li></ul>
 <h2>What none of these do</h2>
 <p>Settings shape when the machine sleeps and how deeply. No setting here wakes it at a time of your choosing — that is a different mechanism, <a href="../wake-mac-for-scheduled-job-pmset/"><code>pmset schedule</code></a> for one-shots and <a href="../pmset-repeat-wake-schedule/"><code>pmset repeat</code></a> for routines. And no timer value rescues <a href="../cron-jobs-dont-run-mac-asleep/">a cron job whose moment passed during sleep</a>; by the time the machine is back, the minute is gone.</p>
-<h2>Common questions</h2><h3>What is hibernatemode 3 vs 25?</h3><p>'Mode 3, the laptop default, keeps memory powered during sleep and also writes a disk image as insurance: wakes are instant, and power loss costs nothing. Mode 25 writes the image and powers memory off — slower to sleep and wake, better battery, and the man page names it the setting to use if what you want is hibernation.'</p><h3>Why do my pmset settings differ on battery and charger?</h3><p>'Settings exist per power source. pmset -b sets battery values, -c charger values, -a both — and defaults differ, which is why a Mac behaves differently plugged in. pmset -g shows the set currently in effect.'</p><h3>What does womp mean in pmset?</h3><p>Wake on magic packet — the same thing as Wake for network access in System Settings. With it on, a sleeping Mac can be woken over the network, and it wakes briefly on its own to keep that reachability alive.</p><h3>What does ttyskeepawake do?</h3><p>While any terminal session (such as an SSH login) is active, the system will not idle-sleep. A tty counts as inactive only once its idle time exceeds the system sleep timer.</p>
+<h2>Common questions</h2><h3>What is hibernatemode 3 vs 25?</h3><p>Mode 3, the laptop default, keeps memory powered during sleep and also writes a disk image as insurance: wakes are instant, and power loss costs nothing. Mode 25 writes the image and powers memory off — slower to sleep and wake, better battery, and the man page names it the setting to use if what you want is hibernation.</p><h3>Why do my pmset settings differ on battery and charger?</h3><p>Settings exist per power source. pmset -b sets battery values, -c charger values, -a both — and defaults differ, which is why a Mac behaves differently plugged in. pmset -g shows the set currently in effect.</p><h3>What does womp mean in pmset?</h3><p>Wake on magic packet — the same thing as Wake for network access in System Settings. With it on, a sleeping Mac can be woken over the network, and it wakes briefly on its own to keep that reachability alive.</p><h3>What does ttyskeepawake do?</h3><p>While any terminal session (such as an SSH login) is active, the system will not idle-sleep. A tty counts as inactive only once its idle time exceeds the system sleep timer.</p>
     <div class="cta">
       <p><strong>goguma</strong> does this for you: it reads the scheduled jobs
         already on your Mac, wakes the machine shortly before each one is due,

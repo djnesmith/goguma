@@ -242,7 +242,7 @@ ls ~/Library/LaunchAgents /Library/LaunchAgents /Library/LaunchDaemons</code></p
 <p><strong>Never missed.</strong> It fires during hours the machine is reliably awake. Leave it alone. Waking a Mac for a job that was never in trouble is a cost with no benefit.</p>
 <p>That last group matters more than it looks. The temptation after an audit is to put a wake in front of everything. Most jobs do not need one, and every unnecessary wake is battery spent for nothing.</p>
 <h2>One subtlety about "asleep"</h2>
-<p>A Mac is not simply awake or asleep. Overnight it cycles through brief dark wakes — powering up for a few seconds to fetch mail or run maintenance, then going back down. A fire time that lands inside one of those windows *might* have run.</p>
+<p>A Mac is not simply awake or asleep. Overnight it cycles through <a href="../dark-wake-power-nap/">brief dark wakes</a> — powering up for a few seconds to fetch mail or run maintenance, then going back down. A fire time that lands inside one of those windows *might* have run.</p>
 <p>Treat dark wake as sleep for auditing purposes. It is short, it is not scheduled around your job, and relying on your 03:00 job coinciding with a dark wake is not a strategy. If you are counting misses, counting a dark-wake coincidence as a hit will flatter the numbers and hide the problem.</p>
 <h2>Doing it automatically</h2>
 <p>This is the first thing goguma does when you install it. It reads your crontab, your user and system launchd jobs, and application-level schedulers it knows about, replays each schedule against the machine's own sleep history, and reports which have been missing runs and how often — before you configure anything.</p>

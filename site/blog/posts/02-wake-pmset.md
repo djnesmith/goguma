@@ -81,7 +81,7 @@ The hazard is not collision, it is **cleanup**. Cancelling requires the exact ty
 
 This is the big one for laptops. `caffeinate` asserts against *idle* sleep. Closing the lid triggers clamshell sleep, a lower-level path that the assertion does not touch. On a closed MacBook with no external display and no mains power, the machine sleeps and takes your job with it. Covered properly in [why caffeinate doesn't work with the lid closed](../caffeinate-lid-closed/).
 
-The mechanism that does hold a closed lid awake is `sudo pmset -a disablesleep 1` — and that one has [its own serious problem](../caffeinate-vs-pmset-vs-amphetamine/): it is a global setting that persists in the power management preferences and is **not** cleared when the process that set it dies. Anything that sets it and is then killed leaves a Mac that cannot sleep at all until someone notices.
+The mechanism that does hold a closed lid awake is [`sudo pmset -a disablesleep 1`](../pmset-disablesleep/) — and that one has [its own serious problem](../caffeinate-vs-pmset-vs-amphetamine/): it is a global setting that persists in the power management preferences and is **not** cleared when the process that set it dies. Anything that sets it and is then killed leaves a Mac that cannot sleep at all until someone notices.
 
 ### 4. Waking a flat battery is worse than not waking
 
