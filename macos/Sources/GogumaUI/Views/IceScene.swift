@@ -36,6 +36,16 @@ struct IceScene: View {
 
     @State private var motion = IceSceneMotion()
 
+    /// Whether anything of this scene can actually be seen.
+    ///
+    /// Starts false and is switched on by the first report, matching
+    /// `WindowVisibilityReader`'s own convention of starting from "not
+    /// visible". A scene that is about to be seen therefore holds its seeded
+    /// still for the frame or two before the reader answers, which is a
+    /// composed picture by design (see `IceSceneMotion.init`), rather than
+    /// animating in a window that turns out to be hidden.
+    @State private var onScreen = false
+
     var body: some View {
         GeometryReader { geo in
             let scale = min(
@@ -57,10 +67,28 @@ struct IceScene: View {
                     // animals hold the resting pose they were seeded with.
                     canvas(scale: scale, origin: origin, frame: motion.frame)
                 } else {
-                    TimelineView(.animation) { timeline in
+                    // Paused while nothing of the scene is on screen.
+                    //
+                    // A `TimelineView` runs for as long as its view exists, and
+                    // a SwiftUI view exists whether or not anyone can see it.
+                    // goguma builds its main window off screen half a second
+                    // after launch so the first click on Jobs is instant
+                    // (`WindowCoordinator.prewarm`), so the empty-list scene
+                    // inside it animated from launch to quit having never once
+                    // been visible.
+                    //
+                    // Paused rather than slowed: a paused schedule generates no
+                    // further entries at all, so the cost is zero rather than
+                    // lower. The last frame stays up, so what a window reveals
+                    // when it appears is a composed scene, not a blank pane.
+                    TimelineView(.animation(paused: !onScreen)) { timeline in
                         canvas(scale: scale, origin: origin,
                                frame: motion.advance(to: timeline.date))
                     }
+                    // Attached here rather than to the `Group`, so a Reduce
+                    // Motion still — which never reads `onScreen` — is not
+                    // re-evaluated every time a window is covered or revealed.
+                    .background(WindowVisibilityReader { onScreen = $0 })
                 }
             }
         }

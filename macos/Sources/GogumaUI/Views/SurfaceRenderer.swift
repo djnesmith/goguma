@@ -63,6 +63,13 @@ enum SurfaceRenderer {
 
         // Far offscreen: AppKit treats it as on screen and lays out table and
         // scroll views properly, but no human ever sees it.
+        //
+        // The window server does not call it visible, though, so anything that
+        // gates itself on occlusion is off in here. `IceScene` pauses, and the
+        // surfaces that carry it render its seeded still rather than the scene
+        // caught mid-motion. That still is a complete composition by design
+        // (`IceSceneMotion.init`), so the screenshots are honest; what this
+        // tool can no longer show is whether the animals move.
         let window = NSWindow(
             contentRect: CGRect(x: -20000, y: -20000, width: size.width, height: size.height),
             styleMask: [.titled, .fullSizeContentView],

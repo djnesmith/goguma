@@ -577,7 +577,11 @@ private struct PollingSurfaceModifier: ViewModifier {
 /// Reports transitions of the hosting window's actual visibility. Calls the
 /// handler only on changes, starting from "not visible", so begin/end pair
 /// exactly against the store's refcounted registration.
-private struct WindowVisibilityReader: NSViewRepresentable {
+///
+/// Not private: `IceScene` asks the same question for a different reason — it
+/// pauses its animation rather than its polling — and the answer, along with
+/// the reasons above for trusting occlusion over `onAppear`, is the same one.
+struct WindowVisibilityReader: NSViewRepresentable {
     let onChange: (Bool) -> Void
 
     func makeNSView(context _: Context) -> VisibilityTrackingView {
