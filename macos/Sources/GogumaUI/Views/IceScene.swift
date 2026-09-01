@@ -55,11 +55,11 @@ struct IceScene: View {
                 if reduceMotion {
                     // A single still frame. `advance` is never called, so the
                     // animals hold the resting pose they were seeded with.
-                    canvas(scale: scale, origin: origin)
+                    canvas(scale: scale, origin: origin, frame: motion.frame)
                 } else {
                     TimelineView(.animation) { timeline in
-                        let _ = motion.advance(to: timeline.date)
-                        canvas(scale: scale, origin: origin)
+                        canvas(scale: scale, origin: origin,
+                               frame: motion.advance(to: timeline.date))
                     }
                 }
             }
@@ -71,11 +71,11 @@ struct IceScene: View {
         )
     }
 
-    private func canvas(scale: CGFloat, origin: CGPoint) -> some View {
+    private func canvas(scale: CGFloat, origin: CGPoint, frame: IceSceneFrame) -> some View {
         Canvas { context, _ in
             context.translateBy(x: origin.x, y: origin.y)
             context.scaleBy(x: scale, y: scale)
-            draw(in: &context)
+            draw(in: &context, frame)
         }
         // Drawing is pure geometry with no text or images, so it can run off
         // the main thread and never blocks the interface it decorates.
@@ -84,17 +84,17 @@ struct IceScene: View {
 
     // MARK: - Composition
 
-    private func draw(in context: inout GraphicsContext) {
+    private func draw(in context: inout GraphicsContext, _ frame: IceSceneFrame) {
         let h = Self.canvasSize.height
         drawWater(&context, h: h)
         drawFloe(&context, h: h)
 
         // Draw order is depth: penguins in front of the bear, the seal in front
         // of both, snow over everything.
-        drawBear(&context, h: h)
-        drawPenguins(&context, h: h)
-        drawSeal(&context, h: h)
-        drawSnow(&context)
+        drawBear(&context, h: h, frame.bear)
+        drawPenguins(&context, h: h, frame.penguins)
+        drawSeal(&context, h: h, frame.seal)
+        drawSnow(&context, frame.snow)
     }
 
     /// Three soft ellipses. Blur is what keeps the water from having an edge, so
@@ -186,8 +186,7 @@ struct IceScene: View {
 
     // MARK: - Inhabitants
 
-    private func drawBear(_ context: inout GraphicsContext, h: CGFloat) {
-        let state = motion.bear
+    private func drawBear(_ context: inout GraphicsContext, h: CGFloat, _ state: WalkerState) {
         let scale: CGFloat = 0.85
         var g = context
         g.translateBy(x: state.x, y: h - Self.surfaceLine)
@@ -210,8 +209,10 @@ struct IceScene: View {
         )
     }
 
-    private func drawPenguins(_ context: inout GraphicsContext, h: CGFloat) {
-        for state in motion.penguins {
+    private func drawPenguins(
+        _ context: inout GraphicsContext, h: CGFloat, _ states: [WalkerState]
+    ) {
+        for state in states {
             var g = context
             g.translateBy(x: state.x, y: h - Self.surfaceLine + 2 - state.bottomOffset)
             g.scaleBy(x: state.facing * state.scale, y: state.scale)
@@ -236,8 +237,9 @@ struct IceScene: View {
     /// The clip is the whole trick: a window whose bottom edge sits on the
     /// waterline, so the animal is genuinely hidden below the surface rather
     /// than faded out. It rises into view and sinks out of it.
-    private func drawSeal(_ context: inout GraphicsContext, h: CGFloat) {
-        let state = motion.seal
+    private func drawSeal(
+        _ context: inout GraphicsContext, h: CGFloat, _ state: SurfacerState
+    ) {
         let baseY = h - (Self.surfaceLine + 4)
         let holeCentre = CGPoint(x: 266, y: baseY)
 
@@ -287,8 +289,8 @@ struct IceScene: View {
         }
     }
 
-    private func drawSnow(_ context: inout GraphicsContext) {
-        for flake in motion.snow {
+    private func drawSnow(_ context: inout GraphicsContext, _ flakes: [Flake]) {
+        for flake in flakes {
             var g = context
             g.opacity = flake.opacity
             g.fill(

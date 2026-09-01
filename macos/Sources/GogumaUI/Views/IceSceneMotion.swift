@@ -16,12 +16,27 @@ import SwiftUI
 
 /// Drives every moving part of `IceScene`. Advanced once per frame from a
 /// `TimelineView`; never advanced at all under Reduce Motion.
-@Observable
+///
+/// **Deliberately not `@Observable`, and that is load-bearing.** It was, and the
+/// combination is a runaway update loop: `advance` mutates this object while the
+/// view body is being evaluated, and the canvas that drew the result observed
+/// it, so every frame invalidated the view that had just produced it and SwiftUI
+/// re-ran immediately rather than waiting for the next frame. The scene was
+/// therefore never running at the display's rate at all — it ran as fast as the
+/// commit cycle would allow, measured at about 960 canvas renders a second, in a
+/// window that had never been on screen. Roughly half a core, from launch to
+/// quit.
+///
+/// `TimelineView`'s schedule is what should drive the redraw, and it does that
+/// on its own. What observation was buying was a canvas that noticed the state
+/// had changed; `advance` returns the new state as a value instead, which the
+/// canvas draws from, so each frame's canvas differs from the last without
+/// anything observing anything.
 final class IceSceneMotion {
-    private(set) var bear = WalkerState()
-    private(set) var penguins: [WalkerState]
-    private(set) var seal = SurfacerState()
-    private(set) var snow: [Flake]
+    private var bear = WalkerState()
+    private var penguins: [WalkerState]
+    private var seal = SurfacerState()
+    private var snow: [Flake]
 
     private var bearWalker = Walker(min: 56, max: 252, maxV: 14, accel: 22, stepFreq: 1.15,
                                     dwellMin: 0.15, dwellMax: 0.9, nearChance: 0.12)
@@ -58,19 +73,24 @@ final class IceSceneMotion {
         step(dt: 0)
     }
 
-    /// Advances to `date`, returning nothing; the call exists for its effect on
-    /// the observable state the canvas reads.
-    @discardableResult
-    func advance(to date: Date) -> Bool {
+    /// Everything the scene needs to draw one frame, as values.
+    var frame: IceSceneFrame {
+        IceSceneFrame(bear: bear, penguins: penguins, seal: seal, snow: snow)
+    }
+
+    /// Advances to `date` and hands back the frame to draw.
+    func advance(to date: Date) -> IceSceneFrame {
         guard let last = lastTick else {
             lastTick = date
-            return true
+            return frame
         }
         lastTick = date
         // Clamped, so a stalled or backgrounded frame cannot teleport an animal
-        // across the floe when the app comes back.
+        // across the floe when the app comes back. It is also what makes coming
+        // back from a paused scene safe: the animals carry on from the pose they
+        // held rather than jumping to where they would have got to.
         step(dt: min(0.05, max(0, date.timeIntervalSince(last))))
-        return true
+        return frame
     }
 
     private func step(dt: Double) {
@@ -106,6 +126,14 @@ final class IceSceneMotion {
 }
 
 // MARK: - State
+
+/// One frame of the scene, as plain values.
+struct IceSceneFrame {
+    let bear: WalkerState
+    let penguins: [WalkerState]
+    let seal: SurfacerState
+    let snow: [Flake]
+}
 
 struct WalkerState {
     var x: CGFloat = 0
@@ -339,7 +367,13 @@ private struct Surfacer {
 // MARK: - Snow
 
 /// One drifting flake. Wraps to the top rather than being recreated, so the
-/// count stays fixed and there is no allocation in the frame loop.
+/// count stays fixed and no flake is ever allocated after the first frame.
+///
+/// The array itself is now copied roughly once a frame: `frame` hands the
+/// buffer out by reference, and the next `step` writing into it while the last
+/// canvas still holds it is a copy-on-write. Twenty-two elements, so it is not
+/// worth restructuring for, but it is no longer true that the frame loop
+/// allocates nothing.
 struct Flake: Identifiable {
     let id = UUID()
     var x: CGFloat
