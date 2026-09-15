@@ -17,6 +17,10 @@ adrafinil-main*.zip
 .codex/
 .codegraph/
 
+# Wrangler's local cache. Nothing reads it, it is rebuilt on demand, and it
+# records the Cloudflare account id and account name of whoever last deployed.
+.wrangler/
+
 # Design reference drop — screenshots only, not part of the build.
 refs/
 dist/
