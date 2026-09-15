@@ -40,6 +40,24 @@ struct SettingsWindowView: View {
     @State private var thermalCutout: Double = 80
     @State private var lowBatteryCutout: Double = 10
     @State private var webhookText = ""
+    /// What `SMAppService` said when we last asked, not a preference. The
+    /// preference lives in macOS; see `LoginItem`.
+    @State private var opensAtLogin = false
+    @State private var loginNeedsApproval = false
+    /// Why the last write failed, and only the last write. Cleared by every
+    /// re-read, because a failure the user has since fixed in System Settings
+    /// would otherwise sit under a toggle that has already come on.
+    @State private var loginError: String?
+    /// Bumped on every read so a re-read always invalidates the view.
+    ///
+    /// Without it the toggle can keep the position a click put it in. Turning
+    /// it on while macOS has the item switched off is the case: `register()`
+    /// succeeds without changing anything, so every flag above is re-assigned
+    /// its existing value, SwiftUI sees no change, the body is never
+    /// re-evaluated, and the switch stays visually on beside a login item that
+    /// is off. That is the precise failure this pane exists to prevent, so the
+    /// redraw cannot be conditional on a value having moved.
+    @State private var loginRevision = 0
     /// Persisted, like the popover's jobs disclosure. Someone who opens this
     /// once is usually coming back to it, and a disclosure that forgets makes
     /// them find it again every launch. It also makes the expanded pane
@@ -71,7 +89,14 @@ struct SettingsWindowView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if store.connection.blocksContent {
+            // The tab bar is outside the daemon check, because one tab no
+            // longer needs the daemon. General is about the app itself, and it
+            // was unreachable in the state where someone is most likely to
+            // come looking for it: daemon down, the whole pane replaced by its
+            // error, and no tabs left to navigate with.
+            tabBar
+
+            if store.connection.blocksContent && tab.needsDaemon {
                 DaemonUnavailableView(error: store.connection.error) {
                     Task { await store.refresh(); await store.loadConfig() }
                 }
@@ -101,8 +126,6 @@ struct SettingsWindowView: View {
                 // A single grid measures the column once from the real strings,
                 // so the sections align with each other rather than each being
                 // internally consistent and mutually wrong.
-                tabBar
-
                 Grid(
                     alignment: .leadingFirstTextBaseline,
                     horizontalSpacing: Theme.Space.sm,
@@ -113,6 +136,7 @@ struct SettingsWindowView: View {
                     verticalSpacing: Theme.Space.sm
                 ) {
                     switch tab {
+                    case .general: generalSection
                     case .timing: timingSection
                     case .jobs: adoptionSection
                     case .safety: safetySection
@@ -191,10 +215,25 @@ struct SettingsWindowView: View {
         .themeSurface()
         .pollsDaemon(store, as: .settingsWindow)
         .task {
+            readLoginItem()
             await store.loadConfig()
             loadFields()
         }
         .onChange(of: store.config) { _, _ in loadFields() }
+        // System Settings is the other place this can be changed, and the trip
+        // there and back is the likeliest way for the pane to end up stale.
+        // Coming back to the app is the moment to ask again.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            readLoginItem()
+        }
+        // Reopening Settings does not re-run `.task`: WindowCoordinator only
+        // swaps the root view when the page changes, so the same view instance
+        // comes back with whatever it last read. Becoming key is the event
+        // that covers a reopen, and covers a change made while goguma stayed
+        // frontmost, which activation does not.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            readLoginItem()
+        }
     }
 
     /// A settings row: label, then its control on the shared column.
@@ -286,6 +325,133 @@ struct SettingsWindowView: View {
         }
 
         content()
+    }
+
+    // MARK: - General
+
+    /// The app's own settings, as opposed to the daemon's.
+    ///
+    /// Everything else in this pane writes to the daemon's config through
+    /// `apply`. Nothing here does, and nothing here is stored by goguma at
+    /// all: the toggle shows what `SMAppService` reports this instant, and
+    /// `readLoginItem` runs again after every write so a `register()` that
+    /// failed leaves the switch where the system actually left it rather than
+    /// where the click put it.
+    @ViewBuilder
+    private var generalSection: some View {
+        settingsSection("General", "How the goguma app itself behaves.") {
+            unlabelledRow {
+                Toggle(
+                    "Open goguma when I log in",
+                    isOn: Binding(get: { opensAtLogin }, set: { setOpensAtLogin($0) })
+                )
+                // Rebuilt on every read, so the control cannot keep a position
+                // the system did not agree to. See `loginRevision`.
+                .id(loginRevision)
+                .help(
+                    "Opens the menu bar app at login. The background service that runs "
+                        + "your jobs starts on its own either way, so turning this off "
+                        + "stops the icon appearing, not the jobs."
+                )
+            }
+
+            // Only macOS can undo this one, so the row is a route to it rather
+            // than a message. `register()` reports success while the item stays
+            // off, which is the one case where retrying the toggle looks like
+            // the fix and never is.
+            if loginNeedsApproval {
+                unlabelledRow {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                        // Not "macOS is holding this off": the usual way to
+                        // reach this state is the user switching goguma off in
+                        // Login Items, and telling them the system did it
+                        // sends them looking for a cause that is their own
+                        // earlier decision. Worded to be true either way.
+                        Label(
+                            "goguma is registered, but switched off in System Settings. "
+                                + "It can only be switched back on there.",
+                            systemImage: Theme.Icon.warning
+                        )
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                        Button("Open Login Items…") { LoginItem.openSettings() }
+                            .buttonStyle(.link)
+                            .font(Theme.Typography.caption)
+                    }
+                }
+            }
+
+            // A login item records the path it was registered from, so a copy
+            // running from Downloads or from a build directory registers that
+            // path and breaks the day the copy is moved. Said before the click
+            // rather than after it, because afterwards there is nothing wrong
+            // to report: registration succeeds and the entry is simply wrong.
+            if !LoginItem.isInstalled {
+                unlabelledRow {
+                    Label(
+                        "goguma is running from \(LoginItem.bundlePath). macOS remembers "
+                            + "that location, so this stops working if this copy moves. "
+                            + "Move goguma to your Applications folder first.",
+                        systemImage: Theme.Icon.warning
+                    )
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            // The first sentence is ours because ServiceManagement's is not
+            // usable on its own: its failures localise as "The operation
+            // couldn't be completed. (SMAppServiceErrorDomain error 1.)",
+            // which names no cause and offers no next step. The system text is
+            // kept after it rather than swallowed, since it is the only thing
+            // that distinguishes one failure from another in a bug report.
+            if let loginError {
+                unlabelledRow {
+                    VStack(alignment: .leading, spacing: Theme.Space.xxs) {
+                        Label(
+                            "macOS would not change this setting. \(loginError)",
+                            systemImage: Theme.Icon.warning
+                        )
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                        Button("Open Login Items…") { LoginItem.openSettings() }
+                            .buttonStyle(.link)
+                            .font(Theme.Typography.caption)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Ask the system what it currently says, and show that.
+    ///
+    /// One read of `status`, not one per flag: two reads can land either side
+    /// of a change and leave the pane describing a state that never existed.
+    private func readLoginItem() {
+        let status = LoginItem.status
+        opensAtLogin = status == .enabled
+        loginNeedsApproval = status == .requiresApproval
+        loginError = nil
+        loginRevision &+= 1
+    }
+
+    private func setOpensAtLogin(_ on: Bool) {
+        var failure: String?
+        do {
+            try LoginItem.setEnabled(on)
+        } catch {
+            failure = error.localizedDescription
+        }
+        // Unconditional, including after a throw: the switch ends up where
+        // macOS is, not where the click was. Then the failure goes back on,
+        // because the read above clears it and this one is still current.
+        readLoginItem()
+        loginError = failure
     }
 
     // MARK: - Timing
@@ -1100,17 +1266,30 @@ private struct WindowReader: NSViewRepresentable {
 
 /// The groups the settings pane is divided into.
 ///
-/// Five, following the sections the pane already had rather than inventing a
-/// new taxonomy: anyone who knew where a setting lived finds it in the same
+/// Following the sections the pane already had rather than inventing a new
+/// taxonomy: anyone who knew where a setting lived finds it in the same
 /// company. "Staying up to date" joins Alerts, because both are goguma telling
 /// you something rather than goguma doing something.
+///
+/// General is the exception and came later. Every other tab edits the daemon's
+/// config; General is the app's own behaviour, and there was nowhere truthful
+/// to file "open at login" among groups that all describe what the daemon does
+/// to the Mac.
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case timing, jobs, safety, alerts, advanced
+    case general, timing, jobs, safety, alerts, advanced
 
     var id: String { rawValue }
 
+    /// Whether the tab has anything to show while the daemon is unreachable.
+    ///
+    /// Every tab but General edits the daemon's config, so with no daemon
+    /// there is nothing to read and nowhere to write. General is the app's own
+    /// settings and is as answerable with the daemon down as with it up.
+    var needsDaemon: Bool { self != .general }
+
     var title: String {
         switch self {
+        case .general: "General"
         case .timing: "Timing"
         case .jobs: "Jobs"
         case .safety: "Safety"
@@ -1121,6 +1300,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .general: "gearshape"
         case .timing: "clock"
         case .jobs: "list.bullet"
         case .safety: "shield"
@@ -1149,6 +1329,10 @@ extension SettingsWindowView {
                 .accessibilityLabel(t.title)
                 .accessibilityAddTraits(tab == t ? [.isSelected] : [])
             }
+            // Takes up whatever the content-width tabs leave, so the row stays
+            // pinned to the left margin instead of drifting to the centre of
+            // the pane as tabs are added or renamed.
+            Spacer(minLength: 0)
         }
         .padding(.bottom, Theme.Space.sm)
     }
@@ -1171,10 +1355,16 @@ private struct SettingsTabLabel: View {
                 .font(Theme.Typography.caption)
             Text(tab.title)
                 .font(Theme.Typography.rowLabel)
+                // Six tabs do not fit the 520pt pane at equal widths: the
+                // share works out at ~64pt of content each and "Advanced"
+                // needs ~78, so it wrapped to "Advanc/ed". Each tab is now as
+                // wide as what is in it, which is what buys the room, and
+                // lineLimit is the guard that makes a future seventh tab
+                // crowd the row rather than silently grow a second line.
+                .lineLimit(1)
         }
-        .padding(.horizontal, Theme.Space.sm)
+        .padding(.horizontal, Theme.Space.xs)
         .padding(.vertical, Theme.Space.xs)
-        .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(fill)
         )
