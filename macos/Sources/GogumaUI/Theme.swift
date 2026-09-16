@@ -83,7 +83,20 @@ enum Theme {
         /// Also the correct role for "there is nothing to show here", which is
         /// why an unobservable job's empty duration column is muted and never
         /// danger. Muted means "nothing to show", which is the truth.
-        static let textTertiary = adaptive(light: 0x5C6B75, dark: 0x8D9CA7).opacity(0.75)
+        ///
+        /// Quiet by choice of grey, not by alpha. This carried `.opacity(0.75)`
+        /// — the only stacked alpha in the palette — which dimmed an already
+        /// mid grey a second time and left 11pt captions at 3.60:1 against the
+        /// popover, under the 4.5:1 floor across every backdrop, the dark end
+        /// included. macOS 26 turned the menu bar material to glass, so the
+        /// surface under the popover now tracks the window behind it rather
+        /// than sitting at a fixed value; that moved it from 4.06 to 3.60 and
+        /// turned a standing weakness into an unreadable one.
+        ///
+        /// The alpha was the larger half of it. Even at `Surface.tint` 1.0,
+        /// which would cost the popover its translucency altogether, the alpha
+        /// version only reaches 4.15. Without it the same grey reads 5.24.
+        static let textTertiary = adaptive(light: 0x5C6B75, dark: 0x8D9CA7)
 
         // MARK: Surfaces
 
