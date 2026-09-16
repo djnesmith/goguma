@@ -73,6 +73,33 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 cp "$ROOT/assets/goguma.icns" "$APP/Contents/Resources/goguma.icns"
 
+# Record the current SDK in the binary, keeping the deployment target at 14.
+#
+# macOS picks which control design to draw from the SDK an app was LINKED
+# AGAINST, not from the OS it is running on: link against 26 or later and the
+# buttons, fields and pickers get the macOS 26 design, link against anything
+# older and the system deliberately keeps drawing the pre-26 ones so that old
+# apps are not restyled underneath their authors.
+#
+# SwiftPM writes the deployment target into that field. Package.swift declares
+# .macOS(.v14), correctly -- nothing in the app needs newer -- so the binary
+# claims it was built against the macOS 14 SDK, and every control in the app
+# reverts to the old design. Verified against a three-line package on this
+# toolchain: .v14 gives sdk 14.0, .v15 gives 15.0, .v26 gives 26.0, whatever
+# SDK is actually installed. It is not a real SDK version; there is no macOS
+# 14 SDK on the machine that produced it.
+#
+# So: 14.0 stays the minimum, which is the part users feel, and 27.0 goes in
+# the field AppKit reads. Do not replace this with a higher deployment target
+# in Package.swift -- that would fix the drawing by dropping every Mac running
+# macOS 14 to 26, which is the trade this line exists to avoid.
+#
+# Must precede codesign: it rewrites a load command, so a signature applied
+# first would no longer match. vtool says so itself, and the sign step below
+# is what makes the warning moot.
+xcrun vtool -set-build-version macos 14.0 27.0 -replace \
+    -output "$APP/Contents/MacOS/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
+
 # The four Go binaries, matching the app's architectures.
 #
 # These ride inside the bundle so the app can set itself up with no CLI
