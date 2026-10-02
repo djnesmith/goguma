@@ -193,6 +193,11 @@ type Config struct {
 	// preference being changed. Turn it off with
 	// `goguma config set sleep_after_wake off`.
 	SleepAfterWake bool `json:"sleep_after_wake"`
+
+	// KeepDisplayAwake also keeps the screen on while a manual keep-awake is
+	// running. It touches nothing else: job holds, `goguma run` and agent
+	// holds let the display sleep as before. Off by default.
+	KeepDisplayAwake bool `json:"keep_display_awake"`
 }
 
 // Default returns the shipped configuration.

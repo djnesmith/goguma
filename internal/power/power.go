@@ -29,6 +29,10 @@ type Platform interface {
 	// released. Unprivileged.
 	HoldIdleSleep(reason string) (IdleAssertion, error)
 
+	// HoldDisplaySleep blocks idle display sleep until the returned assertion
+	// is released. Unprivileged.
+	HoldDisplaySleep(reason string) (IdleAssertion, error)
+
 	// ReadState samples lid, power source, battery, and temperature. Called
 	// on every daemon tick, so it must be cheap and must never block for
 	// long; a wedged sample would stall the cutout checks that keep a

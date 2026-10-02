@@ -313,8 +313,10 @@ app stays reachable if the popover misbehaves.
 **Popover.** Current state with a live elapsed counter that ticks every second
 while holding; next wake and countdown; lid / power / battery / CPU temperature;
 daemon warnings, prominently; a compact job list with enable toggles (click a row
-for its history); and Skip next wake, Let it sleep now, Pause/Resume, Jobs,
-Settings, Quit.
+for its history); and Keep Awake, Skip next wake, Let it sleep now,
+Pause/Resume, Jobs, Settings, Quit. Under them, "Keep the screen awake too" (off
+by default, `keep_display_awake`) also keeps the display on while a Keep Awake
+runs, and applies the moment it is flipped.
 
 **Settings is tabbed.** Five groups, one on screen at a time, selected by a
 drawn bar rather than a `Picker(.segmented)`: the segmented control brings

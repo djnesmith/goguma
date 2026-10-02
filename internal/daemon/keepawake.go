@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/junnam586/goguma/internal/ipc"
 	"github.com/junnam586/goguma/internal/model"
+	"github.com/junnam586/goguma/internal/power"
 	"github.com/junnam586/goguma/internal/store"
 )
 
@@ -100,6 +102,7 @@ func (d *Daemon) KeepAwake(want time.Duration, now time.Time) (ipc.KeepAwakeResp
 		d.finishHoldLocked(prev, now, model.OutcomeOK)
 	}
 	d.holds[job.ID] = h
+	d.syncKeepAwakeDisplayLocked()
 	until := h.deadline()
 	d.mu.Unlock()
 
@@ -127,6 +130,58 @@ func (d *Daemon) releaseKeepAwake(now time.Time) bool {
 	}
 	d.syncSleepBlock()
 	return true
+}
+
+// syncKeepAwakeDisplay applies keep_display_awake to whatever manual window is
+// open now, so flipping the setting takes effect without restarting the window.
+func (d *Daemon) syncKeepAwakeDisplay() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.syncKeepAwakeDisplayLocked()
+}
+
+// syncKeepAwakeDisplayLocked makes the display assertion match the setting:
+// held exactly while the setting is on and a manual keep-awake is open. Caller
+// holds d.mu.
+//
+// Hung off the manual hold rather than kept by the daemon, so every path that
+// ends the window (cancel, expiry, replacement, cutout, Sleep Now, shutdown)
+// releases it through finishHoldLocked without having to know it exists.
+//
+// Taken under the lock, unlike the idle assertion. On macOS it is one
+// in-process IOKit call, and elsewhere it is refused without doing anything,
+// so there is no slow part to keep outside; and taking it outside would let a
+// cancel land in between and leave a released window holding the screen on.
+func (d *Daemon) syncKeepAwakeDisplayLocked() {
+	h, open := d.holds[model.KeepAwakeJobID]
+	want := open && d.cfg.KeepDisplayAwake
+	switch {
+	case want && h.displayAssertion == nil:
+		a, err := d.plat.HoldDisplaySleep("goguma: manual keep-awake (display)")
+		if errors.Is(err, power.ErrUnsupported) {
+			return
+		}
+		if err != nil {
+			d.log.Error("couldn't keep the display awake for a manual keep-awake", "err", err)
+			return
+		}
+		h.displayAssertion = a
+		d.log.Info("keeping the display awake too")
+	case !want && open && h.displayAssertion != nil:
+		d.releaseDisplayLocked(h)
+		d.log.Info("letting the display sleep again")
+	}
+}
+
+// releaseDisplayLocked drops a hold's display assertion, if it has one.
+func (d *Daemon) releaseDisplayLocked(h *hold) {
+	if h.displayAssertion == nil {
+		return
+	}
+	if err := h.displayAssertion.Release(); err != nil {
+		d.log.Warn("releasing display assertion failed", "job", h.job.ID, "err", err)
+	}
+	h.displayAssertion = nil
 }
 
 // keepAwakeUntilLocked reports the end of the manual window. Caller holds d.mu.

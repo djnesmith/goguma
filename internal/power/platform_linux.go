@@ -310,6 +310,12 @@ func Close() {
 	}
 }
 
+// HoldDisplaySleep is unsupported: logind has no display-only inhibitor, so
+// keep_display_awake is accepted here and does nothing.
+func (p *linuxPlatform) HoldDisplaySleep(string) (IdleAssertion, error) {
+	return nil, ErrUnsupported
+}
+
 func (p *linuxPlatform) ReadState() (State, error) {
 	st := State{}
 

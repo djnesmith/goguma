@@ -106,6 +106,9 @@ var configSetters = map[string]func(*config.Config, string) error{
 	"agent_hooks": func(c *config.Config, v string) error {
 		return setBool(&c.AgentHooks, v, "agent_hooks")
 	},
+	"keep_display_awake": func(c *config.Config, v string) error {
+		return setBool(&c.KeepDisplayAwake, v, "keep_display_awake")
+	},
 }
 
 // errUnadoptable explains why a source cannot be watched, listing the ones
@@ -182,6 +185,10 @@ func (d *Daemon) setConfig(req ipc.ConfigSetReq) (ipc.ConfigResp, error) {
 			defer d.bg.Done()
 			d.reconcileAgentHooks(next)
 		}()
+	}
+
+	if key == "keep_display_awake" {
+		d.syncKeepAwakeDisplay()
 	}
 
 	return ipc.ConfigResp{

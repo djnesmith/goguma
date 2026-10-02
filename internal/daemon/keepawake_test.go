@@ -21,6 +21,8 @@ func (a *fakeAssertion) Release() error { a.released++; return nil }
 // point of these tests is the policy around the hold, not the syscall under it.
 type fakePlatform struct {
 	assertions []*fakeAssertion
+	displays   []*fakeAssertion
+	displayErr error
 
 	// For the sleep-back path: how many times the machine was told to sleep,
 	// what UserIdle reports, and whether reading it fails at all.
@@ -39,6 +41,15 @@ func (p *fakePlatform) Name() string { return "fake" }
 func (p *fakePlatform) HoldIdleSleep(string) (power.IdleAssertion, error) {
 	a := &fakeAssertion{}
 	p.assertions = append(p.assertions, a)
+	return a, nil
+}
+
+func (p *fakePlatform) HoldDisplaySleep(string) (power.IdleAssertion, error) {
+	if p.displayErr != nil {
+		return nil, p.displayErr
+	}
+	a := &fakeAssertion{}
+	p.displays = append(p.displays, a)
 	return a, nil
 }
 

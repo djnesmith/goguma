@@ -679,6 +679,7 @@ func (d *Daemon) finishHoldLocked(h *hold, now time.Time, outcome model.Outcome)
 			d.log.Warn("releasing idle assertion failed", "job", h.job.ID, "err", err)
 		}
 	}
+	d.releaseDisplayLocked(h)
 	delete(d.holds, h.job.ID)
 	if !h.manual() {
 		d.served[h.job.ID] = h.fireAt
@@ -871,6 +872,7 @@ func (d *Daemon) reload() error {
 	}
 	d.mu.Lock()
 	d.cfg, d.cfgWarn = cfg, warn
+	d.syncKeepAwakeDisplayLocked()
 	d.mu.Unlock()
 	for _, w := range warn {
 		d.log.Warn("config adjusted on load", "detail", w)

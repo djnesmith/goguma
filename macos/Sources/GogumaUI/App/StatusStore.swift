@@ -364,6 +364,12 @@ final class StatusStore {
 
         guard case .connected = connection else { return }
 
+        // The launch-time read fails when the app starts before the service,
+        // which opening at login makes likely, and nothing else retries it
+        // outside Settings. The popover's display checkbox stays disabled
+        // until config arrives, so retry here until it does.
+        if config == nil { await loadConfig() }
+
         if wantsJobs {
             do {
                 let response = try await client.jobs()

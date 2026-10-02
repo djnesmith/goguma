@@ -25,6 +25,21 @@ int wg_assert_idle(const char *reason, unsigned int *outID) {
     return 0;
 }
 
+// wg_assert_display takes a PreventUserIdleDisplaySleep assertion, the same
+// one `caffeinate -d` takes. Released by the kernel if this process dies, like
+// the idle one above.
+int wg_assert_display(const char *reason, unsigned int *outID) {
+    CFStringRef r = CFStringCreateWithCString(kCFAllocatorDefault, reason, kCFStringEncodingUTF8);
+    if (r == NULL) return -1;
+    IOPMAssertionID id = 0;
+    IOReturn rc = IOPMAssertionCreateWithName(
+        kIOPMAssertPreventUserIdleDisplaySleep, kIOPMAssertionLevelOn, r, &id);
+    CFRelease(r);
+    if (rc != kIOReturnSuccess) return -2;
+    *outID = (unsigned int)id;
+    return 0;
+}
+
 int wg_release_assert(unsigned int id) {
     return IOPMAssertionRelease((IOPMAssertionID)id) == kIOReturnSuccess ? 0 : -1;
 }
@@ -120,6 +135,17 @@ func (p *darwinPlatform) HoldIdleSleep(reason string) (IdleAssertion, error) {
 
 	var id C.uint
 	if rc := C.wg_assert_idle(cr, &id); rc != 0 {
+		return nil, fmt.Errorf("IOPMAssertionCreateWithName failed (code %d)", int(rc))
+	}
+	return &darwinAssertion{id: id}, nil
+}
+
+func (p *darwinPlatform) HoldDisplaySleep(reason string) (IdleAssertion, error) {
+	cr := C.CString(reason)
+	defer C.free(unsafe.Pointer(cr))
+
+	var id C.uint
+	if rc := C.wg_assert_display(cr, &id); rc != 0 {
 		return nil, fmt.Errorf("IOPMAssertionCreateWithName failed (code %d)", int(rc))
 	}
 	return &darwinAssertion{id: id}, nil

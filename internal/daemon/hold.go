@@ -69,6 +69,11 @@ type hold struct {
 	followsWake bool
 
 	assertion power.IdleAssertion
+
+	// displayAssertion keeps the screen on as well. Only the manual keep-awake
+	// takes one, and only while keep_display_awake is set; see
+	// syncKeepAwakeDisplayLocked.
+	displayAssertion power.IdleAssertion
 }
 
 // deadline is when this hold must be released regardless of what the job is

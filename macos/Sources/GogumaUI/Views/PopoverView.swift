@@ -770,7 +770,8 @@ struct PopoverView: View {
 
     // MARK: - Controls
 
-    /// Four actions in a 2×2 grid, paired by opposite.
+    /// Four actions in a 2×2 grid, paired by opposite, with the display
+    /// checkbox as a full-width row beneath.
     ///
     /// Keep Awake used to sit on a line of its own above a row of three, which
     /// left it visibly orphaned, a single control floating with nothing beside
@@ -820,6 +821,10 @@ struct PopoverView: View {
                 }
                 .disabled(store.isPerformingAction)
                 .help("Stop scheduling wakes and taking holds until resumed.")
+            }
+            GridRow {
+                keepDisplayToggle
+                    .gridCellColumns(2)
             }
         }
         .buttonStyle(.bordered)
@@ -947,6 +952,28 @@ struct PopoverView: View {
                     + "It still sleeps if the Mac gets hot or the battery runs low."
             )
         }
+    }
+
+    /// Beneath the grid, and always shown rather than only during a hold, so it
+    /// can be set beforehand and flipped while a hold runs. The daemon applies
+    /// it to the running hold at once.
+    private var keepDisplayToggle: some View {
+        Toggle(
+            "Keep the screen awake too",
+            isOn: Binding(
+                get: { store.config?.keepDisplayAwake ?? false },
+                set: { on in
+                    Task { await store.writeConfig(key: "keep_display_awake", value: on ? "on" : "off") }
+                }
+            )
+        )
+        .toggleStyle(.checkbox)
+        .font(Theme.Typography.caption)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .disabled(store.config == nil)
+        .help("While Keep Awake is running, the display stays on as well. "
+            + "Does nothing otherwise, and lets the display sleep again the moment "
+            + "Keep Awake ends or this is unchecked.")
     }
 
     /// Pops the duration list at the pointer.

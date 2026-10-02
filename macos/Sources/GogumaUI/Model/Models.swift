@@ -1137,6 +1137,9 @@ struct DaemonConfig: Codable, Sendable, Hashable {
     /// every current one. True matches config.Default().
     var sleepAfterWake: Bool
 
+    /// Whether a manual keep-awake also keeps the screen on. Off when absent.
+    var keepDisplayAwake: Bool
+
     /// Scheduler sources watched for automatic adoption.
     ///
     /// The three states are distinct and all meaningful:
@@ -1169,6 +1172,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         advisoryChecks = false
         agentHooks = true
         sleepAfterWake = true
+        keepDisplayAwake = false
         autoAdopt = nil
         autoAdoptInterval = .zero
     }
@@ -1192,6 +1196,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         case advisoryChecks = "advisory_checks"
         case agentHooks = "agent_hooks"
         case sleepAfterWake = "sleep_after_wake"
+        case keepDisplayAwake = "keep_display_awake"
         case autoAdopt = "auto_adopt"
         case autoAdoptInterval = "auto_adopt_interval"
     }
@@ -1216,6 +1221,7 @@ struct DaemonConfig: Codable, Sendable, Hashable {
         advisoryChecks = c.value(.advisoryChecks, false)
         agentHooks = c.value(.agentHooks, true)
         sleepAfterWake = c.value(.sleepAfterWake, true)
+        keepDisplayAwake = c.value(.keepDisplayAwake, false)
         // `optional` yields nil for both absent and JSON null, and `.some([])`
         // for an empty array, exactly the distinction this field needs.
         autoAdopt = c.optional(.autoAdopt, as: [String].self)

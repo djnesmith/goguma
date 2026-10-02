@@ -135,6 +135,8 @@ Settings:
   sleep_after_wake         put the machine back to sleep after a job goguma
                            woke it for, when nobody is at the keyboard
                            (default on)
+  keep_display_awake       keep the screen on too while a Keep Awake is running
+                           (default off)
   agent_hooks              hold sleep off while a coding agent is working. On by
                            default. Off does NOT stop agents reporting: they are
                            still shown in the menu bar while they work, the Mac
@@ -215,6 +217,7 @@ func configGet(ctx *Context, args []string) error {
 		{"sleep_after_wake", fmt.Sprintf("%t", c.SleepAfterWake)},
 		{"advisory_checks", fmt.Sprintf("%t", c.AdvisoryChecks)},
 		{"agent_hooks", fmt.Sprintf("%t", c.AgentHooks)},
+		{"keep_display_awake", fmt.Sprintf("%t", c.KeepDisplayAwake)},
 		{"min_import_interval", c.MinImportInterval.String()},
 	})
 
